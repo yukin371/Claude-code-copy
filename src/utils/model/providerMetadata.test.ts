@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 
 import {
+  getProviderLoadBalanceConfigSnapshot,
   getProviderLoadBalanceStrategy,
   getProviderLoadBalanceWeight,
 } from './providerMetadata.js'
@@ -50,5 +51,51 @@ describe('providerMetadata', () => {
     expect(getProviderLoadBalanceWeight('codex')).toBe(1)
     expect(getProviderLoadBalanceWeight('glm')).toBe(1)
     expect(getProviderLoadBalanceWeight('minimax')).toBe(1)
+  })
+
+  test('reads strategy and weight overrides from settings when env is absent', () => {
+    delete process.env.NEKO_CODE_OPENAI_PROVIDER_STRATEGY
+    delete process.env.NEKO_CODE_OPENAI_PROVIDER_WEIGHTS
+
+    const settings = {
+      openAIProviderStrategy: 'round-robin',
+      openAIProviderWeights: {
+        gemini: 4,
+        codex: 2.8,
+      },
+    } as const
+
+    const snapshot = getProviderLoadBalanceConfigSnapshot(settings)
+
+    expect(snapshot.strategy).toBe('round-robin')
+    expect(snapshot.strategySource).toBe('settings')
+    expect(snapshot.weightSource).toBe('settings')
+    expect(snapshot.weightOverrides).toEqual({
+      codex: 2,
+      gemini: 4,
+    })
+    expect(getProviderLoadBalanceStrategy(settings)).toBe('round-robin')
+    expect(getProviderLoadBalanceWeight('gemini', settings)).toBe(4)
+    expect(getProviderLoadBalanceWeight('codex', settings)).toBe(2)
+  })
+
+  test('env overrides settings snapshot for strategy and weights', () => {
+    process.env.NEKO_CODE_OPENAI_PROVIDER_STRATEGY = 'weighted'
+    process.env.NEKO_CODE_OPENAI_PROVIDER_WEIGHTS = 'gemini=5'
+
+    const snapshot = getProviderLoadBalanceConfigSnapshot({
+      openAIProviderStrategy: 'round-robin',
+      openAIProviderWeights: {
+        gemini: 2,
+        codex: 3,
+      },
+    })
+
+    expect(snapshot.strategy).toBe('weighted')
+    expect(snapshot.strategySource).toBe('env')
+    expect(snapshot.weightOverrides).toEqual({
+      gemini: 5,
+    })
+    expect(snapshot.weightSource).toBe('env')
   })
 })

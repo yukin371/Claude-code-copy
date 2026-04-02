@@ -48,13 +48,20 @@ switch (command) {
   case 'providers': {
     const {
       PROVIDER_NAMES,
+      getProviderLoadBalanceConfigSnapshot,
       getProviderLoadBalanceWeight,
-      getProviderLoadBalanceStrategy,
       getProviderTransportMetadata,
     } = await import(
       '../src/utils/model/providerMetadata.ts'
     )
-    console.log(`strategy: ${getProviderLoadBalanceStrategy()}`)
+    const config = getProviderLoadBalanceConfigSnapshot()
+    const weightOverrides = Object.entries(config.weightOverrides).sort(
+      ([left], [right]) => left.localeCompare(right),
+    )
+    console.log(`strategy: ${config.strategy} (${config.strategySource})`)
+    console.log(
+      `weightOverrides: ${weightOverrides.length > 0 ? `${weightOverrides.map(([provider, weight]) => `${provider}=${weight}`).join(', ')} (${config.weightSource})` : `default (${config.weightSource})`}`,
+    )
     for (const provider of PROVIDER_NAMES) {
       const metadata = getProviderTransportMetadata(provider)
       console.log(provider)
@@ -73,7 +80,7 @@ switch (command) {
   case 'health': {
     const {
       PROVIDER_NAMES,
-      getProviderLoadBalanceStrategy,
+      getProviderLoadBalanceConfigSnapshot,
       getOpenAICompatibleProviderOrder,
       getProviderTransportMetadata,
     } = await import('../src/utils/model/providerMetadata.ts')
@@ -84,7 +91,14 @@ switch (command) {
     const providers = requestedProvider
       ? PROVIDER_NAMES.filter(provider => provider === requestedProvider)
       : PROVIDER_NAMES
-    console.log(`strategy: ${getProviderLoadBalanceStrategy()}`)
+    const config = getProviderLoadBalanceConfigSnapshot()
+    const weightOverrides = Object.entries(config.weightOverrides).sort(
+      ([left], [right]) => left.localeCompare(right),
+    )
+    console.log(`strategy: ${config.strategy} (${config.strategySource})`)
+    console.log(
+      `weightOverrides: ${weightOverrides.length > 0 ? `${weightOverrides.map(([provider, weight]) => `${provider}=${weight}`).join(', ')} (${config.weightSource})` : `default (${config.weightSource})`}`,
+    )
     for (const provider of providers) {
       console.log(provider)
       const metadata = getProviderTransportMetadata(provider)

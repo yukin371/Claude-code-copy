@@ -409,6 +409,26 @@ export const SettingsSchema = lazySchema(() =>
         .describe(
           'Per-route provider, API style, model, and base URL configuration for task routing.',
         ),
+      openAIProviderStrategy: z
+        .enum(['fallback', 'round-robin', 'weighted'])
+        .optional()
+        .describe(
+          'Balancing strategy for OpenAI-compatible providers. Environment variable NEKO_CODE_OPENAI_PROVIDER_STRATEGY takes precedence when set.',
+        ),
+      openAIProviderWeights: z
+        .object({
+          anthropic: z.number().int().positive().optional(),
+          codex: z.number().int().positive().optional(),
+          gemini: z.number().int().positive().optional(),
+          glm: z.number().int().positive().optional(),
+          minimax: z.number().int().positive().optional(),
+          'openai-compatible': z.number().int().positive().optional(),
+        })
+        .partial()
+        .optional()
+        .describe(
+          'Optional weight overrides for OpenAI-compatible provider balancing. Only positive integers are accepted.',
+        ),
       // Enterprise allowlist of models
       availableModels: z
         .array(z.string())

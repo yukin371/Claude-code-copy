@@ -11,6 +11,7 @@ import { getDisplayPath } from './file.js';
 import { formatNumber } from './format.js';
 import { getIdeClientName, type IDEExtensionInstallationStatus, isJetBrainsIde, toIDEDisplayName } from './ide.js';
 import { getClaudeAiUserDefaultModelDescription, modelDisplayString } from './model/model.js';
+import { getProviderLoadBalanceConfigSnapshot } from './model/providerMetadata.js';
 import { getAPIProvider } from './model/providers.js';
 import { getMTLSConfig } from './mtls.js';
 import { checkInstall } from './nativeInstaller/index.js';
@@ -240,6 +241,7 @@ export function buildAccountProperties(): Property[] {
 export function buildAPIProviderProperties(): Property[] {
   const apiProvider = getAPIProvider();
   const properties: Property[] = [];
+  const providerLoadBalance = getProviderLoadBalanceConfigSnapshot();
   if (apiProvider !== 'firstParty') {
     const providerLabel = {
       bedrock: 'AWS Bedrock',
@@ -321,6 +323,15 @@ export function buildAPIProviderProperties(): Property[] {
       });
     }
   }
+  const weightOverrides = Object.entries(providerLoadBalance.weightOverrides).sort(([left], [right]) => left.localeCompare(right));
+  properties.push({
+    label: 'OpenAI balancing',
+    value: `${providerLoadBalance.strategy} (${providerLoadBalance.strategySource})`
+  });
+  properties.push({
+    label: 'OpenAI weights',
+    value: weightOverrides.length > 0 ? `${weightOverrides.map(([provider, weight]) => `${provider}=${weight}`).join(', ')} (${providerLoadBalance.weightSource})` : `default (${providerLoadBalance.weightSource})`
+  });
   const proxyUrl = getProxyUrl();
   if (proxyUrl) {
     properties.push({

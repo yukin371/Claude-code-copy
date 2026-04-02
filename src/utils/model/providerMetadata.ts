@@ -1,4 +1,5 @@
 import type { TaskRouteApiStyle, TaskRouteProviderName } from './taskRouting.js'
+import { createRequire } from 'node:module'
 
 export const PROVIDER_NAMES = [
   'anthropic',
@@ -21,6 +22,20 @@ export type ProviderLoadBalanceStrategy =
   | 'fallback'
   | 'round-robin'
   | 'weighted'
+
+export type ProviderLoadBalanceConfigSource = 'env' | 'settings' | 'default'
+
+type ProviderLoadBalanceSettings = {
+  openAIProviderStrategy?: string
+  openAIProviderWeights?: Partial<Record<TaskRouteProviderName, number>>
+}
+
+export type ProviderLoadBalanceConfigSnapshot = {
+  strategy: ProviderLoadBalanceStrategy
+  strategySource: ProviderLoadBalanceConfigSource
+  weightOverrides: Partial<Record<TaskRouteProviderName, number>>
+  weightSource: ProviderLoadBalanceConfigSource
+}
 
 const PROVIDER_METADATA: Record<TaskRouteProviderName, ProviderTransportMetadata> = {
   anthropic: {
@@ -102,26 +117,19 @@ export function getProviderFamily(
 
 export function getProviderLoadBalanceWeight(
   provider: TaskRouteProviderName,
+  settings?: ProviderLoadBalanceSettings,
 ): number {
-  const override = getProviderWeightOverrides()[provider]
+  const override = getProviderWeightOverrides(settings)[provider]
   if (override !== undefined) {
     return override
   }
   return getProviderTransportMetadata(provider).loadBalanceWeight
 }
 
-export function getProviderLoadBalanceStrategy(): ProviderLoadBalanceStrategy {
-  const configured = process.env.NEKO_CODE_OPENAI_PROVIDER_STRATEGY
-    ?.trim()
-    .toLowerCase()
-  switch (configured) {
-    case 'fallback':
-    case 'round-robin':
-    case 'weighted':
-      return configured
-    default:
-      return 'fallback'
-  }
+export function getProviderLoadBalanceStrategy(
+  settings?: ProviderLoadBalanceSettings,
+): ProviderLoadBalanceStrategy {
+  return getProviderLoadBalanceConfigSnapshot(settings).strategy
 }
 
 export function getOpenAICompatibleProviderOrder(
@@ -140,9 +148,78 @@ export function getOpenAICompatibleProviderOrder(
   return Array.from(ordered)
 }
 
-function getProviderWeightOverrides(): Partial<Record<TaskRouteProviderName, number>> {
-  const raw = process.env.NEKO_CODE_OPENAI_PROVIDER_WEIGHTS?.trim()
-  if (!raw) {
+export function getProviderLoadBalanceConfigSnapshot(
+  settings = getProviderLoadBalanceSettings(),
+): ProviderLoadBalanceConfigSnapshot {
+  const envStrategy = parseProviderLoadBalanceStrategy(
+    process.env.NEKO_CODE_OPENAI_PROVIDER_STRATEGY,
+  )
+  const settingsStrategy = parseProviderLoadBalanceStrategy(
+    settings?.openAIProviderStrategy,
+  )
+  const envWeightOverrides = parseProviderWeightOverridesFromString(
+    process.env.NEKO_CODE_OPENAI_PROVIDER_WEIGHTS,
+  )
+  const settingsWeightOverrides = parseProviderWeightOverridesFromRecord(
+    settings?.openAIProviderWeights,
+  )
+
+  return {
+    strategy: envStrategy ?? settingsStrategy ?? 'fallback',
+    strategySource: envStrategy
+      ? 'env'
+      : settingsStrategy
+        ? 'settings'
+        : 'default',
+    weightOverrides:
+      Object.keys(envWeightOverrides).length > 0
+        ? envWeightOverrides
+        : settingsWeightOverrides,
+    weightSource:
+      Object.keys(envWeightOverrides).length > 0
+        ? 'env'
+        : Object.keys(settingsWeightOverrides).length > 0
+          ? 'settings'
+          : 'default',
+  }
+}
+
+function getProviderLoadBalanceSettings(): ProviderLoadBalanceSettings {
+  try {
+    const require = createRequire(import.meta.url)
+    const settingsModule = require('../settings/settings.js') as {
+      getSettings_DEPRECATED?: () => ProviderLoadBalanceSettings | undefined
+    }
+    return settingsModule.getSettings_DEPRECATED?.() ?? {}
+  } catch {
+    return {}
+  }
+}
+
+function getProviderWeightOverrides(
+  settings?: ProviderLoadBalanceSettings,
+): Partial<Record<TaskRouteProviderName, number>> {
+  return getProviderLoadBalanceConfigSnapshot(settings).weightOverrides
+}
+
+function parseProviderLoadBalanceStrategy(
+  value?: string,
+): ProviderLoadBalanceStrategy | undefined {
+  const configured = value?.trim().toLowerCase()
+  switch (configured) {
+    case 'fallback':
+    case 'round-robin':
+    case 'weighted':
+      return configured
+    default:
+      return undefined
+  }
+}
+
+function parseProviderWeightOverridesFromString(
+  raw?: string,
+): Partial<Record<TaskRouteProviderName, number>> {
+  if (!raw?.trim()) {
     return {}
   }
 
@@ -159,5 +236,23 @@ function getProviderWeightOverrides(): Partial<Record<TaskRouteProviderName, num
     overrides[provider] = Math.max(1, weight)
   }
 
+  return overrides
+}
+
+function parseProviderWeightOverridesFromRecord(
+  record?: Partial<Record<TaskRouteProviderName, number>>,
+): Partial<Record<TaskRouteProviderName, number>> {
+  if (!record) {
+    return {}
+  }
+
+  const overrides: Partial<Record<TaskRouteProviderName, number>> = {}
+  for (const provider of PROVIDER_NAMES) {
+    const weight = record[provider]
+    if (!Number.isFinite(weight)) {
+      continue
+    }
+    overrides[provider] = Math.max(1, Math.trunc(weight))
+  }
   return overrides
 }

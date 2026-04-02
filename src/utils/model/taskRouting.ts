@@ -1,5 +1,5 @@
-import { getSettings_DEPRECATED } from '../settings/settings.js'
-import { getProviderDefaultApiStyle } from './providerMetadata.js'
+import { createRequire } from 'node:module'
+import { getProviderDefaultApiStyle, getProviderFamily } from './providerMetadata.js'
 
 export type TaskRouteName =
   | 'main'
@@ -111,10 +111,17 @@ const DEFAULT_ROUTE_TARGETS: Record<TaskRouteName, TaskRouteExecutionTarget> = {
 }
 
 function getTaskRouteSettings(route: TaskRouteName): TaskRouteSettings | undefined {
-  return (
-    (getSettings_DEPRECATED()?.taskRoutes?.[route] as TaskRouteSettings | undefined) ??
-    undefined
-  )
+  try {
+    const require = createRequire(import.meta.url)
+    const settingsModule = require('../settings/settings.js') as {
+      getSettings_DEPRECATED?: () => {
+        taskRoutes?: Record<string, TaskRouteSettings | undefined>
+      }
+    }
+    return settingsModule.getSettings_DEPRECATED?.()?.taskRoutes?.[route]
+  } catch {
+    return undefined
+  }
 }
 
 function inferApiStyleFromProvider(
@@ -230,19 +237,29 @@ export function getTaskRouteTransportConfig(
 ): TaskRouteTransportConfig {
   const target = getTaskRouteExecutionTarget(route)
   const routeSettings = getTaskRouteSettings(route)
-  const baseUrl =
+  const explicitBaseUrl =
     process.env[TASK_ROUTE_BASE_URL_ENV[route]]?.trim() ||
-    routeSettings?.baseUrl?.trim() ||
-    process.env.NEKO_CODE_OPENAI_COMPATIBLE_BASE_URL?.trim() ||
-    process.env.OPENAI_BASE_URL?.trim()
+    routeSettings?.baseUrl?.trim()
+  const usesOpenAICompatibleTransport =
+    explicitBaseUrl !== undefined ||
+    target.apiStyle === 'openai-compatible' ||
+    getProviderFamily(target.provider) === 'openai-compatible'
+  const baseUrl =
+    explicitBaseUrl ||
+    (usesOpenAICompatibleTransport
+      ? process.env.NEKO_CODE_OPENAI_COMPATIBLE_BASE_URL?.trim() ||
+        process.env.OPENAI_BASE_URL?.trim()
+      : undefined)
   const apiKey =
     process.env[TASK_ROUTE_API_KEY_ENV[route]]?.trim() ||
-    process.env.NEKO_CODE_OPENAI_COMPATIBLE_API_KEY?.trim() ||
-    process.env.OPENAI_API_KEY?.trim()
+    (usesOpenAICompatibleTransport
+      ? process.env.NEKO_CODE_OPENAI_COMPATIBLE_API_KEY?.trim() ||
+        process.env.OPENAI_API_KEY?.trim()
+      : undefined)
 
   return {
     ...target,
-    apiStyle: baseUrl ? 'openai-compatible' : target.apiStyle,
+    apiStyle: explicitBaseUrl ? 'openai-compatible' : target.apiStyle,
     baseUrl,
     apiKey,
   }
