@@ -51,6 +51,10 @@ import {
   type SettingsWithErrors,
   type ValidationError,
 } from './validation.js'
+import {
+  getRelativeSettingsFilePathForSource,
+  resolveProjectSettingsFilePath,
+} from './settingsPathResolution.js'
 
 /**
  * Get the path to the managed settings file based on the current platform
@@ -232,7 +236,7 @@ function parseSettingsFileUncached(path: string): {
 
 /**
  * Get the absolute path to the associated file root for a given settings source
- * (e.g. for $PROJ_DIR/.claude/settings.json, returns $PROJ_DIR)
+ * (e.g. for $PROJ_DIR/.neko-code/settings.json, returns $PROJ_DIR)
  * @param source The source of the settings
  * @returns The root path of the settings file
  */
@@ -282,9 +286,10 @@ export function getSettingsFilePathForSource(
       )
     case 'projectSettings':
     case 'localSettings': {
-      return join(
+      return resolveProjectSettingsFilePath(
         getSettingsRootPathForSource(source),
-        getRelativeSettingsFilePathForSource(source),
+        source,
+        path => getFsImplementation().existsSync(path),
       )
     }
     case 'policySettings':
@@ -292,17 +297,6 @@ export function getSettingsFilePathForSource(
     case 'flagSettings': {
       return getFlagSettingsPath()
     }
-  }
-}
-
-export function getRelativeSettingsFilePathForSource(
-  source: 'projectSettings' | 'localSettings',
-): string {
-  switch (source) {
-    case 'projectSettings':
-      return join('.claude', 'settings.json')
-    case 'localSettings':
-      return join('.claude', 'settings.local.json')
   }
 }
 

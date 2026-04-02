@@ -1,6 +1,12 @@
 export const PRODUCT_URL = 'https://claude.com/claude-code'
 
 export const PRODUCT_NAME = 'Neko Code'
+export const CLI_COMMAND_NAME = 'neko'
+export const LEGACY_CLI_COMMAND_NAME = 'claude'
+export const PROJECT_CONFIG_DIR_NAME = '.neko-code'
+export const LEGACY_PROJECT_CONFIG_DIR_NAME = '.claude'
+export const GLOBAL_CONFIG_BASENAME = '.neko-code'
+export const LEGACY_GLOBAL_CONFIG_BASENAME = '.claude'
 
 // Remote session URLs
 export const CLAUDE_AI_BASE_URL = 'https://claude.ai'

@@ -10,6 +10,7 @@
  */
 
 import { basename, join } from 'path'
+import { CLI_COMMAND_NAME, LEGACY_CLI_COMMAND_NAME } from '../../constants/product.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
 import { logForDebugging } from '../debug.js'
 import { isEnvDefinedFalsy, isEnvTruthy } from '../envUtils.js'
@@ -104,7 +105,8 @@ function isClaudeProcess(pid: number, expectedExecPath: string): boolean {
   }
 
   // If the PID matches our current process, we know it's valid
-  // This handles test environments where the command might not contain 'claude'
+  // This handles test environments where the command might not contain the
+  // expected launcher name.
   if (pid === process.pid) {
     return true
   }
@@ -117,14 +119,16 @@ function isClaudeProcess(pid: number, expectedExecPath: string): boolean {
       return true
     }
 
-    // Check if the command contains 'claude' or the expected exec path
-    const normalizedCommand = command.toLowerCase()
-    const normalizedExecPath = expectedExecPath.toLowerCase()
+  // Check if the command contains the current launcher name, the legacy
+  // launcher name, or the expected exec path.
+  const normalizedCommand = command.toLowerCase()
+  const normalizedExecPath = expectedExecPath.toLowerCase()
 
-    return (
-      normalizedCommand.includes('claude') ||
+  return (
+      normalizedCommand.includes(CLI_COMMAND_NAME) ||
+      normalizedCommand.includes(LEGACY_CLI_COMMAND_NAME) ||
       normalizedCommand.includes(normalizedExecPath)
-    )
+  )
   } catch {
     // If command check fails, trust the PID check
     return true

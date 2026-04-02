@@ -34,6 +34,7 @@ import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
   logEvent,
 } from 'src/services/analytics/index.js'
+import { CLI_COMMAND_NAME } from '../../constants/product.js'
 import { getMaxVersion, shouldSkipVersion } from '../autoUpdater.js'
 import { registerCleanup } from '../cleanupRegistry.js'
 import { getGlobalConfig, saveGlobalConfig } from '../config.js'
@@ -112,9 +113,15 @@ export function getBinaryName(platform: string): string {
   return platform.startsWith('win32') ? 'claude.exe' : 'claude'
 }
 
+function getLauncherName(platform: string): string {
+  return platform.startsWith('win32')
+    ? `${CLI_COMMAND_NAME}.exe`
+    : CLI_COMMAND_NAME
+}
+
 function getBaseDirectories() {
   const platform = getPlatform()
-  const executableName = getBinaryName(platform)
+  const executableName = getLauncherName(platform)
 
   return {
     // Data directories (permanent storage)
@@ -465,7 +472,7 @@ async function performVersionUpdate(
     logForDebugging(`Version ${version} already installed, updating symlink`)
   }
 
-  // Create direct symlink from ~/.local/bin/claude to the version binary
+  // Create direct symlink from the user bin dir to the version binary
   await removeDirectoryIfEmpty(executablePath)
   await updateSymlink(executablePath, installPath)
 
@@ -856,7 +863,7 @@ export async function checkInstall(
     // On Windows it's a copied executable, not a symlink
     if (!(await isPossibleClaudeBinary(dirs.executable))) {
       messages.push({
-        message: `installMethod is native, but claude command is missing or invalid at ${dirs.executable}`,
+        message: `installMethod is native, but ${CLI_COMMAND_NAME} command is missing or invalid at ${dirs.executable}`,
         userActionRequired: true,
         type: 'error',
       })
@@ -875,7 +882,7 @@ export async function checkInstall(
     } catch (e) {
       if (isENOENT(e)) {
         messages.push({
-          message: `installMethod is native, but claude command not found at ${dirs.executable}`,
+          message: `installMethod is native, but ${CLI_COMMAND_NAME} command not found at ${dirs.executable}`,
           userActionRequired: true,
           type: 'error',
         })
@@ -1458,7 +1465,7 @@ async function isNpmSymlink(executablePath: string): Promise<boolean> {
 }
 
 /**
- * Remove the claude symlink from the executable directory
+ * Remove the managed launcher symlink from the executable directory
  * This is used when switching away from native installation
  * Will only remove if it's a native binary symlink, not npm-managed JS files
  */
@@ -1476,12 +1483,12 @@ export async function removeInstalledSymlink(): Promise<void> {
 
     // It's a native binary symlink, safe to remove
     await unlink(dirs.executable)
-    logForDebugging(`Removed claude symlink at ${dirs.executable}`)
+    logForDebugging(`Removed ${CLI_COMMAND_NAME} symlink at ${dirs.executable}`)
   } catch (error) {
     if (isENOENT(error)) {
       return
     }
-    logError(new Error(`Failed to remove claude symlink: ${error}`))
+    logError(new Error(`Failed to remove ${CLI_COMMAND_NAME} symlink: ${error}`))
   }
 }
 

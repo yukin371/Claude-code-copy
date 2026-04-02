@@ -51,7 +51,7 @@ describe('migrateClaudeConfigDirectory', () => {
       logForDebugging: () => {},
     }))
     mock.module('../utils/env.js', () => ({
-      getGlobalClaudeFile: () => '.claude.json',
+      getGlobalClaudeFile: () => '.neko-code.json',
     }))
     mock.module('../utils/envUtils.js', () => ({
       getClaudeConfigHomeDir: () => '.neko-code',
@@ -100,7 +100,7 @@ describe('migrateClaudeConfigDirectory', () => {
     const result = migrateClaudeConfigDirectory({
       sourceDir,
       targetDir,
-      targetGlobalConfigPath: join(targetDir, '.claude.json'),
+      targetGlobalConfigPath: join(targetDir, '.neko-code.json'),
       mergeGlobalConfig: legacyConfig => {
         mergedConfigs.push(legacyConfig)
       },
@@ -151,7 +151,7 @@ describe('migrateClaudeConfigDirectory', () => {
     writeText(join(sourceDir, 'rules', 'legacy.md'), 'legacy rule')
     writeText(join(sourceDir, 'rules', 'new.md'), 'new rule')
 
-    writeJson(join(targetDir, '.claude.json'), {
+    writeJson(join(targetDir, '.neko-code.json'), {
       theme: 'dark',
     })
     writeJson(join(targetDir, 'settings.json'), {
@@ -163,7 +163,7 @@ describe('migrateClaudeConfigDirectory', () => {
     const result = migrateClaudeConfigDirectory({
       sourceDir,
       targetDir,
-      targetGlobalConfigPath: join(targetDir, '.claude.json'),
+      targetGlobalConfigPath: join(targetDir, '.neko-code.json'),
       mergeGlobalConfig: () => {
         mergeCalls += 1
       },

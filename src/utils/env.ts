@@ -1,5 +1,9 @@
 import memoize from 'lodash-es/memoize.js'
 import { join } from 'path'
+import {
+  GLOBAL_CONFIG_BASENAME,
+  LEGACY_GLOBAL_CONFIG_BASENAME,
+} from '../constants/product.js'
 import { fileSuffixForOauthConfig } from '../constants/oauth.js'
 import { isRunningWithBun } from './bundledMode.js'
 import { getClaudeConfigHomeDir, isEnvTruthy } from './envUtils.js'
@@ -11,17 +15,31 @@ type Platform = 'win32' | 'darwin' | 'linux'
 
 // Config and data paths
 export const getGlobalClaudeFile = memoize((): string => {
-  // Legacy fallback for backwards compatibility
-  if (
-    getFsImplementation().existsSync(
-      join(getClaudeConfigHomeDir(), '.config.json'),
-    )
-  ) {
-    return join(getClaudeConfigHomeDir(), '.config.json')
+  const configHome = getClaudeConfigHomeDir()
+
+  const preferredFile = join(
+    configHome,
+    `${GLOBAL_CONFIG_BASENAME}${fileSuffixForOauthConfig()}.json`,
+  )
+  if (getFsImplementation().existsSync(preferredFile)) {
+    return preferredFile
   }
 
-  const filename = `.claude${fileSuffixForOauthConfig()}.json`
-  return join(getClaudeConfigHomeDir(), filename)
+  // Legacy fallback for backwards compatibility
+  const legacyConfigJson = join(configHome, '.config.json')
+  if (getFsImplementation().existsSync(legacyConfigJson)) {
+    return legacyConfigJson
+  }
+
+  const legacyFile = join(
+    configHome,
+    `${LEGACY_GLOBAL_CONFIG_BASENAME}${fileSuffixForOauthConfig()}.json`,
+  )
+  if (getFsImplementation().existsSync(legacyFile)) {
+    return legacyFile
+  }
+
+  return preferredFile
 })
 
 const hasInternetAccess = memoize(async (): Promise<boolean> => {
