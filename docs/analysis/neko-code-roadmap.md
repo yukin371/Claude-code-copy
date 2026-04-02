@@ -6,6 +6,7 @@
 
 - 已完成：品牌默认值切换为 `Neko Code`
 - 已完成：默认配置目录、临时目录、tmux socket 与 Claude Code 隔离
+- 已完成：保守的 Claude 配置自动迁移，首次启动可从 `~/.claude` 导入核心配置到 `~/.neko-code`
 - 已完成：analytics 默认关停，sink 改为 no-op
 - 已完成：任务路由支持从 `settings.json` 读取 route 级 provider / apiStyle / model / baseUrl
 - 已完成：query 路径按 route transport 显式切换到 openai-compatible shim
@@ -20,6 +21,8 @@
 
 - 将产品默认品牌切换为 Neko Code
 - 将配置目录、临时目录、socket 命名和 Claude Code 隔离
+- 自动迁移 Claude 旧配置目录中的核心用户配置到 Neko Code 新目录
+- 迁移范围仅限全局配置、用户 settings、credentials、用户 `CLAUDE.md` 和 `rules/`
 - 清理残留的 Claude Code 默认文案
 - 保留旧环境变量作为兼容兜底
 
@@ -58,7 +61,7 @@
 
 ## 交付顺序
 
-1. 先完成品牌/路径隔离
+1. 先完成品牌/路径隔离与 Claude 配置自动迁移
 2. 再完成 provider/router 抽象
 3. 再做任务级模型路由
 4. 最后完善 fallback、负载均衡和验证
