@@ -12,6 +12,7 @@
 - `providerMetadata.ts` 已集中维护 provider 默认 base URL 和 key 环境变量。
 - `openaiCompatibleClient.ts` 已能按 provider 解析默认 endpoint 和 key。
 - DeepSeek 这类 OpenAI-compatible provider 可直接纳入同一兼容层。
+- provider 选择策略现支持 `fallback`、`round-robin`、`weighted` 三种模式。
 
 ## 范围
 
@@ -42,6 +43,7 @@
 - 已完成：provider 端点健康状态模块
 - 已完成：OpenAI-compatible 请求按健康状态轮询
 - 已完成：跨 provider 的 fallback 顺序
+- 已完成：provider 级策略切换与权重选择骨架
 - 已完成：`bun-tools health` / `bun-tools providers` 诊断入口
 
 ## 检查点
@@ -50,6 +52,8 @@
 - 单个 endpoint 失败后会切到下一个候选。
 - 同一 provider 的多个 key / baseUrl 能轮换。
 - 主 provider 失败后会切到兼容 provider 顺序。
+- `NEKO_CODE_OPENAI_PROVIDER_STRATEGY` 可切换 provider 级策略。
+- `NEKO_CODE_OPENAI_PROVIDER_WEIGHTS` 可覆盖 provider 权重。
 - OpenAI-compatible 路径不影响 Anthropic 专用路径。
 
 ## 验收标准

@@ -1,5 +1,6 @@
 import type { TaskRouteProviderName, TaskRouteTransportConfig } from './taskRouting.js'
 import {
+  getProviderLoadBalanceStrategy,
   getOpenAICompatibleProviderOrder,
   getProviderDefaultBaseUrls,
   getProviderKeyEnvNames,
@@ -79,13 +80,9 @@ export function selectProviderEndpointCandidates(
   const providerOrder = getOrderedProviders(transport, available)
   if (providerOrder.length === 0) return available
 
-  const sequenceCursor = providerSequenceCursor.get(transport.provider) ?? 0
-  providerSequenceCursor.set(transport.provider, sequenceCursor + 1)
-
-  const orderedProviders = rotateArray(providerOrder, sequenceCursor)
   const orderedCandidates: ProviderEndpointCandidate[] = []
 
-  for (const provider of orderedProviders) {
+  for (const provider of providerOrder) {
     const providerCandidates = available.filter(
       candidate => candidate.provider === provider,
     )
@@ -157,7 +154,23 @@ function getOrderedProviders(
 ): TaskRouteProviderName[] {
   const providerOrder = getProviderOrder(transport)
   const candidateProviders = new Set(candidates.map(candidate => candidate.provider))
-  return providerOrder.filter(provider => candidateProviders.has(provider))
+  const availableProviders = providerOrder.filter(provider =>
+    candidateProviders.has(provider),
+  )
+  if (availableProviders.length <= 1) {
+    return availableProviders
+  }
+
+  const strategy = getProviderLoadBalanceStrategy()
+  switch (strategy) {
+    case 'round-robin':
+      return rotateProvidersByCursor(transport.provider, availableProviders)
+    case 'weighted':
+      return getWeightedProviderOrder(transport.provider, candidates, availableProviders)
+    case 'fallback':
+    default:
+      return availableProviders
+  }
 }
 
 function buildProviderTransport(
@@ -218,6 +231,47 @@ function rotateArray<T>(items: readonly T[], cursor: number): T[] {
   if (items.length === 0) return []
   const start = cursor % items.length
   return [...items.slice(start), ...items.slice(0, start)]
+}
+
+function rotateProvidersByCursor(
+  preferredProvider: TaskRouteProviderName,
+  providers: readonly TaskRouteProviderName[],
+): TaskRouteProviderName[] {
+  const sequenceCursor = providerSequenceCursor.get(preferredProvider) ?? 0
+  providerSequenceCursor.set(preferredProvider, sequenceCursor + 1)
+  return rotateArray(providers, sequenceCursor)
+}
+
+function getWeightedProviderOrder(
+  preferredProvider: TaskRouteProviderName,
+  candidates: readonly ProviderEndpointCandidate[],
+  providers: readonly TaskRouteProviderName[],
+): TaskRouteProviderName[] {
+  const weightedProviders = providers.flatMap(provider => {
+    const providerCandidates = candidates.filter(candidate => candidate.provider === provider)
+    const providerWeight = Math.max(
+      1,
+      ...providerCandidates.map(candidate => candidate.providerWeight),
+    )
+    return Array.from({ length: providerWeight }, () => provider)
+  })
+  if (weightedProviders.length === 0) {
+    return [...providers]
+  }
+
+  const rotated = rotateProvidersByCursor(preferredProvider, weightedProviders)
+  const orderedProviders: TaskRouteProviderName[] = []
+  for (const provider of rotated) {
+    if (!orderedProviders.includes(provider)) {
+      orderedProviders.push(provider)
+    }
+  }
+  for (const provider of providers) {
+    if (!orderedProviders.includes(provider)) {
+      orderedProviders.push(provider)
+    }
+  }
+  return orderedProviders
 }
 
 function splitList(value?: string): string[] {

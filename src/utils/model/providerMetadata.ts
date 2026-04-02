@@ -17,6 +17,11 @@ type ProviderTransportMetadata = {
   loadBalanceWeight: number
 }
 
+export type ProviderLoadBalanceStrategy =
+  | 'fallback'
+  | 'round-robin'
+  | 'weighted'
+
 const PROVIDER_METADATA: Record<TaskRouteProviderName, ProviderTransportMetadata> = {
   anthropic: {
     family: 'anthropic',
@@ -98,7 +103,25 @@ export function getProviderFamily(
 export function getProviderLoadBalanceWeight(
   provider: TaskRouteProviderName,
 ): number {
+  const override = getProviderWeightOverrides()[provider]
+  if (override !== undefined) {
+    return override
+  }
   return getProviderTransportMetadata(provider).loadBalanceWeight
+}
+
+export function getProviderLoadBalanceStrategy(): ProviderLoadBalanceStrategy {
+  const configured = process.env.NEKO_CODE_OPENAI_PROVIDER_STRATEGY
+    ?.trim()
+    .toLowerCase()
+  switch (configured) {
+    case 'fallback':
+    case 'round-robin':
+    case 'weighted':
+      return configured
+    default:
+      return 'fallback'
+  }
 }
 
 export function getOpenAICompatibleProviderOrder(
@@ -115,4 +138,26 @@ export function getOpenAICompatibleProviderOrder(
     ordered.add(provider)
   }
   return Array.from(ordered)
+}
+
+function getProviderWeightOverrides(): Partial<Record<TaskRouteProviderName, number>> {
+  const raw = process.env.NEKO_CODE_OPENAI_PROVIDER_WEIGHTS?.trim()
+  if (!raw) {
+    return {}
+  }
+
+  const overrides: Partial<Record<TaskRouteProviderName, number>> = {}
+  for (const entry of raw.split(/[\n,;|]/)) {
+    const [providerPart, weightPart] = entry.split('=')
+    const provider = providerPart?.trim().toLowerCase() as
+      | TaskRouteProviderName
+      | undefined
+    const weight = Number.parseInt(weightPart?.trim() ?? '', 10)
+    if (!provider || !PROVIDER_NAMES.includes(provider) || !Number.isFinite(weight)) {
+      continue
+    }
+    overrides[provider] = Math.max(1, weight)
+  }
+
+  return overrides
 }

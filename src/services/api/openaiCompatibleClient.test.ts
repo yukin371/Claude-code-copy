@@ -15,6 +15,9 @@ const ENV_KEYS = [
   'GEMINI_API_KEY',
   'NEKO_CODE_GEMINI_API_KEY',
   'NEKO_CODE_CODEX_API_KEY',
+  'NEKO_CODE_GLM_API_KEY',
+  'NEKO_CODE_OPENAI_PROVIDER_STRATEGY',
+  'NEKO_CODE_OPENAI_PROVIDER_WEIGHTS',
 ] as const
 
 const TEST_MACRO = {
@@ -255,6 +258,145 @@ function createJsonResponse(body: unknown, status = 200): Response {
         type: 'text',
         text: 'served by fallback provider',
       },
+    ])
+  })
+
+  test('round-robin strategy rotates the first provider across successful requests', async () => {
+    const { createOpenAICompatibleAnthropicClient } = await import(
+      './openaiCompatibleClient.js'
+    )
+    process.env.NEKO_CODE_OPENAI_PROVIDER_STRATEGY = 'round-robin'
+    process.env.NEKO_CODE_GEMINI_API_KEY = 'gemini-key'
+    process.env.NEKO_CODE_CODEX_API_KEY = 'codex-key'
+
+    const calls: FetchCall[] = []
+    const client = await createOpenAICompatibleAnthropicClient({
+      transport: {
+        provider: 'gemini',
+        apiStyle: 'openai-compatible',
+      },
+      maxRetries: 0,
+      fetchOverride: async (input, init) => {
+        const url = input instanceof Request ? input.url : String(input)
+        const headers = new Headers(init?.headers)
+        calls.push({
+          url,
+          authorization: headers.get('authorization'),
+          googleClient: headers.get('x-goog-api-client'),
+        })
+
+        return createJsonResponse({
+          id: `msg_round_robin_${calls.length}`,
+          model: 'gemini-2.5-pro',
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: 'assistant',
+                content: 'ok',
+              },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: {
+            prompt_tokens: 3,
+            completion_tokens: 2,
+          },
+        })
+      },
+    })
+
+    await client.beta.messages.create({
+      model: 'gemini-2.5-pro',
+      max_tokens: 64,
+      messages: [{ role: 'user', content: 'ping-1' }],
+      stream: false,
+    } as any)
+    await client.beta.messages.create({
+      model: 'gemini-2.5-pro',
+      max_tokens: 64,
+      messages: [{ role: 'user', content: 'ping-2' }],
+      stream: false,
+    } as any)
+
+    expect(calls).toHaveLength(2)
+    expect(calls[0]).toEqual({
+      url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      authorization: 'Bearer gemini-key',
+      googleClient: 'neko-code',
+    })
+    expect(calls[1]).toEqual({
+      url: 'https://api.openai.com/v1/chat/completions',
+      authorization: 'Bearer codex-key',
+      googleClient: null,
+    })
+  })
+
+  test('weighted strategy honors provider weights across successful requests', async () => {
+    const { createOpenAICompatibleAnthropicClient } = await import(
+      './openaiCompatibleClient.js'
+    )
+    process.env.NEKO_CODE_OPENAI_PROVIDER_STRATEGY = 'weighted'
+    process.env.NEKO_CODE_OPENAI_PROVIDER_WEIGHTS = 'gemini=2,codex=1'
+    process.env.NEKO_CODE_GEMINI_API_KEY = 'gemini-key'
+    process.env.NEKO_CODE_CODEX_API_KEY = 'codex-key'
+
+    const calls: FetchCall[] = []
+    const client = await createOpenAICompatibleAnthropicClient({
+      transport: {
+        provider: 'gemini',
+        apiStyle: 'openai-compatible',
+      },
+      maxRetries: 0,
+      fetchOverride: async (input, init) => {
+        const url = input instanceof Request ? input.url : String(input)
+        const headers = new Headers(init?.headers)
+        calls.push({
+          url,
+          authorization: headers.get('authorization'),
+          googleClient: headers.get('x-goog-api-client'),
+        })
+
+        return createJsonResponse({
+          id: `msg_weighted_${calls.length}`,
+          model: 'gemini-2.5-pro',
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: 'assistant',
+                content: 'ok',
+              },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: {
+            prompt_tokens: 3,
+            completion_tokens: 2,
+          },
+        })
+      },
+    })
+
+    for (const content of ['ping-1', 'ping-2', 'ping-3']) {
+      await client.beta.messages.create({
+        model: 'gemini-2.5-pro',
+        max_tokens: 64,
+        messages: [{ role: 'user', content }],
+        stream: false,
+      } as any)
+    }
+
+    expect(calls).toHaveLength(3)
+    expect(calls.map(call => call.url)).toEqual([
+      'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      'https://api.openai.com/v1/chat/completions',
+    ])
+    expect(calls.map(call => call.authorization)).toEqual([
+      'Bearer gemini-key',
+      'Bearer gemini-key',
+      'Bearer codex-key',
     ])
   })
 })
