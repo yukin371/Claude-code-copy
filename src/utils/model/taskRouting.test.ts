@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import {
+  resetMainLoopProviderOverrideForTests,
+  setMainLoopProviderOverride,
+} from './sessionProviderOverride.js'
 
 type EnvSnapshot = Record<string, string | undefined>
 
@@ -29,10 +33,12 @@ describe('taskRouting transport compatibility', () => {
 
   beforeEach(() => {
     envSnapshot = snapshotEnv(ENV_KEYS)
+    resetMainLoopProviderOverrideForTests()
   })
 
   afterEach(() => {
     restoreEnv(envSnapshot)
+    resetMainLoopProviderOverrideForTests()
   })
 
   test('anthropic routes ignore global openai-compatible transport defaults', async () => {
@@ -73,5 +79,21 @@ describe('taskRouting transport compatibility', () => {
     expect(route.apiStyle).toBe('openai-compatible')
     expect(route.baseUrl).toBe('https://custom-gateway.example.com/v1')
     expect(route.apiKey).toBe('shared-openai-key')
+  })
+
+  test('main route prefers session provider override over env provider', async () => {
+    process.env.NEKO_CODE_MAIN_PROVIDER = 'anthropic'
+    setMainLoopProviderOverride('gemini')
+
+    const { getTaskRouteExecutionTarget } = await import('./taskRouting.js')
+    const route = getTaskRouteExecutionTarget('main')
+    const baseRoute = getTaskRouteExecutionTarget('main', {
+      ignoreSessionOverride: true,
+    })
+
+    expect(route.provider).toBe('gemini')
+    expect(route.apiStyle).toBe('openai-compatible')
+    expect(baseRoute.provider).toBe('anthropic')
+    expect(baseRoute.apiStyle).toBe('anthropic')
   })
 })

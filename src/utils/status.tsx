@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import figures from 'figures';
 import * as React from 'react';
 import { color, Text } from '../ink.js';
+import { getMainLoopModelOverride } from '../bootstrap/state.js';
 import type { MCPServerConnection } from '../services/mcp/types.js';
 import { getAccountInformation, isClaudeAISubscriber } from './auth.js';
 import { getLargeMemoryFiles, getMemoryFiles, MAX_MEMORY_CHARACTER_COUNT } from './claudemd.js';
@@ -10,7 +11,8 @@ import { getAWSRegion, getDefaultVertexRegion, isEnvTruthy } from './envUtils.js
 import { getDisplayPath } from './file.js';
 import { formatNumber } from './format.js';
 import { getIdeClientName, type IDEExtensionInstallationStatus, isJetBrainsIde, toIDEDisplayName } from './ide.js';
-import { getClaudeAiUserDefaultModelDescription, modelDisplayString } from './model/model.js';
+import { getClaudeAiUserDefaultModelDescription, getMainLoopModel, modelDisplayString } from './model/model.js';
+import { formatProviderTargetLabel, getMainLoopProviderState } from './model/mainProvider.js';
 import { getProviderLoadBalanceConfigSnapshot } from './model/providerMetadata.js';
 import { getAPIProvider } from './model/providers.js';
 import { getMTLSConfig } from './mtls.js';
@@ -242,6 +244,8 @@ export function buildAPIProviderProperties(): Property[] {
   const apiProvider = getAPIProvider();
   const properties: Property[] = [];
   const providerLoadBalance = getProviderLoadBalanceConfigSnapshot();
+  const mainProviderState = getMainLoopProviderState();
+  const sessionModelOverride = getMainLoopModelOverride();
   if (apiProvider !== 'firstParty') {
     const providerLabel = {
       bedrock: 'AWS Bedrock',
@@ -331,6 +335,14 @@ export function buildAPIProviderProperties(): Property[] {
   properties.push({
     label: 'OpenAI weights',
     value: weightOverrides.length > 0 ? `${weightOverrides.map(([provider, weight]) => `${provider}=${weight}`).join(', ')} (${providerLoadBalance.weightSource})` : `default (${providerLoadBalance.weightSource})`
+  });
+  properties.push({
+    label: 'Main route provider',
+    value: mainProviderState.overrideProvider ? `${formatProviderTargetLabel(mainProviderState.currentTarget)} (session override; base ${formatProviderTargetLabel(mainProviderState.baseTarget)})` : formatProviderTargetLabel(mainProviderState.currentTarget)
+  });
+  properties.push({
+    label: 'Main session model',
+    value: `${getModelDisplayLabel(getMainLoopModel())}${sessionModelOverride ? ' (session override)' : ''}`
   });
   const proxyUrl = getProxyUrl();
   if (proxyUrl) {

@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module'
 import { getProviderDefaultApiStyle, getProviderFamily } from './providerMetadata.js'
+import { getMainLoopProviderOverride } from './sessionProviderOverride.js'
 
 export type TaskRouteName =
   | 'main'
@@ -206,17 +207,26 @@ export function getTaskRouteModelOverride(route: TaskRouteName): string | undefi
 
 export function getTaskRouteExecutionTarget(
   route: TaskRouteName,
+  options: {
+    ignoreSessionOverride?: boolean
+  } = {},
 ): TaskRouteExecutionTarget {
   const defaultTarget = DEFAULT_ROUTE_TARGETS[route]
   const routeSettings = getTaskRouteSettings(route)
+  const sessionProviderOverride =
+    route === 'main' && !options.ignoreSessionOverride
+      ? getMainLoopProviderOverride()
+      : undefined
   const provider = process.env[TASK_ROUTE_PROVIDER_ENV[route]]?.trim()
   const apiStyle = process.env[TASK_ROUTE_API_STYLE_ENV[route]]?.trim()
   const model = process.env[TASK_ROUTE_MODEL_ENV[route]]?.trim()
   const configuredProvider =
+    sessionProviderOverride ??
     normalizeProviderName(provider) ??
     normalizeProviderName(routeSettings?.provider) ??
     defaultTarget.provider
   const configuredApiStyle =
+    inferApiStyleFromProvider(sessionProviderOverride) ??
     normalizeApiStyle(apiStyle) ??
     normalizeApiStyle(routeSettings?.apiStyle) ??
     inferApiStyleFromProvider(

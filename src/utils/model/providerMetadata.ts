@@ -10,6 +10,15 @@ export const PROVIDER_NAMES = [
   'openai-compatible',
 ] as const
 
+const PROVIDER_DISPLAY_NAMES: Record<TaskRouteProviderName, string> = {
+  anthropic: 'Anthropic',
+  codex: 'Codex',
+  gemini: 'Gemini',
+  glm: 'GLM',
+  minimax: 'MiniMax',
+  'openai-compatible': 'OpenAI-Compatible',
+}
+
 type ProviderTransportMetadata = {
   family: 'anthropic' | 'openai-compatible'
   defaultApiStyle: TaskRouteApiStyle
@@ -89,6 +98,12 @@ export function getProviderTransportMetadata(
   provider: TaskRouteProviderName,
 ): ProviderTransportMetadata {
   return PROVIDER_METADATA[provider] ?? PROVIDER_METADATA['openai-compatible']
+}
+
+export function getProviderDisplayName(
+  provider: TaskRouteProviderName,
+): string {
+  return PROVIDER_DISPLAY_NAMES[provider] ?? provider
 }
 
 export function getProviderDefaultApiStyle(

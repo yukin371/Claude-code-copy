@@ -113,6 +113,8 @@ import { safeParseJSON } from './utils/json.js';
 import { logError } from './utils/log.js';
 import { getModelDeprecationWarning } from './utils/model/deprecation.js';
 import { getDefaultMainLoopModel, getUserSpecifiedModelSetting, normalizeModelStringForAPI, parseUserSpecifiedModel } from './utils/model/model.js';
+import { PROVIDER_NAMES } from './utils/model/providerMetadata.js';
+import { setMainLoopProviderOverride } from './utils/model/sessionProviderOverride.js';
 import { ensureModelStringsInitialized } from './utils/model/modelStrings.js';
 import { PERMISSION_MODES } from './utils/permissions/PermissionMode.js';
 import { checkAndDisableBypassPermissions, getAutoModeEnabledStateIfCached, initializeToolPermissionContext, initialPermissionModeFromCLI, isDefaultPermissionModeAuto, parseToolListFromCLI, removeDangerousPermissions, stripDangerousPermissionsForAutoMode, verifyAutoModeGateAccess } from './utils/permissions/permissionSetup.js';
@@ -654,10 +656,11 @@ export async function main() {
         _pendingSSH.permissionMode = rawCliArgs[pmEqIdx]!.split('=')[1];
         rawCliArgs.splice(pmEqIdx, 1);
       }
-      // Forward session-resume + model flags to the remote CLI's initial spawn.
+      // Forward session-resume + main route override flags to the remote CLI's
+      // initial spawn.
       // --continue/-c and --resume <uuid> operate on the REMOTE session history
       // (which persists under the remote's ~/.claude/projects/<cwd>/).
-      // --model controls which model the remote uses.
+      // --model / --provider control which main route the remote uses.
       const extractFlag = (flag: string, opts: {
         hasValue?: boolean;
         as?: string;
@@ -687,6 +690,9 @@ export async function main() {
         hasValue: true
       });
       extractFlag('--model', {
+        hasValue: true
+      });
+      extractFlag('--provider', {
         hasValue: true
       });
     }
@@ -912,7 +918,13 @@ async function run(): Promise<CommanderCommand> {
     return Number.isFinite(n) ? n : undefined;
   }).hideHelp()).option('--from-pr [value]', 'Resume a session linked to a PR by PR number/URL, or open interactive picker with optional search term', value => value || true).option('--no-session-persistence', 'Disable session persistence - sessions will not be saved to disk and cannot be resumed (only works with --print)').addOption(new Option('--resume-session-at <message id>', 'When resuming, only messages up to and including the assistant message with <message.id> (use with --resume in print mode)').argParser(String).hideHelp()).addOption(new Option('--rewind-files <user-message-id>', 'Restore files to state at the specified user message and exit (requires --resume)').hideHelp())
   // @[MODEL LAUNCH]: Update the example model ID in the --model help text.
-  .option('--model <model>', `Model for the current session. Provide an alias for the latest model (e.g. 'sonnet' or 'opus') or a model's full name (e.g. 'claude-sonnet-4-6').`).addOption(new Option('--effort <level>', `Effort level for the current session (low, medium, high, max)`).argParser((rawValue: string) => {
+  .option('--model <model>', `Model for the current session. Provide an alias for the latest model (e.g. 'sonnet' or 'opus') or a model's full name (e.g. 'claude-sonnet-4-6').`).addOption(new Option('--provider <provider>', `API provider for the current session. Supported values: ${PROVIDER_NAMES.join(', ')}.`).argParser((rawValue: string) => {
+    const value = rawValue.trim().toLowerCase();
+    if (!PROVIDER_NAMES.includes(value as (typeof PROVIDER_NAMES)[number])) {
+      throw new InvalidArgumentError(`It must be one of: ${PROVIDER_NAMES.join(', ')}`);
+    }
+    return value;
+  })).addOption(new Option('--effort <level>', `Effort level for the current session (low, medium, high, max)`).argParser((rawValue: string) => {
     const value = rawValue.toLowerCase();
     const allowed = ['low', 'medium', 'high', 'max'];
     if (!allowed.includes(value)) {
@@ -2030,6 +2042,7 @@ async function run(): Promise<CommanderCommand> {
     if (!effectiveModel && mainThreadAgentDefinition?.model && mainThreadAgentDefinition.model !== 'inherit') {
       effectiveModel = parseUserSpecifiedModel(mainThreadAgentDefinition.model);
     }
+    setMainLoopProviderOverride(options.provider);
     setMainLoopModelOverride(effectiveModel);
 
     // Compute resolved model for hooks (use user-specified model at launch)
