@@ -15,6 +15,7 @@ import type {
 import type { Stream } from '@anthropic-ai/sdk/streaming.mjs'
 import { randomUUID } from 'crypto'
 import { getSessionId } from 'src/bootstrap/sessionId.js'
+import { createCombinedAbortSignal } from 'src/utils/combinedAbortSignal.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { getHttpUserAgent } from 'src/utils/httpUserAgent.js'
 import { jsonStringify } from 'src/utils/slowOperations.js'
@@ -277,10 +278,10 @@ async function executeOpenAICompatibleRequest({
         requestId,
         controller,
         fetchSignal: signal,
+        cleanup: clear,
         resolvedModel,
       })
       markProviderEndpointSuccess(candidate)
-      clear()
       return {
         response,
         requestId,
@@ -315,18 +316,21 @@ function createOpenAICompatibleStream({
   requestId,
   controller,
   fetchSignal,
+  cleanup,
   resolvedModel,
 }: {
   response: Response
   requestId: string
   controller: AbortController
   fetchSignal: AbortSignal
+  cleanup: () => void
   resolvedModel: string
 }): OpenAICompatibleStream {
   const stream = {
     controller,
     async *[Symbol.asyncIterator]() {
       if (!response.body) {
+        cleanup()
         return
       }
 
@@ -373,6 +377,7 @@ function createOpenAICompatibleStream({
         } catch {
           // ignore
         }
+        cleanup()
       }
     },
   } as OpenAICompatibleStream
@@ -989,6 +994,20 @@ function buildHeaders(apiKey: string | undefined, provider: string): Headers {
     headers.set('x-goog-api-client', 'neko-code')
   }
   return headers
+}
+
+function attachAbortSignals(
+  controller: AbortController,
+  requestOptions?: { signal?: AbortSignal; timeout?: number },
+): { signal: AbortSignal; clear: () => void } {
+  const { signal, cleanup } = createCombinedAbortSignal(controller.signal, {
+    signalB: requestOptions?.signal,
+    timeoutMs: requestOptions?.timeout,
+  })
+  return {
+    signal,
+    clear: cleanup,
+  }
 }
 
 function parseNextSSEFrame(buffer: string): { data: string; remaining: string } | null {

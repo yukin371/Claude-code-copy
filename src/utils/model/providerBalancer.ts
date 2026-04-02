@@ -134,6 +134,12 @@ export function getProviderEndpointHealthSnapshot(
   return entries.filter(entry => entry.endpointId.startsWith(`${provider}|`))
 }
 
+export function resetProviderBalancerForTests(): void {
+  providerSequenceCursor.clear()
+  providerEndpointCursor.clear()
+  endpointHealth.clear()
+}
+
 function getProviderOrder(transport: TaskRouteTransportConfig): TaskRouteProviderName[] {
   const preferred = transport.provider
   if (transport.baseUrl?.trim() || transport.apiKey?.trim()) {
