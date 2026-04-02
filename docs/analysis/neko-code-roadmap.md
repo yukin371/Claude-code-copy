@@ -1,13 +1,13 @@
 # Neko Code Roadmap
 
-这份 roadmap 记录 Neko Code 从 Claude Code 基线演进到独立、多模型、多 API 平台的开发方向。
+这份 roadmap 记录 Neko Code 从 Claude Code 基线演进到独立、多模型、多 API 平台的开发方向。多 API 接入的具体原则见 [Neko Code Provider Integration Guide](./neko-code-provider-integration-guide.md)。
 
 ## 当前进度
 
 - 已完成：品牌默认值切换为 `Neko Code`
 - 已完成：默认配置目录、临时目录、tmux socket 与 Claude Code 隔离
 - 已完成：analytics 默认关停，sink 改为 no-op
-- 进行中：统一 provider/router 抽象
+- 进行中：统一 provider/router 抽象（已加入 task route execution target 骨架）
 - 进行中：按任务路由不同模型（主线程 / subagent / 前端 / 审查已接入运行时）
 - 待开始：按任务路由不同 API
 - 待开始：OpenAI-compatible 接入
@@ -26,6 +26,7 @@
 - 支持 Anthropic、OpenAI-compatible 和现有第三方 provider
 - 统一模型请求、响应、错误和重试策略
 - 为 provider 加健康检查和自动切换
+- 具体接入原则与边界见 `neko-code-provider-integration-guide.md`
 
 ## Phase 3: 任务级模型路由
 

@@ -8,6 +8,22 @@ export type TaskRouteName =
   | 'guide'
   | 'statusline'
 
+export type TaskRouteApiStyle = 'anthropic' | 'openai-compatible'
+
+export type TaskRouteProviderName =
+  | 'anthropic'
+  | 'codex'
+  | 'gemini'
+  | 'glm'
+  | 'minimax'
+  | 'openai-compatible'
+
+export type TaskRouteExecutionTarget = {
+  provider: TaskRouteProviderName
+  apiStyle: TaskRouteApiStyle
+  model?: string
+}
+
 const TASK_ROUTE_MODEL_ENV: Record<TaskRouteName, string> = {
   main: 'NEKO_CODE_MAIN_MODEL',
   subagent: 'NEKO_CODE_SUBAGENT_MODEL',
@@ -17,6 +33,39 @@ const TASK_ROUTE_MODEL_ENV: Record<TaskRouteName, string> = {
   plan: 'NEKO_CODE_PLAN_MODEL',
   guide: 'NEKO_CODE_GUIDE_MODEL',
   statusline: 'NEKO_CODE_STATUSLINE_MODEL',
+}
+
+const TASK_ROUTE_PROVIDER_ENV: Record<TaskRouteName, string> = {
+  main: 'NEKO_CODE_MAIN_PROVIDER',
+  subagent: 'NEKO_CODE_SUBAGENT_PROVIDER',
+  frontend: 'NEKO_CODE_FRONTEND_PROVIDER',
+  review: 'NEKO_CODE_REVIEW_PROVIDER',
+  explore: 'NEKO_CODE_EXPLORE_PROVIDER',
+  plan: 'NEKO_CODE_PLAN_PROVIDER',
+  guide: 'NEKO_CODE_GUIDE_PROVIDER',
+  statusline: 'NEKO_CODE_STATUSLINE_PROVIDER',
+}
+
+const TASK_ROUTE_API_STYLE_ENV: Record<TaskRouteName, string> = {
+  main: 'NEKO_CODE_MAIN_API_STYLE',
+  subagent: 'NEKO_CODE_SUBAGENT_API_STYLE',
+  frontend: 'NEKO_CODE_FRONTEND_API_STYLE',
+  review: 'NEKO_CODE_REVIEW_API_STYLE',
+  explore: 'NEKO_CODE_EXPLORE_API_STYLE',
+  plan: 'NEKO_CODE_PLAN_API_STYLE',
+  guide: 'NEKO_CODE_GUIDE_API_STYLE',
+  statusline: 'NEKO_CODE_STATUSLINE_API_STYLE',
+}
+
+const DEFAULT_ROUTE_TARGETS: Record<TaskRouteName, TaskRouteExecutionTarget> = {
+  main: { provider: 'glm', apiStyle: 'openai-compatible' },
+  subagent: { provider: 'minimax', apiStyle: 'openai-compatible' },
+  frontend: { provider: 'gemini', apiStyle: 'openai-compatible' },
+  review: { provider: 'codex', apiStyle: 'openai-compatible' },
+  explore: { provider: 'anthropic', apiStyle: 'anthropic' },
+  plan: { provider: 'anthropic', apiStyle: 'anthropic' },
+  guide: { provider: 'anthropic', apiStyle: 'anthropic' },
+  statusline: { provider: 'anthropic', apiStyle: 'anthropic' },
 }
 
 const FRONTEND_TASK_RE =
@@ -83,19 +132,63 @@ export function resolveTaskRouteName(params: {
 }
 
 export function getTaskRouteModelOverride(route: TaskRouteName): string | undefined {
-  const envName = TASK_ROUTE_MODEL_ENV[route]
-  const envValue = process.env[envName]?.trim()
-  if (envValue) {
-    return envValue
-  }
+  return getTaskRouteExecutionTarget(route).model
+}
 
-  switch (route) {
-    case 'frontend':
-      return 'gemini'
-    case 'review':
-      return 'codex'
-    case 'subagent':
-      return process.env.CLAUDE_CODE_SUBAGENT_MODEL?.trim() || undefined
+export function getTaskRouteExecutionTarget(
+  route: TaskRouteName,
+): TaskRouteExecutionTarget {
+  const defaultTarget = DEFAULT_ROUTE_TARGETS[route]
+  const provider = process.env[TASK_ROUTE_PROVIDER_ENV[route]]?.trim()
+  const apiStyle = process.env[TASK_ROUTE_API_STYLE_ENV[route]]?.trim()
+  const model = process.env[TASK_ROUTE_MODEL_ENV[route]]?.trim()
+
+  return {
+    provider:
+      normalizeProviderName(provider) ?? defaultTarget.provider,
+    apiStyle:
+      normalizeApiStyle(apiStyle) ?? defaultTarget.apiStyle,
+    model: model || defaultTarget.model,
+  }
+}
+
+export function resolveTaskRouteExecutionTarget(params: {
+  agentType?: string
+  taskPrompt?: string
+  taskHints?: readonly string[]
+}): TaskRouteExecutionTarget & { route: TaskRouteName } {
+  const route = resolveTaskRouteName(params)
+  return {
+    route,
+    ...getTaskRouteExecutionTarget(route),
+  }
+}
+
+function normalizeProviderName(
+  provider?: string,
+): TaskRouteProviderName | undefined {
+  const normalized = provider?.trim().toLowerCase()
+  switch (normalized) {
+    case 'anthropic':
+    case 'codex':
+    case 'gemini':
+    case 'glm':
+    case 'minimax':
+    case 'openai-compatible':
+      return normalized as TaskRouteProviderName
+    default:
+      return undefined
+  }
+}
+
+function normalizeApiStyle(
+  apiStyle?: string,
+): TaskRouteApiStyle | undefined {
+  const normalized = apiStyle?.trim().toLowerCase()
+  switch (normalized) {
+    case 'anthropic':
+    case 'openai-compatible':
+      return normalized as TaskRouteApiStyle
     default:
       return undefined
   }

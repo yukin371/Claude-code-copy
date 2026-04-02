@@ -9,7 +9,7 @@ import {
 } from './model.js'
 import { getAPIProvider } from './providers.js'
 import {
-  getTaskRouteModelOverride,
+  getTaskRouteExecutionTarget,
   resolveTaskRouteName,
 } from './taskRouting.js'
 
@@ -55,9 +55,9 @@ export function getAgentModel(
   }
 
   const route = resolveTaskRouteName({ agentType, taskPrompt })
-  const routeModelOverride = getTaskRouteModelOverride(route)
-  if (routeModelOverride) {
-    return parseUserSpecifiedModel(routeModelOverride)
+  const routeTarget = getTaskRouteExecutionTarget(route)
+  if (routeTarget.model) {
+    return parseUserSpecifiedModel(routeTarget.model)
   }
 
   if (route === 'subagent' && process.env.CLAUDE_CODE_SUBAGENT_MODEL) {

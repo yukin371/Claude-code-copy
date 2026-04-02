@@ -24,7 +24,7 @@ import { formatModelPricing, getOpus46CostTier } from '../modelCost.js'
 import { getSettings_DEPRECATED } from '../settings/settings.js'
 import type { PermissionMode } from '../permissions/PermissionMode.js'
 import { getAPIProvider } from './providers.js'
-import { getTaskRouteModelOverride } from './taskRouting.js'
+import { getTaskRouteExecutionTarget } from './taskRouting.js'
 import { LIGHTNING_BOLT } from '../../constants/figures.js'
 import { isModelAllowed } from './modelAllowlist.js'
 import { type ModelAlias, isModelAlias } from './aliases.js'
@@ -91,9 +91,9 @@ export function getUserSpecifiedModelSetting(): ModelSetting | undefined {
  * @returns The resolved model name to use
  */
 export function getMainLoopModel(): ModelName {
-  const routeOverride = getTaskRouteModelOverride('main')
-  if (routeOverride) {
-    return parseUserSpecifiedModel(routeOverride)
+  const routeTarget = getTaskRouteExecutionTarget('main')
+  if (routeTarget.model) {
+    return parseUserSpecifiedModel(routeTarget.model)
   }
   const model = getUserSpecifiedModelSetting()
   if (model !== undefined && model !== null) {
