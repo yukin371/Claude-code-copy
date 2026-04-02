@@ -5,6 +5,7 @@ import { applyBedrockRegionPrefix, getBedrockRegionPrefix } from './bedrock.js'
 import {
   getCanonicalName,
   getRuntimeMainLoopModel,
+  normalizeModelStringForAPI,
   parseUserSpecifiedModel,
 } from './model.js'
 import { getAPIProvider } from './providers.js'
@@ -57,7 +58,9 @@ export function getAgentModel(
   const route = resolveTaskRouteName({ agentType, taskPrompt })
   const routeTarget = getTaskRouteExecutionTarget(route)
   if (routeTarget.model) {
-    return parseUserSpecifiedModel(routeTarget.model)
+    return routeTarget.apiStyle === 'anthropic'
+      ? parseUserSpecifiedModel(routeTarget.model)
+      : normalizeModelStringForAPI(routeTarget.model)
   }
 
   if (route === 'subagent' && process.env.CLAUDE_CODE_SUBAGENT_MODEL) {

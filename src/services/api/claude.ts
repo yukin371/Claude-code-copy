@@ -100,6 +100,7 @@ import {
   extractQuotaStatusFromHeaders,
 } from '../claudeAiLimits.js'
 import { getAPIContextManagement } from '../compact/apiMicrocompact.js'
+import { getTaskRouteAnthropicClient } from './client.js'
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
@@ -228,7 +229,7 @@ import {
 import { getInitializationStatus } from '../lsp/manager.js'
 import { isToolFromMcpServer } from '../mcp/utils.js'
 import { withStreamingVCR, withVCR } from '../vcr.js'
-import { CLIENT_REQUEST_ID_HEADER, getAnthropicClient } from './client.js'
+import { CLIENT_REQUEST_ID_HEADER } from './client.js'
 import {
   API_ERROR_MESSAGE_PREFIX,
   CUSTOM_OFF_SWITCH_MESSAGE,
@@ -841,13 +842,14 @@ export async function* executeNonStreamingRequest(
 ): AsyncGenerator<SystemAPIErrorMessage, BetaMessage> {
   const fallbackTimeoutMs = getNonstreamingFallbackTimeoutMs()
   const generator = withRetry(
-    () =>
-      getAnthropicClient({
-        maxRetries: 0,
-        model: clientOptions.model,
-        fetchOverride: clientOptions.fetchOverride,
-        source: clientOptions.source,
-      }),
+      () =>
+        getTaskRouteAnthropicClient({
+          maxRetries: 0,
+          model: clientOptions.model,
+          fetchOverride: clientOptions.fetchOverride,
+          source: clientOptions.source,
+          querySource: clientOptions.source,
+        }),
     async (anthropic, attempt, context) => {
       const start = Date.now()
       const retryParams = paramsFromContext(context)
@@ -1777,11 +1779,12 @@ async function* queryModel(
     queryCheckpoint('query_client_creation_start')
     const generator = withRetry(
       () =>
-        getAnthropicClient({
+        getTaskRouteAnthropicClient({
           maxRetries: 0, // Disabled auto-retry in favor of manual implementation
           model: options.model,
           fetchOverride: options.fetchOverride,
           source: options.querySource,
+          querySource: options.querySource,
         }),
       async (anthropic, attempt, context) => {
         attemptNumber = attempt

@@ -22,6 +22,7 @@ import type { SettingSource } from 'src/utils/settings/constants.js'
 import { resetSettingsCache } from 'src/utils/settings/settingsCache.js'
 import type { PluginHookMatcher } from 'src/utils/settings/types.js'
 import { createSignal } from 'src/utils/signal.js'
+import { setSessionId } from 'src/bootstrap/sessionId.js'
 
 // Union type for registered hooks - can be SDK callbacks or native plugin hooks
 type RegisteredHookMatcher = HookCallbackMatcher | PluginHookMatcher
@@ -427,6 +428,7 @@ function getInitialState(): State {
 
 // AND ESPECIALLY HERE
 const STATE: State = getInitialState()
+setSessionId(STATE.sessionId)
 
 export function getSessionId(): SessionId {
   return STATE.sessionId
@@ -446,6 +448,7 @@ export function regenerateSessionId(
   // null so getTranscriptPath() derives from originalCwd.
   STATE.sessionId = randomUUID() as SessionId
   STATE.sessionProjectDir = null
+  setSessionId(STATE.sessionId)
   return STATE.sessionId
 }
 
@@ -475,6 +478,7 @@ export function switchSession(
   STATE.planSlugCache.delete(STATE.sessionId)
   STATE.sessionId = sessionId
   STATE.sessionProjectDir = projectDir
+  setSessionId(sessionId)
   sessionSwitched.emit(sessionId)
 }
 
@@ -923,6 +927,7 @@ export function resetStateForTests(): void {
   Object.entries(getInitialState()).forEach(([key, value]) => {
     STATE[key as keyof State] = value as never
   })
+  setSessionId(STATE.sessionId)
   outputTokensAtTurnStart = 0
   currentTurnTokenBudget = null
   budgetContinuationCount = 0

@@ -28,6 +28,11 @@ import {
   getVertexRegionForModel,
   isEnvTruthy,
 } from '../../utils/envUtils.js'
+import { createOpenAICompatibleAnthropicClient } from './openaiCompatibleClient.js'
+import {
+  resolveTaskRouteClientConfigFromQuerySource,
+  type TaskRouteTransportConfig,
+} from '../../utils/model/taskRouting.js'
 
 /**
  * Environment variables for different client types:
@@ -91,13 +96,26 @@ export async function getAnthropicClient({
   model,
   fetchOverride,
   source,
+  transport,
 }: {
   apiKey?: string
   maxRetries: number
   model?: string
   fetchOverride?: ClientOptions['fetch']
   source?: string
+  transport?: TaskRouteTransportConfig
 }): Promise<Anthropic> {
+  if (transport?.apiStyle === 'openai-compatible') {
+    return createOpenAICompatibleAnthropicClient({
+      transport,
+      apiKey,
+      maxRetries,
+      model,
+      fetchOverride,
+      source,
+    })
+  }
+
   const containerId = process.env.CLAUDE_CODE_CONTAINER_ID
   const remoteSessionId = process.env.CLAUDE_CODE_REMOTE_SESSION_ID
   const clientApp = process.env.CLAUDE_AGENT_SDK_CLIENT_APP
@@ -325,6 +343,32 @@ async function configureApiKeyHeaders(
   if (token) {
     headers['Authorization'] = `Bearer ${token}`
   }
+}
+
+export async function getTaskRouteAnthropicClient({
+  apiKey,
+  maxRetries,
+  model,
+  fetchOverride,
+  source,
+  querySource,
+}: {
+  apiKey?: string
+  maxRetries: number
+  model?: string
+  fetchOverride?: ClientOptions['fetch']
+  source?: string
+  querySource?: string
+}): Promise<Anthropic> {
+  const routeConfig = resolveTaskRouteClientConfigFromQuerySource(querySource)
+  return getAnthropicClient({
+    apiKey,
+    maxRetries,
+    model,
+    fetchOverride,
+    source,
+    transport: routeConfig,
+  })
 }
 
 function getCustomHeaders(): Record<string, string> {

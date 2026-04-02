@@ -1,3 +1,6 @@
+import { getSettings_DEPRECATED } from '../settings/settings.js'
+import { getProviderDefaultApiStyle } from './providerMetadata.js'
+
 export type TaskRouteName =
   | 'main'
   | 'subagent'
@@ -22,6 +25,23 @@ export type TaskRouteExecutionTarget = {
   provider: TaskRouteProviderName
   apiStyle: TaskRouteApiStyle
   model?: string
+}
+
+export type TaskRouteTransportConfig = TaskRouteExecutionTarget & {
+  baseUrl?: string
+  apiKey?: string
+}
+
+export type TaskRouteClientConfig = TaskRouteTransportConfig & {
+  route: TaskRouteName
+  executionTarget: TaskRouteExecutionTarget
+}
+
+type TaskRouteSettings = {
+  provider?: string
+  apiStyle?: string
+  model?: string
+  baseUrl?: string
 }
 
 const TASK_ROUTE_MODEL_ENV: Record<TaskRouteName, string> = {
@@ -57,6 +77,28 @@ const TASK_ROUTE_API_STYLE_ENV: Record<TaskRouteName, string> = {
   statusline: 'NEKO_CODE_STATUSLINE_API_STYLE',
 }
 
+const TASK_ROUTE_BASE_URL_ENV: Record<TaskRouteName, string> = {
+  main: 'NEKO_CODE_MAIN_BASE_URL',
+  subagent: 'NEKO_CODE_SUBAGENT_BASE_URL',
+  frontend: 'NEKO_CODE_FRONTEND_BASE_URL',
+  review: 'NEKO_CODE_REVIEW_BASE_URL',
+  explore: 'NEKO_CODE_EXPLORE_BASE_URL',
+  plan: 'NEKO_CODE_PLAN_BASE_URL',
+  guide: 'NEKO_CODE_GUIDE_BASE_URL',
+  statusline: 'NEKO_CODE_STATUSLINE_BASE_URL',
+}
+
+const TASK_ROUTE_API_KEY_ENV: Record<TaskRouteName, string> = {
+  main: 'NEKO_CODE_MAIN_API_KEY',
+  subagent: 'NEKO_CODE_SUBAGENT_API_KEY',
+  frontend: 'NEKO_CODE_FRONTEND_API_KEY',
+  review: 'NEKO_CODE_REVIEW_API_KEY',
+  explore: 'NEKO_CODE_EXPLORE_API_KEY',
+  plan: 'NEKO_CODE_PLAN_API_KEY',
+  guide: 'NEKO_CODE_GUIDE_API_KEY',
+  statusline: 'NEKO_CODE_STATUSLINE_API_KEY',
+}
+
 const DEFAULT_ROUTE_TARGETS: Record<TaskRouteName, TaskRouteExecutionTarget> = {
   main: { provider: 'glm', apiStyle: 'openai-compatible' },
   subagent: { provider: 'minimax', apiStyle: 'openai-compatible' },
@@ -66,6 +108,26 @@ const DEFAULT_ROUTE_TARGETS: Record<TaskRouteName, TaskRouteExecutionTarget> = {
   plan: { provider: 'anthropic', apiStyle: 'anthropic' },
   guide: { provider: 'anthropic', apiStyle: 'anthropic' },
   statusline: { provider: 'anthropic', apiStyle: 'anthropic' },
+}
+
+function getTaskRouteSettings(route: TaskRouteName): TaskRouteSettings | undefined {
+  return (
+    (getSettings_DEPRECATED()?.taskRoutes?.[route] as TaskRouteSettings | undefined) ??
+    undefined
+  )
+}
+
+function inferApiStyleFromProvider(
+  provider?: TaskRouteProviderName,
+): TaskRouteApiStyle | undefined {
+  if (!provider) return undefined
+  return getProviderDefaultApiStyle(provider)
+}
+
+function normalizeTaskRouteModel(model?: string): string | undefined {
+  const trimmed = model?.trim()
+  if (!trimmed) return undefined
+  return normalizeOpenAICompatibleModel(trimmed)
 }
 
 const FRONTEND_TASK_RE =
@@ -132,23 +194,57 @@ export function resolveTaskRouteName(params: {
 }
 
 export function getTaskRouteModelOverride(route: TaskRouteName): string | undefined {
-  return getTaskRouteExecutionTarget(route).model
+  return resolveTaskRouteModel(getTaskRouteExecutionTarget(route))
 }
 
 export function getTaskRouteExecutionTarget(
   route: TaskRouteName,
 ): TaskRouteExecutionTarget {
   const defaultTarget = DEFAULT_ROUTE_TARGETS[route]
+  const routeSettings = getTaskRouteSettings(route)
   const provider = process.env[TASK_ROUTE_PROVIDER_ENV[route]]?.trim()
   const apiStyle = process.env[TASK_ROUTE_API_STYLE_ENV[route]]?.trim()
   const model = process.env[TASK_ROUTE_MODEL_ENV[route]]?.trim()
+  const configuredProvider =
+    normalizeProviderName(provider) ??
+    normalizeProviderName(routeSettings?.provider) ??
+    defaultTarget.provider
+  const configuredApiStyle =
+    normalizeApiStyle(apiStyle) ??
+    normalizeApiStyle(routeSettings?.apiStyle) ??
+    inferApiStyleFromProvider(
+      normalizeProviderName(provider) ??
+        normalizeProviderName(routeSettings?.provider),
+    ) ??
+    defaultTarget.apiStyle
 
   return {
-    provider:
-      normalizeProviderName(provider) ?? defaultTarget.provider,
-    apiStyle:
-      normalizeApiStyle(apiStyle) ?? defaultTarget.apiStyle,
-    model: model || defaultTarget.model,
+    provider: configuredProvider,
+    apiStyle: configuredApiStyle,
+    model: normalizeTaskRouteModel(model || routeSettings?.model),
+  }
+}
+
+export function getTaskRouteTransportConfig(
+  route: TaskRouteName,
+): TaskRouteTransportConfig {
+  const target = getTaskRouteExecutionTarget(route)
+  const routeSettings = getTaskRouteSettings(route)
+  const baseUrl =
+    process.env[TASK_ROUTE_BASE_URL_ENV[route]]?.trim() ||
+    routeSettings?.baseUrl?.trim() ||
+    process.env.NEKO_CODE_OPENAI_COMPATIBLE_BASE_URL?.trim() ||
+    process.env.OPENAI_BASE_URL?.trim()
+  const apiKey =
+    process.env[TASK_ROUTE_API_KEY_ENV[route]]?.trim() ||
+    process.env.NEKO_CODE_OPENAI_COMPATIBLE_API_KEY?.trim() ||
+    process.env.OPENAI_API_KEY?.trim()
+
+  return {
+    ...target,
+    apiStyle: baseUrl ? 'openai-compatible' : target.apiStyle,
+    baseUrl,
+    apiKey,
   }
 }
 
@@ -161,6 +257,67 @@ export function resolveTaskRouteExecutionTarget(params: {
   return {
     route,
     ...getTaskRouteExecutionTarget(route),
+  }
+}
+
+export function resolveTaskRouteModel(target: TaskRouteExecutionTarget): string | undefined {
+  return normalizeTaskRouteModel(target.model)
+}
+
+export function resolveTaskRouteTransportConfig(params: {
+  agentType?: string
+  taskPrompt?: string
+  taskHints?: readonly string[]
+}): TaskRouteTransportConfig & { route: TaskRouteName } {
+  const route = resolveTaskRouteName(params)
+  return {
+    route,
+    ...getTaskRouteTransportConfig(route),
+  }
+}
+
+export function resolveTaskRouteNameFromQuerySource(
+  querySource?: string,
+): TaskRouteName {
+  const normalized = querySource?.trim().toLowerCase() ?? ''
+  if (!normalized) return 'main'
+  if (normalized === 'compact' || normalized === 'session_memory') return 'main'
+  if (normalized.startsWith('repl_main_thread')) return 'main'
+  if (normalized === 'verification_agent') return 'review'
+  if (normalized === 'hook_agent') return 'subagent'
+  if (normalized === 'web_search_tool') return 'main'
+
+  if (normalized.startsWith('agent:builtin:')) {
+    const agentType = normalized.slice('agent:builtin:'.length)
+    if (agentType === 'explore') return 'explore'
+    if (agentType === 'plan') return 'plan'
+    if (agentType === 'claude-code-guide') return 'guide'
+    if (agentType === 'statusline-setup') return 'statusline'
+    if (agentType === 'verification') return 'review'
+    return 'subagent'
+  }
+
+  if (normalized.startsWith('agent:')) return 'subagent'
+  return 'main'
+}
+
+export function resolveTaskRouteTransportFromQuerySource(querySource?: string) {
+  const route = resolveTaskRouteNameFromQuerySource(querySource)
+  return {
+    route,
+    ...getTaskRouteTransportConfig(route),
+  }
+}
+
+export function resolveTaskRouteClientConfigFromQuerySource(
+  querySource?: string,
+): TaskRouteClientConfig {
+  const route = resolveTaskRouteNameFromQuerySource(querySource)
+  const executionTarget = getTaskRouteExecutionTarget(route)
+  return {
+    route,
+    executionTarget,
+    ...getTaskRouteTransportConfig(route),
   }
 }
 
@@ -179,6 +336,10 @@ function normalizeProviderName(
     default:
       return undefined
   }
+}
+
+function normalizeOpenAICompatibleModel(model: string): string {
+  return model.replace(/\[(1|2)m\]$/gi, '').trim()
 }
 
 function normalizeApiStyle(

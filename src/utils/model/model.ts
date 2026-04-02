@@ -93,7 +93,9 @@ export function getUserSpecifiedModelSetting(): ModelSetting | undefined {
 export function getMainLoopModel(): ModelName {
   const routeTarget = getTaskRouteExecutionTarget('main')
   if (routeTarget.model) {
-    return parseUserSpecifiedModel(routeTarget.model)
+    return routeTarget.apiStyle === 'anthropic'
+      ? parseUserSpecifiedModel(routeTarget.model)
+      : normalizeModelStringForAPI(routeTarget.model)
   }
   const model = getUserSpecifiedModelSetting()
   if (model !== undefined && model !== null) {

@@ -36,6 +36,33 @@ export const EnvironmentVariablesSchema = lazySchema(() =>
   z.record(z.string(), z.coerce.string()),
 )
 
+const TaskRouteSettingsSchema = z
+  .object({
+    provider: z
+      .enum(['anthropic', 'codex', 'gemini', 'glm', 'minimax', 'openai-compatible'])
+      .optional()
+      .describe(
+        'Provider to use for this task route. Defaults to the built-in route provider when omitted.',
+      ),
+    apiStyle: z
+      .enum(['anthropic', 'openai-compatible'])
+      .optional()
+      .describe(
+        'API style to use for this task route. Set to openai-compatible for gateway-style providers.',
+      ),
+    model: z
+      .string()
+      .optional()
+      .describe('Model name to use for this task route. Leave empty to fall back to the global model.'),
+    baseUrl: z
+      .string()
+      .optional()
+      .describe(
+        'Optional base URL override for this task route. When set, the route is treated as openai-compatible.',
+      ),
+  })
+  .passthrough()
+
 /**
  * Schema for permissions section
  */
@@ -376,6 +403,12 @@ export const SettingsSchema = lazySchema(() =>
         .string()
         .optional()
         .describe('Override the default model used by Claude Code'),
+      taskRoutes: z
+        .record(z.string(), TaskRouteSettingsSchema)
+        .optional()
+        .describe(
+          'Per-route provider, API style, model, and base URL configuration for task routing.',
+        ),
       // Enterprise allowlist of models
       availableModels: z
         .array(z.string())
