@@ -87,7 +87,7 @@
 
 ## Fallback 原则
 
-- 同 provider 内先切换模型，再切换 endpoint
+- 同 provider 内先切换 endpoint，再切换 provider
 - provider 不可用时切换到下一个 provider
 - 模型失败要区分限流、超时、不可用、参数错误
 - fallback 需要保留原因和命中记录，便于观测
@@ -100,6 +100,37 @@
 - model 映射配置：主模型、subagent 模型、frontend 模型、review 模型
 - 路由策略配置：任务到 provider/model 的映射
 - 容错策略配置：重试、熔断、fallback、权重
+
+推荐的路由配置入口是 `settings.json` 下的 `taskRoutes`：
+
+```json
+{
+  "taskRoutes": {
+    "main": {
+      "provider": "glm",
+      "apiStyle": "openai-compatible",
+      "model": "YOUR_MAIN_MODEL"
+    },
+    "subagent": {
+      "provider": "minimax",
+      "apiStyle": "openai-compatible",
+      "model": "YOUR_SUBAGENT_MODEL"
+    },
+    "frontend": {
+      "provider": "gemini",
+      "apiStyle": "openai-compatible",
+      "model": "YOUR_FRONTEND_MODEL"
+    },
+    "review": {
+      "provider": "codex",
+      "apiStyle": "openai-compatible",
+      "model": "YOUR_REVIEW_MODEL"
+    }
+  }
+}
+```
+
+模型名不要在源码里硬编码，应该由用户自己在配置里提供。
 
 ## 接入顺序
 

@@ -15,6 +15,15 @@
 | GitNexus 社区 | 1,068 个 |
 | 执行流 | 300 条 |
 
+## 运行时约定
+
+- 默认运行时是 Bun，不是 npm/node。
+- 本地脚本优先用 `bun run <file>` 或 `bunx <tool>`。
+- 项目里可直接使用 Bun 原生能力，例如 `bun:bundle`、`Bun.file`、`Bun.spawn`。
+- 运行时自检入口见 [`scripts/bun-tools.ts`](/E:/Github/claude-code/scripts/bun-tools.ts)。
+- 基本开发与提交规范见 [`CONTRIBUTING.md`](/E:/Github/claude-code/CONTRIBUTING.md)。
+- 提交信息默认使用 `type(scope): 中文说明` 形式。
+
 ---
 
 ## 架构全景图
