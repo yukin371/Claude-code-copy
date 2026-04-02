@@ -55,7 +55,7 @@ import {
 import { registerFrontmatterHooks } from '../../utils/hooks/registerFrontmatterHooks.js'
 import { clearSessionHooks } from '../../utils/hooks/sessionHooks.js'
 import { executeSubagentStartHooks } from '../../utils/hooks.js'
-import { createUserMessage } from '../../utils/messages.js'
+import { createUserMessage, extractTextContent } from '../../utils/messages.js'
 import { getAgentModel } from '../../utils/model/agent.js'
 import type { ModelAlias } from '../../utils/model/aliases.js'
 import {
@@ -245,6 +245,26 @@ function isRecordableMessage(
   )
 }
 
+function getTaskPromptFromMessages(messages: Message[]): string | undefined {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i]
+    if (message.type !== 'user') continue
+
+    const content = message.message.content
+    if (Array.isArray(content)) {
+      const text = extractTextContent(content, '\n').trim()
+      if (text) return text
+      continue
+    }
+
+    if (typeof content === 'string') {
+      const text = content.trim()
+      if (text) return text
+    }
+  }
+  return undefined
+}
+
 export async function* runAgent({
   agentDefinition,
   promptMessages,
@@ -342,6 +362,8 @@ export async function* runAgent({
     toolUseContext.options.mainLoopModel,
     model,
     permissionMode,
+    agentDefinition.agentType,
+    getTaskPromptFromMessages(promptMessages),
   )
 
   const agentId = override?.agentId ? override.agentId : createAgentId()

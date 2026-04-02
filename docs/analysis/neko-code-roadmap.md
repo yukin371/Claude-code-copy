@@ -8,7 +8,8 @@
 - 已完成：默认配置目录、临时目录、tmux socket 与 Claude Code 隔离
 - 已完成：analytics 默认关停，sink 改为 no-op
 - 进行中：统一 provider/router 抽象
-- 待开始：按任务路由不同模型与 API
+- 进行中：按任务路由不同模型（主线程 / subagent / 前端 / 审查已接入运行时）
+- 待开始：按任务路由不同 API
 - 待开始：OpenAI-compatible 接入
 - 待开始：fallback / 负载均衡 / 熔断
 
@@ -33,6 +34,7 @@
 - review / verification 使用更强模型
 - 前端修改任务使用专门模型
 - built-in agent 支持显式映射
+- 运行时已接入任务提示词解析，用于前端 / 审查类任务自动切换模型
 
 ## Phase 4: 负载均衡与容错
 
@@ -54,4 +56,3 @@
 2. 再完成 provider/router 抽象
 3. 再做任务级模型路由
 4. 最后完善 fallback、负载均衡和验证
-

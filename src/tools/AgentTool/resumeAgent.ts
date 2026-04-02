@@ -153,6 +153,8 @@ export async function resumeAgentBackground({
     toolUseContext.options.mainLoopModel,
     undefined,
     permissionMode,
+    selectedAgent.agentType,
+    prompt,
   )
 
   const workerPermissionContext = {

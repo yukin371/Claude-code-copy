@@ -8,6 +8,10 @@ import {
   parseUserSpecifiedModel,
 } from './model.js'
 import { getAPIProvider } from './providers.js'
+import {
+  getTaskRouteModelOverride,
+  resolveTaskRouteName,
+} from './taskRouting.js'
 
 export const AGENT_MODEL_OPTIONS = [...MODEL_ALIASES, 'inherit'] as const
 export type AgentModelAlias = (typeof AGENT_MODEL_OPTIONS)[number]
@@ -39,8 +43,24 @@ export function getAgentModel(
   parentModel: string,
   toolSpecifiedModel?: ModelAlias,
   permissionMode?: PermissionMode,
+  agentType?: string,
+  taskPrompt?: string,
 ): string {
-  if (process.env.CLAUDE_CODE_SUBAGENT_MODEL) {
+  if (toolSpecifiedModel) {
+    if (aliasMatchesParentTier(toolSpecifiedModel, parentModel)) {
+      return parentModel
+    }
+    const model = parseUserSpecifiedModel(toolSpecifiedModel)
+    return applyParentRegionPrefix(model, toolSpecifiedModel)
+  }
+
+  const route = resolveTaskRouteName({ agentType, taskPrompt })
+  const routeModelOverride = getTaskRouteModelOverride(route)
+  if (routeModelOverride) {
+    return parseUserSpecifiedModel(routeModelOverride)
+  }
+
+  if (route === 'subagent' && process.env.CLAUDE_CODE_SUBAGENT_MODEL) {
     return parseUserSpecifiedModel(process.env.CLAUDE_CODE_SUBAGENT_MODEL)
   }
 
@@ -64,15 +84,6 @@ export function getAgentModel(
       return applyBedrockRegionPrefix(resolvedModel, parentRegionPrefix)
     }
     return resolvedModel
-  }
-
-  // Prioritize tool-specified model if provided
-  if (toolSpecifiedModel) {
-    if (aliasMatchesParentTier(toolSpecifiedModel, parentModel)) {
-      return parentModel
-    }
-    const model = parseUserSpecifiedModel(toolSpecifiedModel)
-    return applyParentRegionPrefix(model, toolSpecifiedModel)
   }
 
   const agentModelWithExp = agentModel ?? getDefaultSubagentModel()
