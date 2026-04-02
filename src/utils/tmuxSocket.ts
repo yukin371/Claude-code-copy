@@ -1,20 +1,20 @@
 /**
  * TMUX SOCKET ISOLATION
  * =====================
- * This module manages an isolated tmux socket for Claude's operations.
+ * This module manages an isolated tmux socket for Neko Code's operations.
  *
  * WHY THIS EXISTS:
- * Without isolation, Claude could accidentally affect the user's tmux sessions.
+ * Without isolation, Neko Code could accidentally affect the user's tmux sessions.
  * For example, running `tmux kill-session` via the Bash tool would kill the
  * user's current session if they started Claude from within tmux.
  *
  * HOW IT WORKS:
- * 1. Claude creates its own tmux socket: `claude-<PID>` (e.g., `claude-12345`)
+ * 1. Neko Code creates its own tmux socket: `neko-code-<PID>` (e.g., `neko-code-12345`)
  * 2. ALL Tmux tool commands use this socket via the `-L` flag
  * 3. ALL Bash tool commands inherit TMUX env var pointing to this socket
  *    (set in Shell.ts via getClaudeTmuxEnv())
  *
- * This means ANY tmux command run through Claude - whether via the Tmux tool
+ * This means ANY tmux command run through Neko Code - whether via the Tmux tool
  * directly or via Bash - will operate on Claude's isolated socket, NOT the
  * user's tmux session.
  *
@@ -33,7 +33,7 @@ import { getPlatform } from './platform.js'
 
 // Constants for tmux socket management
 const TMUX_COMMAND = 'tmux'
-const CLAUDE_SOCKET_PREFIX = 'claude'
+const CLAUDE_SOCKET_PREFIX = 'neko-code'
 
 /**
  * Executes a tmux command, routing through WSL on Windows.
@@ -85,8 +85,8 @@ let tmuxAvailable = false
 let tmuxToolUsed = false
 
 /**
- * Gets the socket name for Claude's isolated tmux session.
- * Format: claude-<PID>
+ * Gets the socket name for Neko Code's isolated tmux session.
+ * Format: neko-code-<PID>
  */
 export function getClaudeSocketName(): string {
   if (!socketName) {

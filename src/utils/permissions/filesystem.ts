@@ -300,36 +300,37 @@ export function isScratchpadEnabled(): boolean {
 }
 
 /**
- * Returns the user-specific Claude temp directory name.
- * On Unix: 'claude-{uid}' to prevent multi-user permission conflicts
- * On Windows: 'claude' (tmpdir() is already per-user)
+ * Returns the user-specific temp directory name.
+ * On Unix: 'neko-code-{uid}' to prevent multi-user permission conflicts
+ * On Windows: 'neko-code' (tmpdir() is already per-user)
  */
 export function getClaudeTempDirName(): string {
   if (getPlatform() === 'windows') {
-    return 'claude'
+    return 'neko-code'
   }
   // Use UID to create per-user directories, preventing permission conflicts
   // when multiple users share the same /tmp directory
   const uid = process.getuid?.() ?? 0
-  return `claude-${uid}`
+  return `neko-code-${uid}`
 }
 
 /**
- * Returns the Claude temp directory path with symlinks resolved.
- * Uses TMPDIR env var if set, otherwise:
- * - On Unix: /tmp/claude-{uid}/ (resolved to /private/tmp/claude-{uid}/ on macOS)
- * - On Windows: {tmpdir}/claude/ (e.g., C:\Users\{user}\AppData\Local\Temp\claude\)
- * This is a per-user temporary directory used by Claude Code for all temp files.
+ * Returns the temp directory path with symlinks resolved.
+ * Uses NEKO_CODE_TMPDIR / CLAUDE_CODE_TMPDIR / TMPDIR if set, otherwise:
+ * - On Unix: /tmp/neko-code-{uid}/ (resolved to /private/tmp/neko-code-{uid}/ on macOS)
+ * - On Windows: {tmpdir}/neko-code/ (e.g., C:\Users\{user}\AppData\Local\Temp\neko-code\)
+ * This is a per-user temporary directory used by Neko Code for all temp files.
  *
  * NOTE: We resolve symlinks to ensure this path matches the resolved paths used
  * in permission checks. On macOS, /tmp is a symlink to /private/tmp, so without
- * resolution, paths like /tmp/claude-{uid}/... wouldn't match /private/tmp/claude-{uid}/...
+ * resolution, paths like /tmp/neko-code-{uid}/... wouldn't match /private/tmp/neko-code-{uid}/...
  */
 // Memoized: called per-tool from permission checks (yoloClassifier, sandbox-adapter)
-// and per-turn from BashTool prompt. Inputs (CLAUDE_CODE_TMPDIR env + platform) are
+// and per-turn from BashTool prompt. Inputs (NEKO_CODE_TMPDIR/CLAUDE_CODE_TMPDIR env + platform) are
 // fixed at startup, and the realpath of the system tmp dir does not change mid-session.
 export const getClaudeTempDir = memoize(function getClaudeTempDir(): string {
   const baseTmpDir =
+    process.env.NEKO_CODE_TMPDIR ||
     process.env.CLAUDE_CODE_TMPDIR ||
     (getPlatform() === 'windows' ? tmpdir() : '/tmp')
 
