@@ -6,14 +6,18 @@
 
 ## Completed
 - `src/entrypoints/init.ts` no longer initializes telemetry or 1P event logging.
-- `src/main.tsx` no longer triggers telemetry startup, analytics gates, or session telemetry helpers.
-- `src/interactiveHelpers.tsx` no longer schedules telemetry initialization after trust.
-- Analytics/telemetry service modules are inert no-op shims.
+- `src/services/analytics/growthbook.ts` is reduced to a compatibility shim: no remote GrowthBook client, no refresh loop, no remote eval, no experiment logging.
+- `src/services/analytics/firstPartyEventLogger.ts` is a compatibility shim: 1P event logging is always disabled and logging calls are no-ops.
+- `src/utils/telemetry/instrumentation.ts` keeps `flushTelemetry()` as a no-op, so logout no longer uploads or flushes telemetry data.
+- Analytics/telemetry service modules are inert no-op shims by default.
 
-## Remaining Optional Cleanup
-- Remove leftover telemetry comments and event names if we want a fully telemetry-free code surface.
+## Remaining Cleanup
+- Remove leftover `initializeGrowthBook()` / `refreshGrowthBookAfterAuthChange()` call sites if we want a cleaner code surface, even though they are now harmless no-ops.
+- Remove `logEventTo1P(...)` call sites like feedback submission if we want telemetry-free source code instead of compatibility shims.
 - Delete compatibility shim files only after all imports are removed.
+- Consider removing `firstPartyEventLoggingExporter.ts` once no compatibility path references it.
 
 ## Verification
-- Search for `initializeTelemetryAfterTrust`, `logSessionTelemetry`, and `logStartupTelemetry` should return no results.
-- Build/run a minimal startup check after any further cleanup.
+- `bun test src/services/analytics/growthbook.test.ts src/services/analytics/firstPartyEventLogger.test.ts`
+- `bun test src/utils/model/providerMetadata.test.ts src/utils/model/providerBalancer.test.ts src/services/api/openaiCompatibleClient.test.ts`
+- `bun run scripts/bun-tools.ts providers`
