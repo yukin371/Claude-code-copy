@@ -19,7 +19,6 @@ import { ReadMcpResourceTool } from 'src/tools/ReadMcpResourceTool/ReadMcpResour
 import { TaskOutputTool } from 'src/tools/TaskOutputTool/TaskOutputTool.js';
 import { TaskStopTool } from 'src/tools/TaskStopTool/TaskStopTool.js';
 import { TodoWriteTool } from 'src/tools/TodoWriteTool/TodoWriteTool.js';
-import { TungstenTool } from 'src/tools/TungstenTool/TungstenTool.js';
 import { WebFetchTool } from 'src/tools/WebFetchTool/WebFetchTool.js';
 import { WebSearchTool } from 'src/tools/WebSearchTool/WebSearchTool.js';
 import type { KeyboardEvent } from '../../ink/events/keyboard-event.js';
@@ -28,6 +27,15 @@ import { useKeybinding } from '../../keybindings/useKeybinding.js';
 import { count } from '../../utils/array.js';
 import { plural } from '../../utils/stringUtils.js';
 import { Divider } from '../design-system/Divider.js';
+/* eslint-disable @typescript-eslint/no-require-imports */
+const tungstenToolName = "external" === 'ant' ? (() => {
+  try {
+    return require('../../tools/TungstenTool/TungstenTool.js').TungstenTool.name as string;
+  } catch {
+    return undefined;
+  }
+})() : undefined;
+/* eslint-enable @typescript-eslint/no-require-imports */
 type Props = {
   tools: Tools;
   initialTools: string[] | undefined;
@@ -58,7 +66,7 @@ function getToolBuckets(): ToolBuckets {
     },
     EXECUTION: {
       name: 'Execution tools',
-      toolNames: new Set([BashTool.name, "external" === 'ant' ? TungstenTool.name : undefined].filter(n => n !== undefined))
+      toolNames: new Set([BashTool.name, tungstenToolName].filter(n => n !== undefined))
     },
     MCP: {
       name: 'MCP tools',

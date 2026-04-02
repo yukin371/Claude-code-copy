@@ -1,11 +1,16 @@
 import type { Command, LocalCommandCall } from '../types/command.js'
 
+const APP_VERSION =
+  typeof MACRO !== 'undefined' && MACRO.VERSION ? MACRO.VERSION : 'dev'
+const APP_BUILD_TIME =
+  typeof MACRO !== 'undefined' && MACRO.BUILD_TIME ? MACRO.BUILD_TIME : ''
+
 const call: LocalCommandCall = async () => {
   return {
     type: 'text',
-    value: MACRO.BUILD_TIME
-      ? `${MACRO.VERSION} (built ${MACRO.BUILD_TIME})`
-      : MACRO.VERSION,
+    value: APP_BUILD_TIME
+      ? `${APP_VERSION} (built ${APP_BUILD_TIME})`
+      : APP_VERSION,
   }
 }
 

@@ -5,7 +5,7 @@
  * servers reuse it. Lives in settings.xaaIdp (non-secret) + a keychain slot
  * keyed by issuer (secret). Separate trust domain from per-server AS secrets.
  */
-import type { Command } from '@commander-js/extra-typings'
+import type { Command } from 'commander'
 import { cliError, cliOk } from '../../cli/exit.js'
 import {
   acquireIdpIdToken,
