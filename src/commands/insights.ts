@@ -1,6 +1,6 @@
 import { execFileSync } from 'child_process'
 import { diffLines } from 'diff'
-import { constants as fsConstants } from 'fs'
+import { constants as fsConstants, type Dirent } from 'fs'
 import {
   copyFile,
   mkdir,
@@ -45,6 +45,12 @@ function getAnalysisModel(): string {
 // Model for narrative insights (Opus - best quality)
 function getInsightsModel(): string {
   return getDefaultOpusModel()
+}
+
+function getMessageContentText(
+  content: string | readonly { readonly type: string }[],
+): string {
+  return typeof content === 'string' ? content : extractTextContent(content)
 }
 
 // ============================================================================
@@ -120,9 +126,12 @@ const collectFromRemoteHost: (
           }
 
           const projectsDir = join(tempDir, 'projects')
-          let projectDirents: Awaited<ReturnType<typeof readdir>>
+          let projectDirents: Dirent<string>[]
           try {
-            projectDirents = await readdir(projectsDir, { withFileTypes: true })
+            projectDirents = await readdir(projectsDir, {
+              withFileTypes: true,
+              encoding: 'utf8',
+            })
           } catch {
             return result
           }
@@ -146,9 +155,12 @@ const collectFromRemoteHost: (
               }
 
               // Copy session files (skip existing)
-              let files: Awaited<ReturnType<typeof readdir>>
+              let files: Dirent<string>[]
               try {
-                files = await readdir(projectPath, { withFileTypes: true })
+                files = await readdir(projectPath, {
+                  withFileTypes: true,
+                  encoding: 'utf8',
+                })
               } catch {
                 return
               }
@@ -895,7 +907,7 @@ async function summarizeTranscriptChunk(chunk: string): Promise<string> {
       },
     })
 
-    const text = extractTextContent(result.message.content)
+    const text = getMessageContentText(result.message.content)
     return text || chunk.slice(0, 2000)
   } catch {
     // On error, just return truncated chunk
@@ -1038,7 +1050,7 @@ RESPOND WITH ONLY A VALID JSON OBJECT matching this schema:
       },
     })
 
-    const text = extractTextContent(result.message.content)
+    const text = getMessageContentText(result.message.content)
 
     // Parse JSON from response
     const jsonMatch = text.match(/\{[\s\S]*\}/)
@@ -1589,7 +1601,7 @@ async function generateSectionInsight(
       },
     })
 
-    const text = extractTextContent(result.message.content)
+    const text = getMessageContentText(result.message.content)
 
     if (text) {
       // Parse JSON from response
@@ -2755,9 +2767,12 @@ type LiteSessionInfo = {
 async function scanAllSessions(): Promise<LiteSessionInfo[]> {
   const projectsDir = getProjectsDir()
 
-  let dirents: Awaited<ReturnType<typeof readdir>>
+  let dirents: Dirent<string>[]
   try {
-    dirents = await readdir(projectsDir, { withFileTypes: true })
+    dirents = await readdir(projectsDir, {
+      withFileTypes: true,
+      encoding: 'utf8',
+    })
   } catch {
     return []
   }

@@ -8,8 +8,9 @@ import { useExitOnCtrlCDWithKeybindings } from '../../hooks/useExitOnCtrlCDWithK
 import { useMergedTools } from '../../hooks/useMergedTools.js';
 import { Box, Text } from '../../ink.js';
 import { useAppState, useSetAppState } from '../../state/AppState.js';
-import type { Tools } from '../../Tool.js';
+import type { ToolPermissionContext, Tools } from '../../Tool.js';
 import { type ResolvedAgent, resolveAgentOverrides } from '../../tools/AgentTool/agentDisplay.js';
+import type { AgentDefinitionsResult } from '../../tools/AgentTool/loadAgentsDir.js';
 import { type AgentDefinition, getActiveAgentsFromList } from '../../tools/AgentTool/loadAgentsDir.js';
 import { toError } from '../../utils/errors.js';
 import { logError } from '../../utils/log.js';
@@ -45,9 +46,9 @@ export function AgentsMenu(t0) {
     t1 = $[0];
   }
   const [modeState, setModeState] = useState(t1);
-  const agentDefinitions = useAppState(_temp);
-  const mcpTools = useAppState(_temp2);
-  const toolPermissionContext = useAppState(_temp3);
+  const agentDefinitions = useAppState(_temp) as AgentDefinitionsResult;
+  const mcpTools = useAppState(_temp2) as Tools;
+  const toolPermissionContext = useAppState(_temp3) as ToolPermissionContext;
   const setAppState = useSetAppState();
   const {
     allAgents,

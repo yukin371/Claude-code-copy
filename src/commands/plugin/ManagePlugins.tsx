@@ -404,9 +404,9 @@ export function ManagePlugins({
   action
 }: Props): React.ReactNode {
   // App state for MCP access
-  const mcpClients = useAppState(s => s.mcp.clients);
-  const mcpTools = useAppState(s_0 => s_0.mcp.tools);
-  const pluginErrors = useAppState(s_1 => s_1.plugins.errors);
+  const mcpClients = useAppState(s => s.mcp.clients) as MCPServerConnection[];
+  const mcpTools = useAppState(s_0 => s_0.mcp.tools) as Tool[];
+  const pluginErrors = useAppState(s_1 => s_1.plugins.errors) as PluginError[];
   const flaggedPlugins = getFlaggedPlugins();
 
   // Search state

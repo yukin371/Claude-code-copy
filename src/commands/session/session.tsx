@@ -1,5 +1,5 @@
 import { c as _c } from "react/compiler-runtime";
-import { toString as qrToString } from 'qrcode';
+import { type QRCodeToStringOptions, toString as qrToString } from 'qrcode';
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 import { Pane } from '../../components/design-system/Pane.js';
@@ -11,12 +11,16 @@ import { logForDebugging } from '../../utils/debug.js';
 type Props = {
   onDone: () => void;
 };
+const QR_CODE_OPTIONS: QRCodeToStringOptions = {
+  type: 'utf8',
+  errorCorrectionLevel: 'L'
+};
 function SessionInfo(t0) {
   const $ = _c(19);
   const {
     onDone
   } = t0;
-  const remoteSessionUrl = useAppState(_temp);
+  const remoteSessionUrl = useAppState(_temp) as string | undefined;
   const [qrCode, setQrCode] = useState("");
   let t1;
   let t2;
@@ -27,10 +31,7 @@ function SessionInfo(t0) {
       }
       const url = remoteSessionUrl;
       const generateQRCode = async function generateQRCode() {
-        const qr = await qrToString(url, {
-          type: "utf8",
-          errorCorrectionLevel: "L"
-        });
+        const qr = await qrToString(url, QR_CODE_OPTIONS);
         setQrCode(qr);
       };
       generateQRCode().catch(_temp2);

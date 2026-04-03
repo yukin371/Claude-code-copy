@@ -28,7 +28,7 @@ import { count } from '../../utils/array.js';
 import { plural } from '../../utils/stringUtils.js';
 import { Divider } from '../design-system/Divider.js';
 /* eslint-disable @typescript-eslint/no-require-imports */
-const tungstenToolName = "external" === 'ant' ? (() => {
+const tungstenToolName = process.env.USER_TYPE === 'ant' ? (() => {
   try {
     return require('../../tools/TungstenTool/TungstenTool.js').TungstenTool.name as string;
   } catch {
@@ -258,8 +258,8 @@ export function ToolSelector(t0) {
   const toolsByBucket = buckets;
   let t9;
   if ($[22] !== selectedSet) {
-    t9 = bucketTools => {
-      const selected = count(bucketTools, t_5 => selectedSet.has(t_5.name));
+    t9 = (bucketTools: Tool[]) => {
+      const selected = count(bucketTools, (t_5: Tool) => selectedSet.has(t_5.name));
       const needsSelection = selected < bucketTools.length;
       return () => {
         const toolNames_1 = bucketTools.map(_temp4);
@@ -329,7 +329,7 @@ export function ToolSelector(t0) {
       if (bucketTools_0.length === 0) {
         return;
       }
-      const selected_0 = count(bucketTools_0, t_8 => selectedSet.has(t_8.name));
+      const selected_0 = count(bucketTools_0, (t_8: Tool) => selectedSet.has(t_8.name));
       const isFullySelected = selected_0 === bucketTools_0.length;
       navigableItems.push({
         id,

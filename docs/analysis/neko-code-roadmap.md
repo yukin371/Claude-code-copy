@@ -95,9 +95,15 @@
 - 已补：开发期依赖 `typescript`、`@types/bun`、`@types/react`、`@types/qrcode`
 - 已补：根 `tsconfig.json`，使 Bun/TSX 工程可被 TypeScript 正常解析
 - 已补：SDK 占位类型导出与运行时全局声明，降低源码模式维护成本
+- 已补：`src/entrypoints/sdk/controlTypes.ts` 与 `src/entrypoints/sdk/coreTypes.generated.ts` 的占位协议类型已按现有调用面收紧，`print` / CCR / control request 不再被大面积 `unknown` 污染
 - 已补：`contextCollapse`、`reactiveCompact`、`TungstenTool`、`attributionHooks` 等缺失入口的占位模块，降低高频 `TS2307`
 - 已补：`bridgeMessaging` 首轮类型修正，清掉错误头部中的权限模式导入与 request id 问题
-- 当前剩余阻塞：全仓 `typecheck` 仍未通过，主要是快照缺失模块、未恢复的生成类型细节，以及若干 bridge/remote 相关类型收口问题
+- 已补：`src/cli/print.ts`、`src/cli/transports/ccrClient.ts`、`src/commands/branch/branch.ts` 的一轮类型收口，`typecheck` 错误头已推进到命令层的 `bridge/chrome/clear` 等文件
+- 已补：`src/commands/bridge/bridge.tsx`、`chrome/chrome.tsx`、`clear/conversation.ts`、`effort/fast/model/mcp/session`、plugin 命令与设置页的局部类型收口，`typecheck` 头部已从命令层推进到组件层
+- 已补：`insights`、`remote-setup`、`rename/generateSessionName`、`resume`、`reviewRemote`、`terminalSetup`、`thinkback`、`ultraplan` 与 `components/agents/*` 的一轮边界类型收口，命令层头部错误已基本清空
+- 已验证：命令层收口后 `bun src/entrypoints/cli.tsx --help` 仍可运行，说明当前修补未破坏 CLI 基础可用性
+- 已验证：继续推进到组件层后 `bun src/entrypoints/cli.tsx --help` 仍可运行
+- 当前剩余阻塞：全仓 `typecheck` 仍未通过，但主阻塞已进一步收敛到组件层的 `AutoUpdater`、`ConfigurableShortcutHint`、`Feedback`、`ThemeProvider`、`diff/*` 与部分 `FeedbackSurvey` 文件；根因以组件 props 类型缺失、环境字面量比较、局部缺失模块导出和 `MessageContent` 联合类型收口为主
 
 ## 当前阻塞判断
 
@@ -127,6 +133,7 @@
 
 - 当前高频报错集中在 `bridgeMessaging`、`initReplBridge`、`inboundMessages`、`structuredIO`
 - 这些模块本身不是根因，它们只是最早暴露出“缺失模块 + 占位类型过宽”的组合问题
+- 随着 SDK/control 占位类型逐步收紧，错误头已经从底层桥接路径前移到命令层，再进一步推进到组件层，说明当前阻塞已经从“基线缺件”切换为“局部类型细节待修复”
 
 ## 后续开发顺序
 
@@ -170,6 +177,7 @@
 2. `src/bridge/inboundMessages.ts`
 3. `src/bridge/initReplBridge.ts`
 4. `src/cli/structuredIO.ts`
+5. 在上述链路稳定后，继续按 `bun run typecheck` 头部顺序收口 `src/commands/bridge/bridge.tsx`、`src/commands/chrome/chrome.tsx`、`src/commands/clear/conversation.ts`
 
 ## 本阶段完成标准
 

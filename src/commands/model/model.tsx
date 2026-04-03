@@ -20,9 +20,9 @@ function ModelPickerWrapper(t0) {
   const {
     onDone
   } = t0;
-  const mainLoopModel = useAppState(_temp);
-  const mainLoopModelForSession = useAppState(_temp2);
-  const isFastMode = useAppState(_temp3);
+  const mainLoopModel = useAppState(_temp) as string | null;
+  const mainLoopModelForSession = useAppState(_temp2) as string | null;
+  const isFastMode = useAppState(_temp3) as boolean;
   const setAppState = useSetAppState();
   let t1;
   if ($[0] !== mainLoopModel || $[1] !== onDone) {
@@ -136,7 +136,7 @@ function SetModelAndClose({
     display?: CommandResultDisplay;
   }) => void;
 }): React.ReactNode {
-  const isFastMode = useAppState(s => s.fastMode);
+  const isFastMode = useAppState(s => s.fastMode) as boolean;
   const setAppState = useSetAppState();
   const model = args === 'default' ? null : args;
   React.useEffect(() => {
@@ -247,9 +247,9 @@ function ShowModelAndClose(t0) {
   const {
     onDone
   } = t0;
-  const mainLoopModel = useAppState(_temp7);
-  const mainLoopModelForSession = useAppState(_temp8);
-  const effortValue = useAppState(_temp9);
+  const mainLoopModel = useAppState(_temp7) as string | null;
+  const mainLoopModelForSession = useAppState(_temp8) as string | null;
+  const effortValue = useAppState(_temp9) as EffortLevel | undefined;
   const displayModel = renderModelLabel(mainLoopModel);
   const effortInfo = effortValue !== undefined ? ` (effort: ${effortValue})` : "";
   if (mainLoopModelForSession) {

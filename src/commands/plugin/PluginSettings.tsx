@@ -28,6 +28,13 @@ import { type ParsedCommand, parsePluginArgs } from './parseArgs.js';
 import type { PluginSettingsProps, ViewState } from './types.js';
 import { ValidatePlugin } from './ValidatePlugin.js';
 type TabId = 'discover' | 'installed' | 'marketplaces' | 'errors';
+type PluginInstallationStatus = {
+  marketplaces: Array<{
+    name: string;
+    status: 'pending' | 'installing' | 'installed' | 'failed';
+    error?: string;
+  }>;
+};
 function MarketplaceList(t0) {
   const $ = _c(4);
   const {
@@ -361,8 +368,8 @@ function ErrorsTabContent(t0) {
     setActiveTab,
     markPluginsChanged
   } = t0;
-  const errors = useAppState(_temp2);
-  const installationStatus = useAppState(_temp3);
+  const errors = useAppState(_temp2) as PluginError[];
+  const installationStatus = useAppState(_temp3) as PluginInstallationStatus;
   const setAppState = useSetAppState();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [actionMessage, setActionMessage] = useState(null);
@@ -761,7 +768,7 @@ export function PluginSettings(t0) {
   const [result, setResult] = useState(null);
   const [childSearchActive, setChildSearchActive] = useState(false);
   const setAppState = useSetAppState();
-  const pluginErrorCount = useAppState(_temp0);
+  const pluginErrorCount = useAppState(_temp0) as number;
   const errorsTabTitle = pluginErrorCount > 0 ? `Errors (${pluginErrorCount})` : "Errors";
   const exitState = useExitOnCtrlCDWithKeybindings();
   const cliMode = parsedCommand.type === "marketplace" && parsedCommand.action === "add" && parsedCommand.target !== undefined;

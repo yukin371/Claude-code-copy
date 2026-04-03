@@ -164,10 +164,17 @@ export async function generateAgent(
     },
   })
 
-  const textBlocks = response.message.content.filter(
-    (block): block is ContentBlock & { type: 'text' } => block.type === 'text',
-  )
-  const responseText = textBlocks.map(block => block.text).join('\n')
+  const contentBlocks = Array.isArray(response.message.content)
+    ? response.message.content
+    : []
+  const responseText = contentBlocks
+    .map(block =>
+      block.type === 'text' && 'text' in block && typeof block.text === 'string'
+        ? block.text
+        : '',
+    )
+    .filter(Boolean)
+    .join('\n')
 
   let parsed: GeneratedAgent
   try {
