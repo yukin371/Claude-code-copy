@@ -11,6 +11,7 @@
 - 已完成：任务路由支持从 `settings.json` 读取 route 级 provider / apiStyle / model / baseUrl
 - 已完成：query 路径按 route transport 显式切换到 openai-compatible shim
 - 已完成：模型路由模块级开发说明已建立
+- 已完成：Bun 工程依赖基线已补齐，可直接运行源码模式 CLI 帮助命令
 - 进行中：统一 provider/router 抽象（已加入 task route execution target 骨架）
 - 进行中：按任务路由不同模型（主线程 / subagent / 前端 / 审查可由配置驱动）
 - 进行中：OpenAI-compatible 接入（主查询路径已通过 route transport 接入 shim）
@@ -83,6 +84,99 @@
 3. 再打通每会话 provider / model 配置入口与状态可见性
 4. 再完成品牌名称、CLI 文案、配置目录的最小运行时收口
 5. 最后补齐均衡策略、熔断、可观测性和专项验证
+
+## 2026-04-03 可运行性补充状态
+
+- 已验证：`bun src/entrypoints/cli.tsx --version`
+- 已验证：`bun src/entrypoints/cli.tsx --help`
+- 已验证：`bun src/entrypoints/cli.tsx --provider gemini --help`
+- 已验证：`bun src/entrypoints/cli.tsx --model sonnet --provider gemini --help`
+- 已补：根 `package.json` / `bun.lock` / `node_modules`
+- 已补：开发期依赖 `typescript`、`@types/bun`、`@types/react`、`@types/qrcode`
+- 已补：根 `tsconfig.json`，使 Bun/TSX 工程可被 TypeScript 正常解析
+- 已补：SDK 占位类型导出与运行时全局声明，降低源码模式维护成本
+- 当前剩余阻塞：全仓 `typecheck` 仍未通过，主要是快照缺失模块、未恢复的生成类型细节，以及若干 bridge/remote 相关类型收口问题
+
+## 当前阻塞判断
+
+当前项目状态应定义为：
+
+- `CLI 基础启动可用`
+- `Bun 工程依赖基线已补齐`
+- `完整开发基线仍未收口`
+
+这意味着项目已经不是“无法启动”的阶段，而是“可运行、但还不能稳定维护和继续开发”的阶段。
+
+## 阻塞根因
+
+### 1. 仓库快照不完整
+
+- 一批源码模块并不是配置错误，而是仓库快照里直接缺失
+- 这类缺口会在 `typecheck` 中表现为大量 `TS2307`
+- 当前优先级最高的是被高频引用的基础模块，例如消息类型、assistant 入口、transport 基类和若干 oauth / secureStorage 类型模块
+
+### 2. SDK 生成类型尚未恢复
+
+- 当前 `src/entrypoints/sdk/*` 中仍有占位导出
+- 这些占位足够支撑源码模式 CLI 启动，但不足以支撑 bridge / structured IO / remote 等深路径的静态类型
+- 结果是大量字段退化成 `unknown`，进一步放大 `typecheck` 噪声
+
+### 3. bridge / remote 路径对真实类型结构依赖最重
+
+- 当前高频报错集中在 `bridgeMessaging`、`initReplBridge`、`inboundMessages`、`structuredIO`
+- 这些模块本身不是根因，它们只是最早暴露出“缺失模块 + 占位类型过宽”的组合问题
+
+## 后续开发顺序
+
+### 第一阶段：先恢复高频缺失模块
+
+目标：
+
+- 将 `TS2307` 这类“模块不存在”错误先压下去
+- 让工程暴露出更真实的下一层类型问题
+
+优先对象：
+
+- `src/types/message.ts`
+- `src/types/tools.ts`
+- `src/services/oauth/types.ts`
+- `src/utils/secureStorage/types.ts`
+- 以及后续扫描出的 `assistant/index`、transport、querySource 相关缺失模块
+
+### 第二阶段：逐步替换 SDK 占位类型
+
+目标：
+
+- 缩小 `unknown` 传播范围
+- 为 bridge / structured IO / CCR 路径恢复真实字段约束
+
+优先对象：
+
+- `src/entrypoints/sdk/controlTypes.ts`
+- `src/entrypoints/sdk/coreTypes.generated.ts`
+- 与之关联的 bridge 类型守卫和消息转换层
+
+### 第三阶段：沿 bridge 主链路收口类型错误
+
+目标：
+
+- 先打通一条高频链路，而不是分散清理全仓噪声
+
+推荐顺序：
+
+1. `src/bridge/bridgeMessaging.ts`
+2. `src/bridge/inboundMessages.ts`
+3. `src/bridge/initReplBridge.ts`
+4. `src/cli/structuredIO.ts`
+
+## 本阶段完成标准
+
+本阶段不是追求一次性全仓零报错，而是达到下面的工程状态：
+
+- CLI 基础命令可继续稳定运行
+- 高频缺失模块不再反复阻塞
+- `typecheck` 报错从“快照缺件”收敛为“真实类型细节待修复”
+- 后续开发可按模块链路继续推进，而不是反复回到依赖和基线问题
 
 ## 开发导航
 
