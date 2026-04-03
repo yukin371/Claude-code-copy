@@ -95,6 +95,8 @@
 - 已补：开发期依赖 `typescript`、`@types/bun`、`@types/react`、`@types/qrcode`
 - 已补：根 `tsconfig.json`，使 Bun/TSX 工程可被 TypeScript 正常解析
 - 已补：SDK 占位类型导出与运行时全局声明，降低源码模式维护成本
+- 已补：`contextCollapse`、`reactiveCompact`、`TungstenTool`、`attributionHooks` 等缺失入口的占位模块，降低高频 `TS2307`
+- 已补：`bridgeMessaging` 首轮类型修正，清掉错误头部中的权限模式导入与 request id 问题
 - 当前剩余阻塞：全仓 `typecheck` 仍未通过，主要是快照缺失模块、未恢复的生成类型细节，以及若干 bridge/remote 相关类型收口问题
 
 ## 当前阻塞判断

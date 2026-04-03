@@ -71,7 +71,7 @@ export type LocalCommandModule = {
   call: LocalCommandCall
 }
 
-type LocalCommand = {
+export type LocalCommand = {
   type: 'local'
   supportsNonInteractive: boolean
   load: () => Promise<LocalCommandModule>

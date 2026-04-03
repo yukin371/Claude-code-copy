@@ -24,7 +24,9 @@ import { normalizeControlMessageKeys } from '../utils/controlMessageCompat.js'
 import { logForDebugging } from '../utils/debug.js'
 import { stripDisplayTagsAllowEmpty } from '../utils/displayTags.js'
 import { errorMessage } from '../utils/errors.js'
-import type { PermissionMode } from '../utils/permissions/PermissionMode.js'
+import type {
+  PermissionMode,
+} from '../types/permissions.js'
 import { jsonParse } from '../utils/slowOperations.js'
 import type { ReplBridgeTransport } from './replBridgeTransport.js'
 
@@ -265,12 +267,13 @@ export function handleServerControlRequest(
   // Outbound-only: reply error for mutable requests so claude.ai doesn't show
   // false success. initialize must still succeed (server kills the connection
   // if it doesn't — see comment above).
+  const requestId = request.request_id ?? randomUUID()
   if (outboundOnly && request.request.subtype !== 'initialize') {
     response = {
       type: 'control_response',
       response: {
         subtype: 'error',
-        request_id: request.request_id,
+        request_id: requestId,
         error: OUTBOUND_ONLY_ERROR,
       },
     }
@@ -352,7 +355,7 @@ export function handleServerControlRequest(
           response: {
             subtype: 'error',
             request_id: request.request_id,
-            error: verdict.error,
+            error: 'error' in verdict ? verdict.error : 'Permission update failed',
           },
         }
       }
