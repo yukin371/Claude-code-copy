@@ -134,11 +134,16 @@ export function useTurnDiffs(messages: Message[]): TurnDiff[] {
           c.completedTurns.push(c.currentTurn)
         }
 
+        const turnTimestamp =
+          typeof message.timestamp === 'string'
+            ? message.timestamp
+            : String(message.timestamp ?? '')
+
         c.lastTurnIndex++
         c.currentTurn = {
           turnIndex: c.lastTurnIndex,
           userPromptPreview: getUserPromptPreview(message),
-          timestamp: message.timestamp,
+          timestamp: turnTimestamp,
           files: new Map(),
           stats: { filesChanged: 0, linesAdded: 0, linesRemoved: 0 },
         }

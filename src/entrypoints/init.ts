@@ -2,6 +2,7 @@ import { profileCheckpoint } from '../utils/startupProfiler.js'
 import '../bootstrap/state.js'
 import '../utils/config.js'
 import memoize from 'lodash-es/memoize.js'
+import { getIsNonInteractiveSession } from '../bootstrap/state.js'
 import { shutdownLspServerManager } from '../services/lsp/manager.js'
 import { populateOAuthAccountInfoIfNeeded } from '../services/oauth/client.js'
 import {
@@ -9,6 +10,7 @@ import {
   isPolicyLimitsEligible,
 } from '../services/policyLimits/index.js'
 import {
+  isEligibleForRemoteManagedSettings,
   initializeRemoteManagedSettingsLoadingPromise,
 } from '../services/remoteManagedSettings/index.js'
 import { preconnectAnthropicApi } from '../utils/apiPreconnect.js'

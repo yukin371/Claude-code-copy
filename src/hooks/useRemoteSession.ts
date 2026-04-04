@@ -195,10 +195,16 @@ export function useRemoteSession({
           sdkMessage.subtype === 'init' &&
           onInit
         ) {
-          logForDebugging(
-            `[useRemoteSession] Init received with ${sdkMessage.slash_commands.length} slash commands`,
+          const rawSlashCommands = Array.isArray(sdkMessage.slash_commands)
+            ? sdkMessage.slash_commands
+            : []
+          const slashCommands: string[] = rawSlashCommands.filter(
+            (command: unknown): command is string => typeof command === 'string',
           )
-          onInit(sdkMessage.slash_commands)
+          logForDebugging(
+            `[useRemoteSession] Init received with ${slashCommands.length} slash commands`,
+          )
+          onInit(slashCommands)
         }
 
         // Track remote subagent lifecycle for the "N in background" counter.
@@ -206,14 +212,20 @@ export function useRemoteSession({
         // registerTask() → task_started, and complete via task_notification.
         // Return early — these are status signals, not renderable messages.
         if (sdkMessage.type === 'system') {
+          const taskId: string | null =
+            typeof sdkMessage.task_id === 'string' ? sdkMessage.task_id : null
           if (sdkMessage.subtype === 'task_started') {
-            runningTaskIdsRef.current.add(sdkMessage.task_id)
-            writeTaskCount()
+            if (taskId) {
+              runningTaskIdsRef.current.add(taskId)
+              writeTaskCount()
+            }
             return
           }
           if (sdkMessage.subtype === 'task_notification') {
-            runningTaskIdsRef.current.delete(sdkMessage.task_id)
-            writeTaskCount()
+            if (taskId) {
+              runningTaskIdsRef.current.delete(taskId)
+              writeTaskCount()
+            }
             return
           }
           if (sdkMessage.subtype === 'task_progress') {
@@ -280,7 +292,9 @@ export function useRemoteSession({
         if (converted.type === 'message') {
           // When we receive a complete message, clear streaming tool uses
           // since the complete message replaces the partial streaming state
-          setStreamingToolUses?.(prev => (prev.length > 0 ? [] : prev))
+          setStreamingToolUses?.((prev: StreamingToolUse[]) =>
+            prev.length > 0 ? [] : prev,
+          )
 
           // Mark tool_use blocks as in-progress so the UI shows the correct
           // spinner state instead of "Waiting…" (queued). In local sessions,
@@ -290,8 +304,18 @@ export function useRemoteSession({
             setInProgressToolUseIDs &&
             converted.message.type === 'assistant'
           ) {
-            const toolUseIds = converted.message.message.content
-              .filter(block => block.type === 'tool_use')
+            const assistantContent = Array.isArray(
+              converted.message.message.content,
+            )
+              ? converted.message.message.content
+              : []
+            const toolUseIds = assistantContent
+              .filter(
+                (
+                  block,
+                ): block is typeof block & { type: 'tool_use'; id: string } =>
+                  block.type === 'tool_use' && typeof block.id === 'string',
+              )
               .map(block => block.id)
             if (toolUseIds.length > 0) {
               setInProgressToolUseIDs(prev => {
