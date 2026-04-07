@@ -7,7 +7,7 @@ Neko Code 是一个从 Claude Code 源码快照反向补全出来的可运行项
 - 可直接运行的 Bun CLI
 - 默认关闭遥测和 1P 行为上报
 - 支持多 API / 多 provider 共存
-- 支持 API 均衡、回退和容错，减少手动切换 API
+- 支持把任务路由到不同 provider / model / apiStyle / baseUrl
 - 支持按任务类型路由不同模型，逐步接近类似 Oh My Opencode 的任务级模型分配体验
 - 支持把现有 Claude Code 用户配置迁移到 Neko Code
 
@@ -18,12 +18,13 @@ Neko Code 是一个从 Claude Code 源码快照反向补全出来的可运行项
 1. 品牌与目录隔离
 2. 关闭遥测与最小化数据采集
 3. 多 API / 多 provider 接入
-4. provider 级均衡、回退与容错
+4. 任务级 provider / model 路由
 5. 按任务类型使用不同模型
 
 核心设计目标：
 
-- 避免因为单个 API 限流或不稳定而频繁手动切换
+- 让应用只负责任务路由，不内建长期负载均衡平台能力
+- 把负载均衡、failover、key pool、重试等网关能力尽量下沉到外部聚合层
 - 保留 Claude Code 的主交互体验和工具能力
 - 逐步让主线程、subagent、review、前端修改等任务使用不同模型
 - 在迁移成本尽可能低的前提下，把 Claude Code 配置平滑迁入 Neko Code
@@ -36,13 +37,19 @@ Neko Code 是一个从 Claude Code 源码快照反向补全出来的可运行项
 - 默认配置目录、临时目录、tmux socket 与 Claude Code 隔离
 - 保守的 Claude 配置迁移
   - 首次启动可从 `~/.claude` 导入核心配置到 `~/.neko-code`
-  - 迁移范围包含全局配置、settings、credentials、用户 `CLAUDE.md`、`rules/`
+  - 迁移范围包含全局配置、settings、credentials、用户 `CLAUDE.md`
+  - 同步迁移用户自定义 `rules/`、`agents/`、`commands/`、`skills/`、`plans/`
+- 新增隔离迁移 smoke
+  - 可把 `~/.claude` 迁入临时 `NEKO_CODE_CONFIG_DIR`
+  - 使用临时 plugin cache 跑一组只读 CLI / routing 诊断命令
 - analytics 默认关闭，sink 改为 no-op
 - 任务路由已支持从 `settings.json` 读取 route 级 provider / apiStyle / model / baseUrl
 - query 主路径已按 route transport 切到 openai-compatible shim
-- endpoint/provider 回退已接入
+- helper 路径已按任务 transport 走对应 provider 路由
 - Bun 工程依赖基线已补齐
 - 源码模式 CLI 基础入口已可运行
+- `bun run typecheck` 已通过
+- `bun run test:routing` 已通过
 
 ## 当前状态
 
@@ -50,7 +57,8 @@ Neko Code 是一个从 Claude Code 源码快照反向补全出来的可运行项
 
 - `CLI 基础启动可用`
 - `依赖基线已补齐`
-- `完整开发基线仍未完全收口`
+- `任务路由主链路已基本收口`
+- `完整交互能力仍未完全恢复`
 
 换句话说：
 
@@ -76,6 +84,9 @@ bun src/entrypoints/cli.tsx agents --help
 bun src/entrypoints/cli.tsx plugin --help
 bun src/entrypoints/cli.tsx mcp --help
 bun src/entrypoints/cli.tsx doctor --help
+bun run typecheck
+bun run test:routing
+bun run smoke:claude-config
 ```
 
 这说明以下能力已经具备基本可用性：
@@ -89,16 +100,7 @@ bun src/entrypoints/cli.tsx doctor --help
 
 当前最主要的缺失不在“启动入口”，而在“深层功能恢复”。
 
-### 1. 全仓 typecheck 仍未通过
-
-当前 `bun run typecheck` 仍会失败，主要原因是：
-
-- 仓库快照里仍有一批缺失的薄模块
-- SDK 生成类型仍有占位实现
-- bridge / remote / structured IO 一线还存在 `unknown` 传播
-- 一部分错误已经不再是单纯 `TS2307`，而是占位类型过宽后扩散出来的真实类型收口问题
-
-### 2. 一部分功能目前只是可降级，不是完整恢复
+### 1. 一部分功能目前只是可降级，不是完整恢复
 
 已经补了若干占位模块和 graceful fallback，用于避免 CLI 因缺件直接崩溃。
 
@@ -106,9 +108,9 @@ bun src/entrypoints/cli.tsx doctor --help
 
 - 入口存在
 - 不会在模块解析时直接崩
-- 但深层实现仍未完整恢复
+- 但深层实现仍未完整恢复或仍待真实配置回归验证
 
-### 3. 高级路径仍在恢复
+### 2. 高级路径仍在恢复
 
 目前仍在逐步恢复中的部分包括：
 
@@ -118,7 +120,7 @@ bun src/entrypoints/cli.tsx doctor --help
 - computer use 相关依赖或 shim 层
 - 更完整的 SDK 类型与控制协议导出
 
-### 4. 仍有部分构建期注入依赖待系统梳理
+### 3. 仍有部分构建期注入依赖待系统梳理
 
 目前源码模式已经为若干 `MACRO.VERSION` / `MACRO.BUILD_TIME` 入口做了兜底，但还没有完成全仓梳理。
 
@@ -164,6 +166,19 @@ bun src/entrypoints/cli.tsx --version
 bun src/entrypoints/cli.tsx --help
 ```
 
+使用现有 Claude 配置做隔离 smoke：
+
+```bash
+bun run smoke:claude-config
+```
+
+该命令会：
+
+- 从默认 `~/.claude` 读取可迁移配置
+- 导入到临时 `NEKO_CODE_CONFIG_DIR`
+- 使用临时 `CLAUDE_CODE_PLUGIN_CACHE_DIR` 运行只读命令矩阵
+- 输出迁移文件列表、临时目录路径、每条命令的退出码和预览
+
 ## 当前推进重点
 
 当前开发重点不是再补一层入口，而是继续收口这两类问题：
@@ -173,8 +188,8 @@ bun src/entrypoints/cli.tsx --help
 
 现阶段最值得继续推进的方向：
 
-- 批量清理 `TS2307`
-- 恢复 `contextCollapse`、`compact`、`FeedbackSurvey`、`Spinner` 等高频薄模块
+- 复制真实 Claude 配置做回归烟测，识别剩余运行时缺口
+- 继续恢复高级交互链路和真实会话路径
 - 逐步把 SDK 占位类型替换成真实结构
 - 沿 `bridgeMessaging -> inboundMessages -> initReplBridge -> structuredIO` 主链路收口类型问题
 - 系统梳理剩余 `MACRO.*` 构建注入点，提升源码模式直跑覆盖面
