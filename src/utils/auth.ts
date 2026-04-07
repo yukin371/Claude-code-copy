@@ -1212,7 +1212,14 @@ export function saveOAuthTokensIfNeeded(tokens: OAuthTokens): {
 
   try {
     const storageData = secureStorage.read() || {}
-    const existingOauth = storageData.claudeAiOauth
+    const existingOauth =
+      storageData.claudeAiOauth &&
+      typeof storageData.claudeAiOauth === 'object'
+        ? (storageData.claudeAiOauth as {
+            subscriptionType?: SubscriptionType | null
+            rateLimitTier?: string | null
+          })
+        : null
 
     storageData.claudeAiOauth = {
       accessToken: tokens.accessToken,
@@ -1223,9 +1230,13 @@ export function saveOAuthTokensIfNeeded(tokens: OAuthTokens): {
       // transient failures (network, 5xx, rate limit). Don't clobber a valid
       // stored subscription with null — fall back to the existing value.
       subscriptionType:
-        tokens.subscriptionType ?? existingOauth?.subscriptionType ?? null,
+        ('subscriptionType' in tokens ? tokens.subscriptionType : undefined) ??
+        existingOauth?.subscriptionType ??
+        null,
       rateLimitTier:
-        tokens.rateLimitTier ?? existingOauth?.rateLimitTier ?? null,
+        ('rateLimitTier' in tokens ? tokens.rateLimitTier : undefined) ??
+        existingOauth?.rateLimitTier ??
+        null,
     }
 
     const updateStatus = secureStorage.update(storageData)
@@ -1288,7 +1299,7 @@ export const getClaudeAIOAuthTokens = memoize((): OAuthTokens | null => {
     const storageData = secureStorage.read()
     const oauthData = storageData?.claudeAiOauth
 
-    if (!oauthData?.accessToken) {
+    if (!isOAuthTokens(oauthData)) {
       return null
     }
 
@@ -1411,7 +1422,7 @@ export async function getClaudeAIOAuthTokensAsync(): Promise<OAuthTokens | null>
     const secureStorage = getSecureStorage()
     const storageData = await secureStorage.readAsync()
     const oauthData = storageData?.claudeAiOauth
-    if (!oauthData?.accessToken) {
+    if (!isOAuthTokens(oauthData)) {
       return null
     }
     return oauthData
@@ -2000,3 +2011,15 @@ export async function validateForceLoginOrg(): Promise<OrgValidationResult> {
 }
 
 class GcpCredentialsTimeoutError extends Error {}
+function isOAuthTokens(value: unknown): value is OAuthTokens {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+  const candidate = value as Record<string, unknown>
+  return (
+    typeof candidate.accessToken === 'string' &&
+    typeof candidate.refreshToken === 'string' &&
+    typeof candidate.expiresAt === 'number' &&
+    Array.isArray(candidate.scopes)
+  )
+}

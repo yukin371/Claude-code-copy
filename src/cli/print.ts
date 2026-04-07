@@ -1646,10 +1646,21 @@ function runHeadlessStreaming(
         connection.config.type === 'stdio' ||
         connection.config.type === undefined
       ) {
+        const stdioConfig = connection.config as {
+          command?: string
+          args?: string[]
+        }
+        const command =
+          typeof stdioConfig.command === 'string'
+            ? stdioConfig.command
+            : ''
+        const args = Array.isArray(stdioConfig.args)
+          ? stdioConfig.args
+          : []
         config = {
           type: 'stdio' as const,
-          command: connection.config.command,
-          args: connection.config.args,
+          command,
+          args,
         }
       }
       const serverTools =
@@ -1802,7 +1813,7 @@ function runHeadlessStreaming(
         type === 'http' ||
         type === 'sdk'
       ) {
-        supportedConfigs[name] = config
+        supportedConfigs[name] = config as McpServerConfigForProcessTransport
       }
     }
     for (const [name, config] of Object.entries(sdkMcpConfigs)) {
@@ -2818,13 +2829,16 @@ function runHeadlessStreaming(
       // the same tick carries no information, so only fire completed.
       // control_response is reported by StructuredIO.processLine (which also
       // sees orphans that never yield here).
-      const eventId = 'uuid' in message ? message.uuid : undefined
+      const eventId =
+        'uuid' in message && typeof message.uuid === 'string'
+          ? (message.uuid as UUID)
+          : undefined
       if (
         eventId &&
         message.type !== 'user' &&
         message.type !== 'control_response'
       ) {
-        notifyCommandLifecycle(eventId, 'completed')
+        notifyCommandLifecycle(String(eventId), 'completed')
       }
 
       if (message.type === 'control_request') {
@@ -3005,7 +3019,9 @@ function runHeadlessStreaming(
           } else {
             sendControlResponseError(
               message,
-              result.error ?? 'Unexpected error',
+              typeof result.error === 'string'
+                ? result.error
+                : 'Unexpected error',
             )
           }
         } else if (message.request.subtype === 'cancel_async_message') {
@@ -4060,27 +4076,31 @@ function runHeadlessStreaming(
       initialized = true
 
       // Check for duplicate user message - skip if already processed
-      if (message.uuid) {
-        const sessionId = getSessionId() as UUID
+      if (typeof message.uuid === 'string') {
+        const messageUuid = validateUuid(message.uuid)
+        const sessionId = validateUuid(getSessionId())
+        if (!messageUuid || !sessionId) {
+          continue
+        }
         const existsInSession = await doesMessageExistInSession(
           sessionId,
-          message.uuid,
+          messageUuid,
         )
 
         // Check both historical duplicates (from file) and runtime duplicates (this session)
-        if (existsInSession || receivedMessageUuids.has(message.uuid)) {
-          logForDebugging(`Skipping duplicate user message: ${message.uuid}`)
+        if (existsInSession || receivedMessageUuids.has(messageUuid)) {
+          logForDebugging(`Skipping duplicate user message: ${messageUuid}`)
           // Send acknowledgment for duplicate message if replay mode is enabled
           if (options.replayUserMessages) {
             logForDebugging(
-              `Sending acknowledgment for duplicate user message: ${message.uuid}`,
+              `Sending acknowledgment for duplicate user message: ${messageUuid}`,
             )
             output.enqueue({
               type: 'user',
               message: message.message,
               session_id: sessionId,
               parent_tool_use_id: null,
-              uuid: message.uuid,
+              uuid: messageUuid,
               timestamp: message.timestamp,
               isReplay: true,
             } as SDKUserMessageReplay)
@@ -4089,14 +4109,14 @@ function runHeadlessStreaming(
           // ran but its lifecycle was never closed (interrupted before ack).
           // Runtime dups don't need this — the original enqueue path closes them.
           if (existsInSession) {
-            notifyCommandLifecycle(message.uuid, 'completed')
+            notifyCommandLifecycle(messageUuid, 'completed')
           }
           // Don't enqueue duplicate messages for execution
           continue
         }
 
         // Track this UUID to prevent runtime duplicates
-        trackReceivedMessageUuid(message.uuid)
+        trackReceivedMessageUuid(messageUuid)
       }
 
       enqueue({
@@ -4104,7 +4124,7 @@ function runHeadlessStreaming(
         // file_attachments rides the protobuf catchall from the web composer.
         // Same-ref no-op when absent (no 'file_attachments' key).
         value: await resolveAndPrepend(message, message.message.content),
-        uuid: message.uuid,
+        uuid: typeof message.uuid === 'string' ? validateUuid(message.uuid) : undefined,
         priority: message.priority,
       })
       // Increment prompt count for attribution tracking and save snapshot
@@ -5374,7 +5394,7 @@ export async function handleMcpSetServers(
 
   for (const [name, config] of Object.entries(allowedServers)) {
     if (config.type === 'sdk') {
-      sdkServers[name] = config
+      sdkServers[name] = { ...config, name }
     } else {
       processServers[name] = config
     }

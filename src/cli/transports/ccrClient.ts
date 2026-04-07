@@ -174,6 +174,10 @@ export function accumulateStreamEvents(
           break
         }
         const chunks = (blocks[msg.event.index] ??= [])
+        if (typeof msg.event.delta.text !== 'string') {
+          out.push(msg)
+          break
+        }
         chunks.push(msg.event.delta.text)
         const existing = touched.get(chunks)
         if (existing) {
@@ -223,6 +227,10 @@ export function clearStreamAccumulatorForMessage(
 }
 
 type RequestResult = { ok: true } | { ok: false; retryAfterMs?: number }
+
+function getRetryAfterMs(result: RequestResult): number | undefined {
+  return 'retryAfterMs' in result ? result.retryAfterMs : undefined
+}
 
 type WorkerEvent = {
   payload: EventPayload
@@ -375,7 +383,7 @@ export class CCRClient {
         if (!result.ok) {
           throw new RetryableError(
             'client event POST failed',
-            result.retryAfterMs,
+            getRetryAfterMs(result),
           )
         }
       },
@@ -398,7 +406,7 @@ export class CCRClient {
         if (!result.ok) {
           throw new RetryableError(
             'internal event POST failed',
-            result.retryAfterMs,
+            getRetryAfterMs(result),
           )
         }
       },
@@ -427,7 +435,10 @@ export class CCRClient {
           'delivery batch',
         )
         if (!result.ok) {
-          throw new RetryableError('delivery POST failed', result.retryAfterMs)
+          throw new RetryableError(
+            'delivery POST failed',
+            getRetryAfterMs(result),
+          )
         }
       },
       baseDelayMs: 500,
