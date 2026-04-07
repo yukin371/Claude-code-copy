@@ -96,7 +96,7 @@ const fullInputSchema = lazySchema(() => {
     mode: permissionModeSchema().optional().describe('Permission mode for spawned teammate (e.g., "plan" to require plan approval).')
   });
   return baseInputSchema().merge(multiAgentInputSchema).extend({
-    isolation: ("external" === 'ant' ? z.enum(['worktree', 'remote']) : z.enum(['worktree'])).optional().describe("external" === 'ant' ? 'Isolation mode. "worktree" creates a temporary git worktree so the agent works on an isolated copy of the repo. "remote" launches the agent in a remote CCR environment (always runs in background).' : 'Isolation mode. "worktree" creates a temporary git worktree so the agent works on an isolated copy of the repo.'),
+    isolation: (process.env.USER_TYPE === 'ant' ? z.enum(['worktree', 'remote']) : z.enum(['worktree'])).optional().describe(process.env.USER_TYPE === 'ant' ? 'Isolation mode. "worktree" creates a temporary git worktree so the agent works on an isolated copy of the repo. "remote" launches the agent in a remote CCR environment (always runs in background).' : 'Isolation mode. "worktree" creates a temporary git worktree so the agent works on an isolated copy of the repo.'),
     cwd: z.string().optional().describe('Absolute path to run the agent in. Overrides the working directory for all filesystem and shell operations within this agent. Mutually exclusive with isolation: "worktree".')
   });
 });
@@ -250,6 +250,7 @@ export const AgentTool = buildTool({
   }: AgentToolInput, toolUseContext, canUseTool, assistantMessage, onProgress?) {
     const startTime = Date.now();
     const model = isCoordinatorMode() ? undefined : modelParam;
+    const invokingRequestId = typeof assistantMessage?.requestId === 'string' ? assistantMessage.requestId : undefined;
 
     // Get app state for permission mode and agent filtering
     const appState = toolUseContext.getAppState();
@@ -296,7 +297,7 @@ export const AgentTool = buildTool({
         plan_mode_required: spawnMode === 'plan',
         model: model ?? agentDef?.model,
         agent_type: subagent_type,
-        invokingRequestId: assistantMessage?.requestId
+        invokingRequestId
       }, toolUseContext);
 
       // Type assertion uses TeammateSpawnedOutput (defined above) instead of any.
@@ -439,10 +440,10 @@ export const AgentTool = buildTool({
 
     // Remote isolation: delegate to CCR. Gated ant-only — the guard enables
     // dead code elimination of the entire block for external builds.
-    if ("external" === 'ant' && effectiveIsolation === 'remote') {
+    if (process.env.USER_TYPE === 'ant' && effectiveIsolation === 'remote') {
       const eligibility = await checkRemoteAgentEligibility();
       if (!eligibility.eligible) {
-        const reasons = eligibility.errors.map(formatPreconditionError).join('\n');
+        const reasons = ('errors' in eligibility ? eligibility.errors : []).map(formatPreconditionError).join('\n');
         throw new Error(`Cannot launch remote agent:\n${reasons}`);
       }
       let bundleFailHint: string | undefined;
@@ -529,7 +530,7 @@ export const AgentTool = buildTool({
         // Log agent memory loaded event for subagents
         if (selectedAgent.memory) {
           logEvent('tengu_agent_memory_loaded', {
-            ...("external" === 'ant' && {
+            ...(process.env.USER_TYPE === 'ant' && {
               agent_type: selectedAgent.agentType as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
             }),
             scope: selectedAgent.memory as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
@@ -727,7 +728,7 @@ export const AgentTool = buildTool({
         agentType: 'subagent' as const,
         subagentName: selectedAgent.agentType,
         isBuiltIn: isBuiltInAgent(selectedAgent),
-        invokingRequestId: assistantMessage?.requestId,
+        invokingRequestId,
         invocationKind: 'spawn' as const,
         invocationEmitted: false
       };
@@ -782,7 +783,7 @@ export const AgentTool = buildTool({
         agentType: 'subagent' as const,
         subagentName: selectedAgent.agentType,
         isBuiltIn: isBuiltInAgent(selectedAgent),
-        invokingRequestId: assistantMessage?.requestId,
+        invokingRequestId,
         invocationKind: 'spawn' as const,
         invocationEmitted: false
       };
@@ -1069,6 +1070,9 @@ export const AgentTool = buildTool({
             } = raceResult;
             if (result.done) break;
             const message = result.value;
+            if (!message) {
+              continue;
+            }
             agentMessages.push(message);
 
             // Emit task_progress for the VS Code subagent panel
@@ -1088,10 +1092,18 @@ export const AgentTool = buildTool({
 
             // Forward bash_progress events from sub-agent to parent so the SDK
             // receives tool_progress events just as it does for the main agent.
-            if (message.type === 'progress' && (message.data.type === 'bash_progress' || message.data.type === 'powershell_progress') && onProgress) {
+            if (
+              message.type === 'progress' &&
+              typeof message.data === 'object' &&
+              message.data !== null &&
+              'type' in message.data &&
+              (message.data.type === 'bash_progress' ||
+                message.data.type === 'powershell_progress') &&
+              onProgress
+            ) {
               onProgress({
                 toolUseID: message.toolUseID,
-                data: message.data
+                data: message.data as Progress
               });
             }
             if (message.type !== 'assistant' && message.type !== 'user') {
@@ -1102,12 +1114,21 @@ export const AgentTool = buildTool({
             // Subagent streaming events are filtered out in runAgent.ts, so we
             // need to count tokens from completed messages here
             if (message.type === 'assistant') {
-              const contentLength = getAssistantMessageContentLength(message);
+              const contentLength = getAssistantMessageContentLength(
+                message as Parameters<typeof getAssistantMessageContentLength>[0],
+              );
               if (contentLength > 0) {
                 toolUseContext.setResponseLength(len => len + contentLength);
               }
             }
-            const normalizedNew = normalizeMessages([message]);
+            const normalizedNew = normalizeMessages([message as MessageType]) as Array<{
+              message: {
+                content: Array<{
+                  type: string;
+                  [key: string]: unknown;
+                }>;
+              };
+            }>;
             for (const m of normalizedNew) {
               for (const content of m.message.content) {
                 if (content.type !== 'tool_use' && content.type !== 'tool_result') {
@@ -1291,7 +1312,7 @@ export const AgentTool = buildTool({
     // Only route through auto mode classifier when in auto mode
     // In all other modes, auto-approve sub-agent generation
     // Note: "external" === 'ant' guard enables dead code elimination for external builds
-    if ("external" === 'ant' && appState.toolPermissionContext.mode === 'auto') {
+    if (process.env.USER_TYPE === 'ant' && appState.toolPermissionContext.mode === 'auto') {
       return {
         behavior: 'passthrough',
         message: 'Agent tool requires permission to spawn sub-agents.'

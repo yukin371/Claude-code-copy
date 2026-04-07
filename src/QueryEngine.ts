@@ -1,19 +1,20 @@
 import { feature } from 'bun:bundle'
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs'
-import { randomUUID } from 'crypto'
+import { randomUUID, type UUID } from 'crypto'
 import last from 'lodash-es/last.js'
 import {
   getSessionId,
   isSessionPersistenceDisabled,
 } from 'src/bootstrap/state.js'
 import type {
-  PermissionMode,
   SDKCompactBoundaryMessage,
   SDKMessage,
   SDKPermissionDenial,
+  SDKResultMessage,
   SDKStatus,
   SDKUserMessageReplay,
 } from 'src/entrypoints/agentSdkTypes.js'
+import type { PermissionMode } from './types/permissions.js'
 import { accumulateUsage, updateUsage } from 'src/services/api/claude.js'
 import type { NonNullableUsage } from 'src/services/api/logging.js'
 import { EMPTY_USAGE } from 'src/services/api/logging.js'
@@ -132,7 +133,7 @@ export type QueryEngineConfig = {
   tools: Tools
   commands: Command[]
   mcpClients: MCPServerConnection[]
-  agents: AgentDefinition[]
+  agents?: AgentDefinition[]
   canUseTool: CanUseToolFn
   getAppState: () => AppState
   setAppState: (f: (prev: AppState) => AppState) => void
@@ -591,7 +592,10 @@ export class QueryEngine {
           (msg.content.includes(`<${LOCAL_COMMAND_STDOUT_TAG}>`) ||
             msg.content.includes(`<${LOCAL_COMMAND_STDERR_TAG}>`))
         ) {
-          yield localCommandOutputToSDKAssistantMessage(msg.content, msg.uuid)
+          yield localCommandOutputToSDKAssistantMessage(
+            msg.content,
+            msg.uuid as UUID,
+          )
         }
 
         if (msg.type === 'system' && msg.subtype === 'compact_boundary') {
@@ -634,7 +638,7 @@ export class QueryEngine {
           initialAppState.fastMode,
         ),
         uuid: randomUUID(),
-      }
+      } as unknown as SDKResultMessage
       return
     }
 
@@ -649,7 +653,7 @@ export class QueryEngine {
                 fileHistory: updater(prev.fileHistory),
               }))
             },
-            message.uuid,
+            message.uuid as UUID,
           )
         })
     }
@@ -763,7 +767,7 @@ export class QueryEngine {
           // streamed responses, this is null at content_block_stop time;
           // the real value arrives via message_delta (handled below).
           if (message.message.stop_reason != null) {
-            lastStopReason = message.message.stop_reason
+            lastStopReason = message.message.stop_reason as string | null
           }
           this.mutableMessages.push(message)
           yield* normalizeMessage(message)
@@ -786,28 +790,35 @@ export class QueryEngine {
           yield* normalizeMessage(message)
           break
         case 'stream_event':
-          if (message.event.type === 'message_start') {
+          {
+            const event = message.event as {
+              type: string
+              message?: { usage: NonNullableUsage }
+              usage?: NonNullableUsage
+              delta?: { stop_reason?: string | null }
+            }
+          if (event.type === 'message_start') {
             // Reset current message usage for new message
             currentMessageUsage = EMPTY_USAGE
             currentMessageUsage = updateUsage(
               currentMessageUsage,
-              message.event.message.usage,
+              event.message?.usage ?? EMPTY_USAGE,
             )
           }
-          if (message.event.type === 'message_delta') {
+          if (event.type === 'message_delta') {
             currentMessageUsage = updateUsage(
               currentMessageUsage,
-              message.event.usage,
+              event.usage ?? EMPTY_USAGE,
             )
             // Capture stop_reason from message_delta. The assistant message
             // is yielded at content_block_stop with stop_reason=null; the
             // real value only arrives here (see claude.ts message_delta
             // handler). Without this, result.stop_reason is always null.
-            if (message.event.delta.stop_reason != null) {
-              lastStopReason = message.event.delta.stop_reason
+            if (event.delta?.stop_reason != null) {
+              lastStopReason = event.delta.stop_reason
             }
           }
-          if (message.event.type === 'message_stop') {
+          if (event.type === 'message_stop') {
             // Accumulate current message usage into total
             this.totalUsage = accumulateUsage(
               this.totalUsage,
@@ -818,14 +829,15 @@ export class QueryEngine {
           if (includePartialMessages) {
             yield {
               type: 'stream_event' as const,
-              event: message.event,
+              event,
               session_id: getSessionId(),
               parent_tool_use_id: null,
               uuid: randomUUID(),
-            }
+            } as SDKMessage
           }
 
           break
+          }
         case 'attachment':
           this.mutableMessages.push(message)
           // Record inline (same reason as progress above).
@@ -869,7 +881,7 @@ export class QueryEngine {
               errors: [
                 `Reached maximum number of turns (${message.attachment.maxTurns})`,
               ],
-            }
+            } as unknown as SDKResultMessage
             return
           }
           // Yield queued_command attachments as SDK user message replays
@@ -941,14 +953,15 @@ export class QueryEngine {
             }
           }
           if (message.subtype === 'api_error') {
+            const retryError = message.error as { status?: number } | undefined
             yield {
               type: 'system',
               subtype: 'api_retry' as const,
               attempt: message.retryAttempt,
               max_retries: message.maxRetries,
               retry_delay_ms: message.retryInMs,
-              error_status: message.error.status ?? null,
-              error: categorizeRetryableAPIError(message.error),
+              error_status: retryError?.status ?? null,
+              error: categorizeRetryableAPIError(message.error as never),
               session_id: getSessionId(),
               uuid: message.uuid,
             }
@@ -996,8 +1009,8 @@ export class QueryEngine {
             initialAppState.fastMode,
           ),
           uuid: randomUUID(),
-          errors: [`Reached maximum budget ($${maxBudgetUsd})`],
-        }
+              errors: [`Reached maximum budget ($${maxBudgetUsd})`],
+        } as unknown as SDKResultMessage
         return
       }
 
@@ -1042,7 +1055,7 @@ export class QueryEngine {
             errors: [
               `Failed to provide valid structured output after ${maxRetries} attempts`,
             ],
-          }
+          } as unknown as SDKResultMessage
           return
         }
       }
@@ -1064,7 +1077,13 @@ export class QueryEngine {
     const edeResultType = result?.type ?? 'undefined'
     const edeLastContentType =
       result?.type === 'assistant'
-        ? (last(result.message.content)?.type ?? 'none')
+        ? (() => {
+            const lastContent =
+              result.message.content[result.message.content.length - 1]
+            return typeof lastContent === 'string'
+              ? 'text'
+              : (lastContent?.type ?? 'none')
+          })()
         : 'n/a'
 
     // Flush buffered transcript writes before yielding result.
@@ -1113,7 +1132,7 @@ export class QueryEngine {
             ...all.slice(start).map(_ => _.error),
           ]
         })(),
-      }
+      } as unknown as SDKResultMessage
       return
     }
 
@@ -1122,8 +1141,10 @@ export class QueryEngine {
     let isApiError = false
 
     if (result.type === 'assistant') {
-      const lastContent = last(result.message.content)
+      const lastContent =
+        result.message.content[result.message.content.length - 1]
       if (
+        typeof lastContent !== 'string' &&
         lastContent?.type === 'text' &&
         !SYNTHETIC_MESSAGES.has(lastContent.text)
       ) {
@@ -1152,7 +1173,7 @@ export class QueryEngine {
         initialAppState.fastMode,
       ),
       uuid: randomUUID(),
-    }
+    } as unknown as SDKResultMessage
   }
 
   interrupt(): void {
@@ -1278,7 +1299,9 @@ export async function* ask({
           snipReplay: (yielded: Message, store: Message[]) => {
             if (!snipProjection!.isSnipBoundaryMessage(yielded))
               return undefined
-            return snipModule!.snipCompactIfNeeded(store, { force: true })
+            return snipModule!.snipCompactIfNeeded(store, {
+              force: true,
+            }) as unknown as { messages: Message[]; executed: boolean }
           },
         }
       : {}),
