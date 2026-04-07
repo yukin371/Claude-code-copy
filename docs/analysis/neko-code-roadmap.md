@@ -1235,3 +1235,49 @@
 - 当前最容易造成“做到一半”错觉的不是代码基线，而是文档状态漂移；本轮已经先把 smoke 矩阵文档与脚本实况重新对齐
 - 后续不要回到“重新证明 typecheck 还过”这种低收益重复劳动，除非核心类型文件再次大规模变动
 - 下一步应直接围绕 `Plugin write-path` 产出可复用隔离 harness；完成后再切 `LSP / refresh`，这样阶段边界最清楚
+
+## 2026-04-07 状态同步 4
+
+### 进行中
+
+- `LSP / refresh`
+  - 当前已经成为更合理的下一槽位
+  - 原因：`Plugin write-path` 本身的隔离 smoke 已落地，后续可以把“刷新动作可控”和“刷新后 LSP 行为是否正确”分开追踪
+
+### 已完成
+
+- `Plugin write-path`
+  - 已新增 `scripts/plugin-refresh-smoke.ts`
+  - 已新增 `docs/plans/2026-04-07-isolated-plugin-refresh-smoke.md`
+  - 当前隔离策略：
+    - 临时 workspace 承接 `getOriginalCwd()` 与会话内刷新上下文
+    - `NEKO_CODE_CONFIG_DIR=<temp>` 隔离设置写入
+    - `CLAUDE_CODE_PLUGIN_CACHE_DIR=<temp>` 隔离插件缓存
+    - `CLAUDE_CODE_SIMPLE=1` 降低无关启动噪声
+    - 通过会话级 inline plugin 注入临时插件，不污染共享插件安装状态
+  - 当前验证方式：
+    - 先跑一次无 inline plugin 的 baseline refresh
+    - 再跑一次带临时 inline plugin 的 refresh
+    - 对比 `enabled_count` 与 `command_count` 的 delta，而不是写死绝对值，避免 builtin plugin 数量影响稳定性
+  - 当前实测结果：
+    - `baseline-no-inline-plugin`：通过
+    - `refresh-with-inline-plugin`：通过
+    - delta：enabled plugins `+1`、commands `+1`
+  - 当前补充断言：
+    - 临时 inline plugin 出现在 `AppState.plugins.enabled`
+    - `pluginReconnectKey` 递增到预期值，说明 refresh 仍会触发后续 MCP 重连观察链
+
+### 待领取
+
+- `Session harness`
+  - 保持 `待领取`
+  - 原因：当前仍缺稳定、无交互的会话样本与退出行为定义
+
+- `MCP strict-config`
+  - 保持 `待领取`
+  - 原因：当前仍只完成了入口识别，还没固化成可复用 harness
+
+### 风险/备注
+
+- `Plugin write-path` 已经不再是“做到一半”的状态；后续不要再把 `reload-plugins` 与只读 `plugin validate` 混成同一个阶段
+- 下一步应把验证重点切到 `LSP / refresh`，确认刷新后动态配置注入与 no-op 场景都不回退
