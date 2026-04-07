@@ -221,10 +221,10 @@ async function executeBYOCPersistence(
         filename: result.path,
         file_id: result.fileId,
       })
-    } else {
+    } else if (!result.success) {
       failedFiles.push({
         filename: result.path,
-        error: result.error,
+        error: 'error' in result ? result.error : 'Unknown upload error',
       })
     }
   }

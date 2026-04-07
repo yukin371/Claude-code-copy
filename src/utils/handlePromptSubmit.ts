@@ -532,7 +532,7 @@ async function executeUserInput(params: ExecuteUserInputParams): Promise<void> {
                 fileHistory: updater(prev.fileHistory),
               }))
             },
-            message.uuid,
+            message.uuid as UUID,
           )
         })
         queryCheckpoint('query_file_history_snapshot_end')
