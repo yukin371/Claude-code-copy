@@ -21,6 +21,7 @@
     "smoke:claude-config": "bun run scripts/claude-config-smoke.ts",
     "smoke:headless-print-liveness": "bun run scripts/headless-print-liveness-smoke.ts",
     "smoke:mcp-state": "bun run scripts/mcp-state-smoke.ts",
+    "smoke:readonly-routing": "powershell -ExecutionPolicy Bypass -File scripts/readonly-smoke.ps1 -Workflow routing",
     "smoke:plugin-install": "bun run scripts/plugin-install-smoke.ts",
     "smoke:plugin-state": "bun run scripts/plugin-state-smoke.ts",
     "test:routing": "bun test src/services/api/openaiCompatibleClient.test.ts src/utils/promptCategory.test.ts src/utils/model/taskRouting.test.ts",

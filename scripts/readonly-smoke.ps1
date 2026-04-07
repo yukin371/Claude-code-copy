@@ -207,6 +207,8 @@ function Get-SmokeCases {
       Workflow = 'routing'
       ReadOnly = $true
       ExpectedExitCodes = @(0)
+      Env = @{}
+      ExpectedOutputContains = @()
       Command = $BunPath
       Args = @('run', 'scripts/bun-tools.ts', 'routes')
       Notes = 'Routing debug snapshot for the built-in query sources'
@@ -216,6 +218,8 @@ function Get-SmokeCases {
       Workflow = 'routing'
       ReadOnly = $true
       ExpectedExitCodes = @(0)
+      Env = @{}
+      ExpectedOutputContains = @()
       Command = $BunPath
       Args = @('run', 'scripts/bun-tools.ts', 'route', 'compact')
       Notes = 'Task route debug snapshot seeded from the compact query source'
@@ -225,15 +229,57 @@ function Get-SmokeCases {
       Workflow = 'routing'
       ReadOnly = $true
       ExpectedExitCodes = @(0)
+      Env = @{}
+      ExpectedOutputContains = @()
       Command = $BunPath
       Args = @('run', 'scripts/bun-tools.ts', 'route', 'agent:builtin:plan')
       Notes = 'Task route debug snapshot for the builtin plan agent query source'
+    }
+    [pscustomobject]@{
+      Name = 'route-compact-direct-provider'
+      Workflow = 'routing'
+      ReadOnly = $true
+      ExpectedExitCodes = @(0)
+      Env = @{
+        NEKO_CODE_OPENAI_COMPATIBLE_API_KEY = 'shared-openai-key'
+        ANTHROPIC_BASE_URL = $null
+      }
+      ExpectedOutputContains = @(
+        '"provider": "glm"',
+        '"transportMode": "direct-provider"',
+        '"baseUrl": null',
+        '"apiKey": null'
+      )
+      Command = $BunPath
+      Args = @('run', 'scripts/bun-tools.ts', 'route', 'compact')
+      Notes = 'Global compatible apiKey alone must not pin the main route away from direct-provider mode'
+    }
+    [pscustomobject]@{
+      Name = 'route-compact-gateway'
+      Workflow = 'routing'
+      ReadOnly = $true
+      ExpectedExitCodes = @(0)
+      Env = @{
+        ANTHROPIC_BASE_URL = 'https://gateway.example.com/v1/messages'
+        NEKO_CODE_OPENAI_COMPATIBLE_API_KEY = $null
+      }
+      ExpectedOutputContains = @(
+        '"provider": "anthropic"',
+        '"apiStyle": "anthropic"',
+        '"transportMode": "single-upstream"',
+        '"baseUrl": "https://gateway.example.com/v1/messages"'
+      )
+      Command = $BunPath
+      Args = @('run', 'scripts/bun-tools.ts', 'route', 'compact')
+      Notes = 'Global Anthropic gateway should pin the default main route to a single-upstream transport'
     }
     [pscustomobject]@{
       Name = 'providers'
       Workflow = 'diagnostics'
       ReadOnly = $true
       ExpectedExitCodes = @(0)
+      Env = @{}
+      ExpectedOutputContains = @()
       Command = $BunPath
       Args = @('run', 'scripts/bun-tools.ts', 'providers')
       Notes = 'Provider metadata and weight configuration inventory'
@@ -243,6 +289,8 @@ function Get-SmokeCases {
       Workflow = 'diagnostics'
       ReadOnly = $true
       ExpectedExitCodes = @(0)
+      Env = @{}
+      ExpectedOutputContains = @()
       Command = $BunPath
       Args = @('run', 'scripts/bun-tools.ts', 'health')
       Notes = 'Provider endpoint health summary for every configured provider'
@@ -252,6 +300,8 @@ function Get-SmokeCases {
       Workflow = 'diagnostics'
       ReadOnly = $true
       ExpectedExitCodes = @(0)
+      Env = @{}
+      ExpectedOutputContains = @()
       Command = $BunPath
       Args = @('run', 'scripts/bun-tools.ts', 'health', 'glm')
       Notes = 'Provider endpoint health summary scoped to glm'
@@ -317,6 +367,15 @@ function Invoke-SmokeCase {
     Set-Location -LiteralPath $WorkingDirectory
     $script:ErrorActionPreference = 'Continue'
 
+    $caseEnv = if ($Case.PSObject.Properties['Env']) { $Case.Env } else { @{} }
+    $expectedOutputContains = if ($Case.PSObject.Properties['ExpectedOutputContains']) { $Case.ExpectedOutputContains } else { @() }
+
+    $envBackup = @{}
+    foreach ($envEntry in $caseEnv.GetEnumerator()) {
+      $envBackup[$envEntry.Key] = [Environment]::GetEnvironmentVariable($envEntry.Key)
+      [Environment]::SetEnvironmentVariable($envEntry.Key, $envEntry.Value)
+    }
+
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $commandArgs = @($Case.Args)
     $rawOutput = & $Case.Command @commandArgs 2>&1
@@ -327,29 +386,46 @@ function Invoke-SmokeCase {
     foreach ($line in @($rawOutput)) {
       $outputLines.Add([string]$line)
     }
+    $fullOutput = ($outputLines -join "`n")
+
+    $passed = $Case.ExpectedExitCodes -contains $exitCode
+    $failureReason = $null
+    if ($passed -and @($expectedOutputContains).Count -gt 0) {
+      foreach ($expectedSnippet in @($expectedOutputContains)) {
+        if (-not $fullOutput.Contains($expectedSnippet)) {
+          $passed = $false
+          $failureReason = "missing output snippet: $expectedSnippet"
+          break
+        }
+      }
+    }
 
     $preview = @()
     foreach ($line in ($outputLines | Select-Object -First $PreviewLineLimit)) {
       $preview += (Format-PreviewText -Text $line -Width $PreviewWidth)
     }
-    if ($preview.Count -eq 0) {
+    if (@($preview).Count -eq 0) {
       $preview = @('[no output]')
     }
 
     return [pscustomobject]@{
       Name = $Case.Name
       Workflow = $Case.Workflow
-      Passed = $Case.ExpectedExitCodes -contains $exitCode
+      Passed = $passed
       TimedOut = $false
       ExitCode = $exitCode
       ExpectedExitCodes = $Case.ExpectedExitCodes
       ReadOnly = $Case.ReadOnly
       Notes = $Case.Notes
+      FailureReason = $failureReason
       DurationMs = [int]$stopwatch.ElapsedMilliseconds
       CommandPreview = Join-CommandPreview -Command $Case.Command -Args $Case.Args
       Preview = $preview
     }
   } finally {
+    foreach ($envKey in $caseEnv.Keys) {
+      [Environment]::SetEnvironmentVariable($envKey, $envBackup[$envKey])
+    }
     Set-Location -LiteralPath $previousLocation
     $script:ErrorActionPreference = $previousErrorActionPreference
   }
@@ -368,6 +444,9 @@ function Write-CaseSummary {
       $Result.ReadOnly.ToString().ToLowerInvariant(), `
       $Result.DurationMs)
   Write-Output ('  notes: {0}' -f $Result.Notes)
+  if (-not $Result.Passed -and $Result.FailureReason) {
+    Write-Output ('  failure: {0}' -f $Result.FailureReason)
+  }
   foreach ($line in $Result.Preview) {
     Write-Output ('  preview: {0}' -f $line)
   }
@@ -382,7 +461,7 @@ $cases = Get-SmokeCases -BunPath $bunCommand.Source
 $workflowFilter = Normalize-WorkflowFilter -WorkflowInput $Workflow
 $selectedCases = Select-SmokeCases -Cases $cases -WorkflowFilter $workflowFilter
 
-if ($selectedCases.Count -eq 0) {
+if (@($selectedCases).Count -eq 0) {
   throw 'No smoke cases matched the requested workflow filter.'
 }
 

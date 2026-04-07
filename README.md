@@ -98,6 +98,7 @@ bun src/entrypoints/cli.tsx doctor --help
 bun src/entrypoints/cli.tsx -p --max-turns 1 "Reply with exactly OK"
 bun run scripts/bun-tools.ts routes
 bun run build:native
+ bun run smoke:readonly-routing
 bun run typecheck
 bun run test:routing
 bun run smoke:claude-config
@@ -113,6 +114,7 @@ bun run smoke:claude-config
 - 配置迁移后的真实网关回放
 - 基础任务路由诊断与回归
 - 可读的 task route / querySource 路由诊断输出
+- 只读 routing smoke，可断言 `direct-provider` / `single-upstream gateway` 两种模式
 - native build 编译与基础 CLI 自检
 
 需要注意：

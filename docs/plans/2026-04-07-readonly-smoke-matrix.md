@@ -40,7 +40,7 @@ powershell -ExecutionPolicy Bypass -File scripts/readonly-smoke.ps1 -Workflow pl
 
 Current validation result on this machine:
 
-- `22 passed, 0 failed, total 22`
+- `24 passed, 0 failed, total 24`
 
 | Workflow | Command | Expected Exit | Read-Only | Local Env Dependency | Current Observed Result |
 | --- | --- | --- | --- | --- | --- |
@@ -63,6 +63,8 @@ Current validation result on this machine:
 | routing | `bun run scripts/bun-tools.ts routes` | `0` | yes | low | prints the built-in query-source to route snapshot |
 | routing | `bun run scripts/bun-tools.ts route compact` | `0` | yes | low | prints the normalized route for the `compact` query source |
 | routing | `bun run scripts/bun-tools.ts route agent:builtin:plan` | `0` | yes | low | prints the normalized route for the built-in plan agent |
+| routing | `NEKO_CODE_OPENAI_COMPATIBLE_API_KEY=shared-openai-key bun run scripts/bun-tools.ts route compact` | `0` | yes | low | asserts that a shared compatible API key alone keeps `compact -> main` in `direct-provider` mode |
+| routing | `ANTHROPIC_BASE_URL=https://gateway.example.com/v1/messages bun run scripts/bun-tools.ts route compact` | `0` | yes | low | asserts that the default main route pins to the Anthropic single-upstream gateway |
 | diagnostics | `bun run scripts/bun-tools.ts providers` | `0` | yes | medium | prints provider metadata and configured weights |
 | diagnostics | `bun run scripts/bun-tools.ts health` | `0` | yes | medium | prints the cross-provider health summary |
 | diagnostics | `bun run scripts/bun-tools.ts health glm` | `0` | yes | medium | prints the provider health summary scoped to `glm` |
@@ -88,4 +90,5 @@ Current validation result on this machine:
 - Everyone can reuse the same low-risk verification set before touching higher-risk runtime flows.
 - Error-path commands are included, so the matrix checks not only happy-path startup but also user-facing failure messages and exit codes.
 - Route and provider diagnostics are now part of the same matrix, so config-driven routing work can be rechecked without inventing a second ad hoc checklist.
+- Routing smoke now includes explicit env-driven assertions for both `direct-provider` and `single-upstream gateway` modes, so Phase 2 changes do not rely only on unit tests.
 - Riskier commands are called out explicitly, which reduces accidental local-state pollution while multiple people are iterating in the same phase.
