@@ -18,10 +18,14 @@ type FileReadResult = {
   oldContent: string;
   fileExists: boolean;
 };
-export function SedEditPermissionRequest(t0) {
+type SedEditPermissionRequestInnerProps = PermissionRequestProps & {
+  sedInfo: SedEditInfo;
+  contentPromise: Promise<FileReadResult>;
+};
+export function SedEditPermissionRequest(t0: SedEditPermissionRequestProps) {
   const $ = _c(9);
-  let props;
-  let sedInfo;
+  let props: PermissionRequestProps;
+  let sedInfo: SedEditInfo;
   if ($[0] !== t0) {
     ({
       sedInfo,
@@ -76,11 +80,11 @@ function _temp(e) {
     fileExists: false
   };
 }
-function SedEditPermissionRequestInner(t0) {
+function SedEditPermissionRequestInner(t0: SedEditPermissionRequestInnerProps) {
   const $ = _c(35);
-  let contentPromise;
-  let props;
-  let sedInfo;
+  let contentPromise: Promise<FileReadResult>;
+  let props: PermissionRequestProps;
+  let sedInfo: SedEditInfo;
   if ($[0] !== t0) {
     ({
       sedInfo,

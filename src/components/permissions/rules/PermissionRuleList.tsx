@@ -263,6 +263,15 @@ type RulesTabContentProps = {
   cursorOffset?: number;
   onHeaderFocusChange?: (focused: boolean) => void;
 };
+type DenialState = {
+  approved: Set<number>;
+  retry: Set<number>;
+  denials: AutoModeDenial[];
+};
+type ValidatedRule = {
+  ruleValue: PermissionRuleValue;
+  ruleBehavior: PermissionBehavior;
+};
 
 // Component for rendering rules tab content with full width support
 function RulesTabContent(props) {
@@ -508,7 +517,7 @@ export function PermissionRuleList(t0) {
   } else {
     t3 = $[2];
   }
-  const denialStateRef = useRef(t3);
+  const denialStateRef = useRef<DenialState>(t3);
   let t4;
   if ($[3] === Symbol.for("react.memo_cache_sentinel")) {
     t4 = s_0 => {
@@ -519,12 +528,12 @@ export function PermissionRuleList(t0) {
     t4 = $[3];
   }
   const handleDenialStateChange = t4;
-  const [selectedRule, setSelectedRule] = useState();
-  const [lastFocusedRuleKey, setLastFocusedRuleKey] = useState();
-  const [addingRuleToTab, setAddingRuleToTab] = useState(null);
-  const [validatedRule, setValidatedRule] = useState(null);
+  const [selectedRule, setSelectedRule] = useState<PermissionRule | undefined>();
+  const [lastFocusedRuleKey, setLastFocusedRuleKey] = useState<string | undefined>();
+  const [addingRuleToTab, setAddingRuleToTab] = useState<TabType | null>(null);
+  const [validatedRule, setValidatedRule] = useState<ValidatedRule | null>(null);
   const [isAddingWorkspaceDirectory, setIsAddingWorkspaceDirectory] = useState(false);
-  const [removingDirectory, setRemovingDirectory] = useState(null);
+  const [removingDirectory, setRemovingDirectory] = useState<string | null>(null);
   const [isSearchMode, setIsSearchMode] = useState(false);
   const [headerFocused, setHeaderFocused] = useState(true);
   let t5;
@@ -795,7 +804,7 @@ export function PermissionRuleList(t0) {
   if ($[30] !== changes || $[31] !== onExit || $[32] !== onRetryDenials) {
     t18 = () => {
       const s_1 = denialStateRef.current;
-      const denialsFor = set => Array.from(set).map(idx => s_1.denials[idx]).filter(_temp2);
+      const denialsFor = (set: Set<number>) => Array.from(set).map(idx => s_1.denials[idx]).filter(_temp2);
       const retryDenials = denialsFor(s_1.retry);
       if (retryDenials.length > 0) {
         const commands = retryDenials.map(_temp3);
@@ -951,7 +960,7 @@ export function PermissionRuleList(t0) {
     let t22;
     if ($[56] !== setAppState || $[57] !== toolPermissionContext) {
       t22 = (path_0, remember) => {
-        const destination = remember ? "localSettings" : "session";
+        const destination: PermissionUpdateDestination = remember ? "localSettings" : "session";
         const permissionUpdate = {
           type: "addDirectories" as const,
           directories: [path_0],

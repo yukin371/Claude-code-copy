@@ -48,6 +48,11 @@ import type { ImageDimensions } from '../../../utils/imageResizer.js';
 import { maybeResizeAndDownsampleImageBlock } from '../../../utils/imageResizer.js';
 import { cacheImagePath, storeImage } from '../../../utils/imageStore.js';
 type ResponseValue = 'yes-bypass-permissions' | 'yes-accept-edits' | 'yes-accept-edits-keep-context' | 'yes-default-keep-context' | 'yes-resume-auto-mode' | 'yes-auto-clear-context' | 'ultraplan' | 'no';
+type MessageUsage = {
+  input_tokens: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+};
 
 /**
  * Build permission updates for plan approval, including prompt-based rules if provided.
@@ -142,7 +147,7 @@ export function ExitPlanModePermissionRequest({
   // launchUltraplan can notice the session exists and return "already polling".
   // feature() must sit directly in an if/ternary (bun:bundle DCE constraint).
   const showUltraplan = feature('ULTRAPLAN') ? !ultraplanSessionUrl && !ultraplanLaunching : false;
-  const usage = toolUseConfirm.assistantMessage.message.usage;
+  const usage = toolUseConfirm.assistantMessage.message.usage as MessageUsage | undefined;
   const {
     mode,
     isAutoModeAvailable,

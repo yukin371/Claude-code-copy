@@ -69,6 +69,7 @@ type ExplainerState = {
   enabled: boolean;
   promise: Promise<PermissionExplanationType | null> | null;
 };
+type PermissionExplainerContentProps = Pick<ExplainerState, 'visible' | 'promise'>;
 
 /**
  * Creates an explanation promise that never rejects.
@@ -100,7 +101,7 @@ export function usePermissionExplainerUI(props) {
   }
   const enabled = t0;
   const [visible, setVisible] = useState(false);
-  const [promise, setPromise] = useState(null);
+  const [promise, setPromise] = useState<ExplainerState['promise']>(null);
   let t1;
   if ($[1] !== promise || $[2] !== props || $[3] !== visible) {
     t1 = () => {
@@ -153,7 +154,9 @@ export function usePermissionExplainerUI(props) {
 function _temp(v) {
   return !v;
 }
-function ExplanationResult(t0) {
+function ExplanationResult(t0: {
+  promise: Promise<PermissionExplanationType | null>;
+}) {
   const $ = _c(21);
   const {
     promise
@@ -243,7 +246,7 @@ function ExplanationResult(t0) {
 /**
  * Content component - shows loading (via Suspense) or explanation when visible
  */
-export function PermissionExplainerContent(t0) {
+export function PermissionExplainerContent(t0: PermissionExplainerContentProps) {
   const $ = _c(3);
   const {
     visible,

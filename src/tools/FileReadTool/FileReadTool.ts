@@ -899,7 +899,11 @@ async function callInner(
         parsedRange ?? undefined,
       )
       if (!extractResult.success) {
-        throw new Error(extractResult.error.message)
+        throw new Error(
+          'error' in extractResult
+            ? extractResult.error.message
+            : 'Failed to extract PDF pages',
+        )
       }
       logEvent('tengu_pdf_page_extraction', {
         success: true,
@@ -970,7 +974,10 @@ async function callInner(
       } else {
         logEvent('tengu_pdf_page_extraction', {
           success: false,
-          available: extractResult.error.reason !== 'unavailable',
+          available:
+            'error' in extractResult
+              ? extractResult.error.reason !== 'unavailable'
+              : false,
           fileSize: stats.size,
         })
       }
@@ -986,7 +993,9 @@ async function callInner(
 
     const readResult = await readPDF(resolvedFilePath)
     if (!readResult.success) {
-      throw new Error(readResult.error.message)
+      throw new Error(
+        'error' in readResult ? readResult.error.message : 'Failed to read PDF',
+      )
     }
     const pdfData = readResult.data
     logFileOperation({
@@ -1156,12 +1165,21 @@ export async function readImageWithTokenBudget(
       // Fallback: heavily compressed version from the SAME buffer
       try {
         const sharpModule = await import('sharp')
-        const sharp =
-          (
-            sharpModule as {
-              default?: typeof sharpModule
-            } & typeof sharpModule
-          ).default || sharpModule
+        type SharpLike = (input?: unknown, options?: unknown) => {
+          resize: (...args: unknown[]) => SharpLikeResult
+          jpeg: (...args: unknown[]) => SharpLikeResult
+          toBuffer: () => Promise<Buffer>
+        }
+        type SharpLikeResult = {
+          resize: (...args: unknown[]) => SharpLikeResult
+          jpeg: (...args: unknown[]) => SharpLikeResult
+          toBuffer: () => Promise<Buffer>
+        }
+        const sharp = (
+          sharpModule as {
+            default?: SharpLike
+          }
+        ).default ?? (sharpModule as unknown as SharpLike)
 
         const fallbackBuffer = await sharp(imageBuffer)
           .resize(400, 400, {

@@ -902,7 +902,7 @@ function isPathAllowed(
       resolvedPath,
       precomputedPathsToCheck,
     )
-    if (!safetyCheck.safe) {
+    if (!safetyCheck.safe && 'message' in safetyCheck) {
       return {
         allowed: false,
         decisionReason: {
