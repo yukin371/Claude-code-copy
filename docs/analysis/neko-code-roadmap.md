@@ -1281,3 +1281,91 @@
 
 - `Plugin write-path` 已经不再是“做到一半”的状态；后续不要再把 `reload-plugins` 与只读 `plugin validate` 混成同一个阶段
 - 下一步应把验证重点切到 `LSP / refresh`，确认刷新后动态配置注入与 no-op 场景都不回退
+
+## 2026-04-07 状态同步 5
+
+### 进行中
+
+- `Session harness`
+  - 当前成为更适合接手的剩余槽位
+  - 原因：plugin refresh 与 LSP refresh 两条动态链都已有隔离验证模板，剩余不确定性更集中在会话恢复路径
+
+- `MCP strict-config`
+  - 保持 `进行中` 候选
+  - 原因：入口识别已完成，但尚未沉淀为稳定 harness
+
+### 已完成
+
+- `LSP / refresh`
+  - 已新增 `scripts/lsp-refresh-smoke.ts`
+  - 已新增 `docs/plans/2026-04-07-isolated-lsp-refresh-smoke.md`
+  - 当前隔离策略：
+    - 临时 workspace 承接 `getOriginalCwd()` 与 LSP manager 的工作目录
+    - `NEKO_CODE_CONFIG_DIR=<temp>` 与 `CLAUDE_CODE_PLUGIN_CACHE_DIR=<temp>` 隔离设置与缓存
+    - 不启用 `CLAUDE_CODE_SIMPLE=1`，避免 LSP manager 被 short-circuit
+    - 通过会话级 inline plugin 注入一个带 `lspServers` 的临时插件
+  - 当前验证方式：
+    - 先初始化一次无 inline plugin 的 baseline LSP manager
+    - 再注入临时 LSP plugin，执行 `refreshActivePlugins()`
+    - 等待 `reinitializeLspServerManager()` 完成后，对比 manager 内部 server 数量与 scoped server 名称
+  - 当前实测结果：
+    - `baseline-lsp-manager`：通过
+    - `refresh-with-inline-lsp-plugin`：通过
+    - delta：LSP servers `+1`
+  - 当前补充断言：
+    - `refreshActivePlugins().lsp_count >= 1`
+    - manager 中出现 `plugin:<plugin-name>:smoke`
+    - 刷新后插件仍出现在 `AppState.plugins.enabled`
+
+### 待领取
+
+- `Session harness`
+  - 继续保持高优先级
+  - 原因：当前仍是剩余动态链中最缺可复用 harness 的部分
+
+- `MCP strict-config`
+  - 继续保持高优先级
+  - 原因：当前只有语义判断，没有最终验证载体
+
+### 风险/备注
+
+- 当前 plugin 动态链已经拆成两条并各自收口：
+  - 刷新动作本身：`scripts/plugin-refresh-smoke.ts`
+  - 刷新后的 LSP 配置重建：`scripts/lsp-refresh-smoke.ts`
+- 后续不要把这两条再混回单一“plugin smoke”表述；否则 roadmap 很容易再次出现“做到一半但看起来像完成”的状态漂移
+
+## 2026-04-07 状态同步 6
+
+### 进行中
+
+- `Session harness`
+  - 继续保持首要剩余动态链
+  - 原因：当前 plugin / MCP / LSP 三类 smoke 都已有稳定模板，只有 session 恢复链仍缺同等级别的隔离 harness
+
+### 已完成
+
+- `LSP / refresh` 回归修补
+  - 在隔离 LSP smoke 首轮验证中发现了一个真实回归：
+    - manager 内部 server 名称被重复 scope，出现 `plugin:<name>:plugin:<name>:<server>` 形态
+    - 根因：`refreshActivePlugins()` 已把 `plugin.lspServers` 写成 scoped cache，而 `getPluginLspServers()` 再次执行 `addPluginScopeToLspServers()`
+  - 已修：`src/utils/plugins/lspPluginIntegration.ts`
+    - 对 `plugin.lspServers` 的缓存分支不再重复加 scope
+    - 仅对 fresh manifest / `.lsp.json` 读取结果执行 `addPluginScopeToLspServers()`
+  - 修后复核：
+    - `bun run scripts/lsp-refresh-smoke.ts`：通过
+    - manager server 名称恢复为 `plugin:smoke-inline-lsp-plugin:smoke`
+    - `bun run typecheck`：通过
+
+### 待领取
+
+- `MCP strict-config`
+  - 保持待领取
+  - 原因：仍没有最终 harness
+
+- `Session harness`
+  - 保持待领取
+  - 原因：仍没有最终 harness
+
+### 风险/备注
+
+- 这轮说明隔离 smoke 不只是“验收脚本”，还能提前暴露 runtime cache 形态回归；后续剩余动态链应继续沿这个模式推进

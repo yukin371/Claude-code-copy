@@ -1,10 +1,7 @@
 import { readFile } from 'fs/promises'
 import { join, relative, resolve } from 'path'
 import { z } from 'zod/v4'
-import type {
-  LspServerConfig,
-  ScopedLspServerConfig,
-} from '../../services/lsp/types.js'
+import type { ScopedLspServerConfig } from '../../services/lsp/types.js'
 import { expandEnvVarsInString } from '../../services/mcp/envExpansion.js'
 import type { LoadedPlugin, PluginError } from '../../types/plugin.js'
 import { logForDebugging } from '../debug.js'
@@ -20,6 +17,8 @@ import {
   substituteUserConfigVariables,
 } from './pluginOptionsStorage.js'
 import { LspServerConfigSchema } from './schemas.js'
+
+type LspServerConfig = z.infer<ReturnType<typeof LspServerConfigSchema>>
 
 /**
  * Validate that a resolved path stays within the plugin directory.
@@ -304,11 +303,11 @@ export function addPluginScopeToLspServers(
   for (const [name, config] of Object.entries(servers)) {
     // Add plugin prefix to server name to avoid conflicts
     const scopedName = `plugin:${pluginName}:${name}`
-    scopedServers[scopedName] = {
-      ...config,
+    const scopedServer = Object.assign({}, config, {
       scope: 'dynamic', // Use dynamic scope for plugin servers
       source: pluginName,
-    }
+    })
+    scopedServers[scopedName] = scopedServer as ScopedLspServerConfig
   }
 
   return scopedServers
@@ -327,9 +326,13 @@ export async function getPluginLspServers(
     return undefined
   }
 
-  // Use cached servers if available
+  // plugin.lspServers is the runtime cache written by refresh paths after
+  // addPluginScopeToLspServers(), so its keys are already scoped. Avoid
+  // re-prefixing them here or the manager will see names like
+  // plugin:foo:plugin:foo:bar after /reload-plugins.
+  const cachedScopedServers = plugin.lspServers
   const servers =
-    plugin.lspServers || (await loadPluginLspServers(plugin, errors))
+    cachedScopedServers || (await loadPluginLspServers(plugin, errors))
   if (!servers) {
     return undefined
   }
@@ -353,7 +356,11 @@ export async function getPluginLspServers(
     )
   }
 
-  // Add plugin scope
+  if (cachedScopedServers) {
+    return resolvedServers as Record<string, ScopedLspServerConfig>
+  }
+
+  // Freshly loaded manifest/.lsp.json data is still unscoped.
   return addPluginScopeToLspServers(resolvedServers, plugin.name)
 }
 
@@ -374,8 +381,8 @@ export async function extractLspServersFromPlugins(
       const scopedServers = addPluginScopeToLspServers(servers, plugin.name)
       Object.assign(allServers, scopedServers)
 
-      // Store the servers on the plugin for caching
-      plugin.lspServers = servers
+      // Store scoped servers on the plugin for caching
+      plugin.lspServers = scopedServers as LoadedPlugin['lspServers']
 
       logForDebugging(
         `Loaded ${Object.keys(servers).length} LSP servers from plugin ${plugin.name}`,
