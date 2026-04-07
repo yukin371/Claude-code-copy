@@ -23,16 +23,16 @@ export function BridgeDialog(t0) {
     onDone
   } = t0;
   useRegisterOverlay("bridge-dialog");
-  const connected = useAppState(_temp);
-  const sessionActive = useAppState(_temp2);
-  const reconnecting = useAppState(_temp3);
-  const connectUrl = useAppState(_temp4);
-  const sessionUrl = useAppState(_temp5);
-  const error = useAppState(_temp6);
-  const explicit = useAppState(_temp7);
-  const environmentId = useAppState(_temp8);
-  const sessionId = useAppState(_temp9);
-  const verbose = useAppState(_temp0);
+  const connected = useAppState(_temp) as boolean;
+  const sessionActive = useAppState(_temp2) as boolean;
+  const reconnecting = useAppState(_temp3) as boolean;
+  const connectUrl = useAppState(_temp4) as string | undefined;
+  const sessionUrl = useAppState(_temp5) as string | undefined;
+  const error = useAppState(_temp6) as string | undefined;
+  const explicit = useAppState(_temp7) as boolean;
+  const environmentId = useAppState(_temp8) as string | undefined;
+  const sessionId = useAppState(_temp9) as string | undefined;
+  const verbose = useAppState(_temp0) as boolean;
   const setAppState = useSetAppState();
   const [showQR, setShowQR] = useState(false);
   const [qrText, setQrText] = useState("");
@@ -70,8 +70,7 @@ export function BridgeDialog(t0) {
       }
       qrToString(displayUrl, {
         type: "utf8",
-        errorCorrectionLevel: "L",
-        small: true
+        errorCorrectionLevel: "L"
       }).then(setQrText).catch(() => setQrText(""));
     };
     t5 = [showQR, displayUrl];

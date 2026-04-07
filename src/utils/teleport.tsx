@@ -40,6 +40,16 @@ import { asSystemPrompt } from './systemPromptType.js';
 import { fetchSession, type GitRepositoryOutcome, type GitSource, getBranchFromSession, getOAuthHeaders, type SessionResource } from './teleport/api.js';
 import { fetchEnvironments } from './teleport/environments.js';
 import { createAndUploadGitBundle } from './teleport/gitBundle.js';
+
+type BundleUploadResult = Awaited<ReturnType<typeof createAndUploadGitBundle>>;
+type BundleUploadFailure = Extract<BundleUploadResult, {
+  success: false;
+}>;
+
+function isBundleUploadFailure(bundle: BundleUploadResult): bundle is BundleUploadFailure {
+  return bundle.success === false;
+}
+
 export type TeleportResult = {
   messages: Message[];
   branchName: string;
@@ -843,7 +853,7 @@ export async function teleportToRemote(options: {
         }, {
           signal
         });
-        if (!bundle.success) {
+        if (isBundleUploadFailure(bundle)) {
           logError(new Error(`Bundle upload failed: ${bundle.error}`));
           return null;
         }
@@ -1007,12 +1017,13 @@ export async function teleportToRemote(options: {
       }, {
         signal
       });
-      if (!bundle.success) {
+      if (isBundleUploadFailure(bundle)) {
         logError(new Error(`Bundle upload failed: ${bundle.error}`));
         // Only steer users to GitHub setup when there's a remote to clone from.
         const setup = repoInfo ? '. Please setup GitHub on https://claude.ai/code' : '';
         let msg: string;
-        switch (bundle.failReason) {
+        const failReason = bundle.failReason;
+        switch (failReason) {
           case 'empty_repo':
             msg = 'Repository has no commits — run `git add . && git commit -m "initial"` then retry';
             break;
@@ -1027,7 +1038,7 @@ export async function teleportToRemote(options: {
             break;
           default:
             {
-              const _exhaustive: never = bundle.failReason;
+              const _exhaustive: never = failReason;
               void _exhaustive;
               msg = `Bundle upload failed: ${bundle.error}`;
             }

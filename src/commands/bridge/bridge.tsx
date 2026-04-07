@@ -159,9 +159,9 @@ function BridgeDisconnectDialog(t0) {
   } = t0;
   useRegisterOverlay("bridge-disconnect-dialog");
   const setAppState = useSetAppState();
-  const sessionUrl = useAppState(_temp4);
-  const connectUrl = useAppState(_temp5);
-  const sessionActive = useAppState(_temp6);
+  const sessionUrl = useAppState(_temp4) as string | undefined;
+  const connectUrl = useAppState(_temp5) as string | undefined;
+  const sessionActive = useAppState(_temp6) as boolean;
   const [focusIndex, setFocusIndex] = useState(2);
   const [showQR, setShowQR] = useState(false);
   const [qrText, setQrText] = useState("");
@@ -176,8 +176,7 @@ function BridgeDisconnectDialog(t0) {
       }
       qrToString(displayUrl, {
         type: "utf8",
-        errorCorrectionLevel: "L",
-        small: true
+        errorCorrectionLevel: "L"
       }).then(setQrText).catch(() => setQrText(""));
     };
     t2 = [showQR, displayUrl];
