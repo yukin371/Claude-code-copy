@@ -36,6 +36,7 @@
 - 当前状态：
   - task route execution target 骨架已接入
   - 主查询路径已通过 route transport 接入 openai-compatible shim
+  - `sideQuery` 与 token estimation 等主辅助链路已接入 route-aware client
 - 剩余收口：
   - 辅助路径与策略层继续补齐
   - 降低不同 provider 下行为漂移
@@ -78,6 +79,9 @@
 ## 最近已验证推进
 
 - 已验证：`bun run typecheck`
+- 已验证：多 provider / route helper 回归已覆盖 `direct-provider` 与 `gateway` 两种模式
+- 已验证：任务路由回归已覆盖 `querySource -> route` 的 review / frontend hint 映射
+- 已验证：状态页已可查看非 `main` 任务路由矩阵
 - 已验证：只读 smoke 矩阵已更新到 22 条用例
 - 已验证：plugin refresh 隔离 smoke 已收口
 - 已验证：LSP refresh 隔离 smoke 已收口，并修补了重复 scope 回归

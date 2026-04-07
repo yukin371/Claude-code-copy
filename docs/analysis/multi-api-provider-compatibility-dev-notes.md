@@ -18,13 +18,15 @@
 - `querySource` 已能映射到 route，并进入 route-aware client 创建流程。
 - OpenAI-compatible provider 已支持 route provider 作为默认端点/密钥选择依据。
 - OpenAI-compatible provider 现在会在同 provider 端点耗尽后，继续按兼容 provider 顺序回退。
+- `sideQuery` 与 token estimation 已接入 route-aware client，不再默认绕回旧的主 client。
+- 状态页已可直接查看非 main 任务路由矩阵，便于核对 `subagent` / `frontend` / `review` 等任务实际落点。
 
 ## 仍需推进
 
 - 把 provider 默认 baseUrl / apiKey 解析收成共享元数据，避免重复散落。
 - 共享元数据已经落到 `providerMetadata.ts`，后续应优先扩这里而不是再复制常量。
 - 统一主线程、subagent、frontend、review 的路由 model 解析入口。
-- 为多 provider 增加更明确的兼容测试。
+- 为多 provider 增加更完整的兼容测试，尤其是更多辅助路径与外部 gateway / 直连 provider 的组合验证。
 - 应用内不再把熔断、权重分配做成长期主能力，后续重点改为外部网关集成与直连模式验证。
 
 ## 开发顺序
