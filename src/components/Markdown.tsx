@@ -21,6 +21,7 @@ type Props = {
 // retaining full content strings (turn50→turn99 RSS regression, #24180).
 const TOKEN_CACHE_MAX = 500;
 const tokenCache = new Map<string, Token[]>();
+const MarkdownAnsi = Ansi as React.ComponentType<React.PropsWithChildren<{ dimColor?: boolean }>>;
 
 // Characters that indicate markdown syntax. If none are present, skip the
 // ~3ms marked.lexer call entirely — render as a single paragraph. Covers
@@ -75,7 +76,7 @@ function cachedLexer(content: string): Token[] {
  * - Tables are rendered as React components with proper flexbox layout
  * - Other content is rendered as ANSI strings via formatToken
  */
-export function Markdown(props) {
+export function Markdown(props: Props): React.ReactNode {
   const $ = _c(4);
   const settings = useSettings();
   if (settings.syntaxHighlightingDisabled) {
@@ -99,16 +100,16 @@ export function Markdown(props) {
   }
   return t0;
 }
-function MarkdownWithHighlight(props) {
+function MarkdownWithHighlight(props: Props): React.ReactNode {
   const $ = _c(4);
-  let t0;
+  let t0: Promise<CliHighlight | null>;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     t0 = getCliHighlightPromise();
     $[0] = t0;
   } else {
     t0 = $[0];
   }
-  const highlight = use(t0);
+  const highlight = use<CliHighlight | null>(t0);
   let t1;
   if ($[1] !== highlight || $[2] !== props) {
     t1 = <MarkdownBody {...props} highlight={highlight} />;
@@ -120,7 +121,10 @@ function MarkdownWithHighlight(props) {
   }
   return t1;
 }
-function MarkdownBody(t0) {
+type MarkdownBodyProps = Props & {
+  highlight: CliHighlight | null;
+};
+function MarkdownBody(t0: MarkdownBodyProps) {
   const $ = _c(7);
   const {
     children,
@@ -136,7 +140,7 @@ function MarkdownBody(t0) {
     let nonTableContent = "";
     const flushNonTableContent = function flushNonTableContent() {
       if (nonTableContent) {
-        elements.push(<Ansi key={elements.length} dimColor={dimColor}>{nonTableContent.trim()}</Ansi>);
+        elements.push(<MarkdownAnsi key={elements.length} dimColor={dimColor}>{nonTableContent.trim()}</MarkdownAnsi>);
         nonTableContent = "";
       }
     };

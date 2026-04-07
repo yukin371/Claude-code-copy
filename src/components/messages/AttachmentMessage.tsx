@@ -5,6 +5,7 @@ import { Ansi, Box, Text } from '../../ink.js';
 import type { Attachment } from 'src/utils/attachments.js';
 import type { NullRenderingAttachmentType } from './nullRenderingAttachments.js';
 import { useAppState } from '../../state/AppState.js';
+import type { AppState } from '../../state/AppState.js';
 import { getDisplayPath } from 'src/utils/file.js';
 import { formatFileSize } from 'src/utils/format.js';
 import { MessageResponse } from '../MessageResponse.js';
@@ -113,7 +114,7 @@ export function AttachmentMessage({
       // names — shortId is undefined outside ant builds anyway.
       const names = attachment.skills.map(s => s.shortId ? `${s.name} [${s.shortId}]` : s.name).join(', ');
       const firstId = attachment.skills[0]?.shortId;
-      const hint = "external" === 'ant' && !isDemoEnv && firstId ? ` · /skill-feedback ${firstId} 1=wrong 2=noisy 3=good [comment]` : '';
+      const hint = process.env.USER_TYPE === 'ant' && !isDemoEnv && firstId ? ` · /skill-feedback ${firstId} 1=wrong 2=noisy 3=good [comment]` : '';
       return <Line>
           <Text bold>{attachment.skills.length}</Text> relevant{' '}
           {plural(attachment.skills.length, 'skill')}: {names}
@@ -437,13 +438,13 @@ function TeammateTaskStatus(t0) {
   const bg = useSelectedMessageBg();
   let t1;
   if ($[0] !== attachment.taskId) {
-    t1 = s => s.tasks[attachment.taskId];
+    t1 = (s: AppState) => s.tasks[attachment.taskId];
     $[0] = attachment.taskId;
     $[1] = t1;
   } else {
     t1 = $[1];
   }
-  const task = useAppState(t1);
+  const task = useAppState(t1) as AppState['tasks'][string] | undefined;
   if (task?.type !== "in_process_teammate") {
     let t2;
     if ($[2] !== attachment) {

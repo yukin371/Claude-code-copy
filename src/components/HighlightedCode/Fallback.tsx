@@ -2,11 +2,12 @@ import { c as _c } from "react/compiler-runtime";
 import { extname } from 'path';
 import React, { Suspense, use, useMemo } from 'react';
 import { Ansi, Text } from '../../ink.js';
+import type { CliHighlight } from '../../utils/cliHighlight.js';
 import { getCliHighlightPromise } from '../../utils/cliHighlight.js';
 import { logForDebugging } from '../../utils/debug.js';
 import { convertLeadingTabsToSpaces } from '../../utils/file.js';
 import { hashPair } from '../../utils/hash.js';
-type Props = {
+type HighlightedCodeFallbackProps = {
   code: string;
   filePath: string;
   dim?: boolean;
@@ -36,7 +37,7 @@ function cachedHighlight(hl: NonNullable<Awaited<ReturnType<typeof getCliHighlig
   hlCache.set(key, out);
   return out;
 }
-export function HighlightedCodeFallback(t0) {
+export function HighlightedCodeFallback(t0: HighlightedCodeFallbackProps) {
   const $ = _c(20);
   const {
     code,
@@ -134,7 +135,7 @@ function Highlighted(t0) {
   } else {
     t1 = $[0];
   }
-  const hl = use(t1);
+  const hl = use<CliHighlight | null>(t1);
   let t2;
   if ($[1] !== codeWithSpaces || $[2] !== hl || $[3] !== language) {
     bb0: {

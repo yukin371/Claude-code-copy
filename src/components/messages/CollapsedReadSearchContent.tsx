@@ -7,6 +7,7 @@ import { Ansi, Box, Text, useTheme } from '../../ink.js';
 import { findToolByName, type Tools } from '../../Tool.js';
 import { getReplPrimitiveTools } from '../../tools/REPLTool/primitiveTools.js';
 import type { CollapsedReadSearchGroup, NormalizedAssistantMessage } from '../../types/message.js';
+import type { ToolUseBlockParam } from '@anthropic-ai/sdk/resources/messages/messages.mjs';
 import { uniq } from '../../utils/array.js';
 import { getToolUseIdsFromCollapsedGroup } from '../../utils/collapseReadSearch.js';
 import { getDisplayPath } from '../../utils/file.js';
@@ -38,8 +39,26 @@ type Props = {
   isActiveGroup?: boolean;
 };
 
+type VerboseToolUseProps = {
+  content: ToolUseBlockParam;
+  tools: Tools;
+  lookups: ReturnType<typeof buildMessageLookups>;
+  inProgressToolUseIDs: Set<string>;
+  shouldAnimate: boolean;
+  theme: ThemeName;
+};
+
+function isToolUseContentBlock(block?: unknown): block is ToolUseBlockParam {
+  return typeof block === 'object' && block !== null && 'type' in block && 'id' in block && (block as {
+    type?: unknown;
+    id?: unknown;
+  }).type === 'tool_use' && typeof (block as {
+    id?: unknown;
+  }).id === 'string';
+}
+
 /** Render a single tool use in verbose mode */
-function VerboseToolUse(t0) {
+function VerboseToolUse(t0: VerboseToolUseProps) {
   const $ = _c(24);
   const {
     content,
@@ -204,7 +223,12 @@ export function CollapsedReadSearchContent({
   if (isActiveGroup) {
     for (const id_0 of toolUseIds) {
       if (!inProgressToolUseIDs.has(id_0)) continue;
-      const latest = lookups.progressMessagesByToolUseID.get(id_0)?.at(-1)?.data;
+      const latest = lookups.progressMessagesByToolUseID.get(id_0)?.at(-1)?.data as {
+        type?: string;
+        phase?: string;
+        toolInput?: unknown;
+        toolName?: string;
+      } | undefined;
       if (latest?.type === 'repl_tool_call' && latest.phase === 'start') {
         const input = latest.toolInput as {
           command?: string;
@@ -230,7 +254,7 @@ export function CollapsedReadSearchContent({
     return <Box flexDirection="column">
         {toolUses.map(msg_0 => {
         const content = msg_0.message.content[0];
-        if (content?.type !== 'tool_use') return null;
+        if (!isToolUseContentBlock(content)) return null;
         return <VerboseToolUse key={content.id} content={content} tools={tools} lookups={lookups} inProgressToolUseIDs={inProgressToolUseIDs} shouldAnimate={shouldAnimate} theme={theme} />;
       })}
         {message.hookInfos && message.hookInfos.length > 0 && <>
@@ -276,7 +300,11 @@ export function CollapsedReadSearchContent({
     let lines = 0;
     for (const id_1 of toolUseIds) {
       if (!inProgressToolUseIDs.has(id_1)) continue;
-      const data = lookups.progressMessagesByToolUseID.get(id_1)?.at(-1)?.data;
+      const data = lookups.progressMessagesByToolUseID.get(id_1)?.at(-1)?.data as {
+        type?: string;
+        elapsedTimeSeconds?: number;
+        totalLines?: number;
+      } | undefined;
       if (data?.type !== 'bash_progress' && data?.type !== 'powershell_progress') {
         continue;
       }
@@ -468,7 +496,7 @@ export function CollapsedReadSearchContent({
             <Text dimColor>{'  ⎿  '}</Text>
           </Box>
           <Box flexDirection="column" flexGrow={1}>
-            {displayedHint.split('\n').map((line, i, arr) => <Text key={`hint-${i}`} dimColor>
+            {typeof displayedHint === 'string' && displayedHint.split('\n').map((line, i, arr) => <Text key={`hint-${i}`} dimColor>
                 {line}
                 {i === arr.length - 1 && shellProgressSuffix}
               </Text>)}

@@ -8,6 +8,7 @@ import { BLACK_CIRCLE } from '../../constants/figures.js';
 import { stringWidth } from '../../ink/stringWidth.js';
 import { Box, Text, useTheme } from '../../ink.js';
 import { useAppStateMaybeOutsideOfProvider } from '../../state/AppState.js';
+import type { AppState } from '../../state/AppState.js';
 import { findToolByName, type Tool, type ToolProgressData, type Tools } from '../../Tool.js';
 import type { ProgressMessage } from '../../types/message.js';
 import { useIsClassifierChecking } from '../../utils/classifierApprovalsHook.js';
@@ -51,7 +52,7 @@ export function AssistantToolUseMessage(t0) {
   const terminalSize = useTerminalSize();
   const [theme] = useTheme();
   const bg = useSelectedMessageBg();
-  const pendingWorkerRequest = useAppStateMaybeOutsideOfProvider(_temp);
+  const pendingWorkerRequest = useAppStateMaybeOutsideOfProvider(_temp) as AppState['pendingWorkerRequest'];
   const isClassifierCheckingRaw = useIsClassifierChecking(param.id);
   const permissionMode = useAppStateMaybeOutsideOfProvider(_temp2);
   const hasStrippedRules = useAppStateMaybeOutsideOfProvider(_temp3);
@@ -292,13 +293,13 @@ export function AssistantToolUseMessage(t0) {
   }
   return t16;
 }
-function _temp3(state_1) {
+function _temp3(state_1: AppState) {
   return !!state_1.toolPermissionContext.strippedDangerousRules;
 }
-function _temp2(state_0) {
+function _temp2(state_0: AppState) {
   return state_0.toolPermissionContext.mode;
 }
-function _temp(state) {
+function _temp(state: AppState) {
   return state.pendingWorkerRequest;
 }
 function renderToolUseMessage(tool: Tool, input: unknown, {
@@ -337,7 +338,12 @@ function renderToolUseProgressMessage(tool: Tool, tools: Tools, lookups: ReturnT
   columns: number;
   rows: number;
 }): React.ReactNode {
-  const toolProgressMessages = progressMessagesForMessage.filter((msg): msg is ProgressMessage<ToolProgressData> => msg.data.type !== 'hook_progress');
+  const toolProgressMessages = progressMessagesForMessage.filter((msg): msg is ProgressMessage<ToolProgressData> => {
+    const data = msg.data as {
+      type?: string;
+    } | undefined;
+    return data?.type !== 'hook_progress';
+  });
   try {
     const toolMessages = tool.renderToolUseProgressMessage?.(toolProgressMessages, {
       tools,

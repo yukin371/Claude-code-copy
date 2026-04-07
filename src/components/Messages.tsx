@@ -18,7 +18,7 @@ import type { Screen } from '../screens/REPL.js';
 import type { Tools } from '../Tool.js';
 import { findToolByName } from '../Tool.js';
 import type { AgentDefinitionsResult } from '../tools/AgentTool/loadAgentsDir.js';
-import type { Message as MessageType, NormalizedMessage, ProgressMessage as ProgressMessageType, RenderableMessage } from '../types/message.js';
+import { getFirstMessageContentBlock, type Message as MessageType, type NormalizedMessage, type ProgressMessage as ProgressMessageType, type RenderableMessage } from '../types/message.js';
 import { type AdvisorBlock, isAdvisorBlock } from '../utils/advisor.js';
 import { collapseBackgroundBashNotifications } from '../utils/collapseBackgroundBashNotifications.js';
 import { collapseHookSummaries } from '../utils/collapseHookSummaries.js';
@@ -52,7 +52,10 @@ import type { JumpHandle } from './VirtualMessageList.js';
 // and pegs CPU at 100%. Memo on agentDefinitions so a new messages array
 // doesn't invalidate the logo subtree. LogoV2/StatusNotices internally
 // subscribe to useAppState/useSettings for their own updates.
-const LogoHeader = React.memo(function LogoHeader(t0) {
+type LogoHeaderProps = {
+  agentDefinitions?: AgentDefinitionsResult;
+};
+const LogoHeader = React.memo(function LogoHeader(t0: LogoHeaderProps) {
   const $ = _c(3);
   const {
     agentDefinitions
@@ -90,25 +93,23 @@ import { VirtualMessageList } from './VirtualMessageList.js';
  * if the model forgets to call Brief, the user sees nothing for that turn.
  * That's on the model to get right; the filter does not second-guess it.
  */
-export function filterForBriefTool<T extends {
-  type: string;
-  subtype?: string;
-  isMeta?: boolean;
-  isApiErrorMessage?: boolean;
-  message?: {
-    content: Array<{
-      type: string;
-      name?: string;
-      tool_use_id?: string;
-    }>;
-  };
-  attachment?: {
-    type: string;
-    isMeta?: boolean;
-    origin?: unknown;
-    commandMode?: string;
-  };
-}>(messages: T[], briefToolNames: string[]): T[] {
+type ReorderableMessage = Extract<
+  NormalizedMessage,
+  {
+    type: 'assistant' | 'user' | 'system' | 'attachment';
+  }
+>;
+function isReorderableMessage(
+  message: NormalizedMessage,
+): message is ReorderableMessage {
+  return (
+    message.type === 'assistant' ||
+    message.type === 'user' ||
+    message.type === 'system' ||
+    message.type === 'attachment'
+  );
+}
+export function filterForBriefTool<T extends ReorderableMessage>(messages: T[], briefToolNames: string[]): T[] {
   const nameSet = new Set(briefToolNames);
   // tool_use always precedes its tool_result in the array, so we can collect
   // IDs and match against them in a single pass.
@@ -120,7 +121,7 @@ export function filterForBriefTool<T extends {
     // hook timing) that defeats the point of brief mode. Still visible in
     // transcript mode (ctrl+o) which bypasses this filter.
     if (msg.type === 'system') return msg.subtype !== 'api_metrics';
-    const block = msg.message?.content[0];
+    const block = getFirstMessageContentBlock(msg.message?.content);
     if (msg.type === 'assistant') {
       // API error messages (auth failures, rate limits, etc.) must stay visible
       if (msg.isApiErrorMessage) return true;
@@ -166,16 +167,7 @@ export function filterForBriefTool<T extends {
  * Per-turn: only drops text in turns that actually called Brief. If the
  * model forgets, text still shows — otherwise the user would see nothing.
  */
-export function dropTextInBriefTurns<T extends {
-  type: string;
-  isMeta?: boolean;
-  message?: {
-    content: Array<{
-      type: string;
-      name?: string;
-    }>;
-  };
-}>(messages: T[], briefToolNames: string[]): T[] {
+export function dropTextInBriefTurns<T extends ReorderableMessage>(messages: T[], briefToolNames: string[]): T[] {
   const nameSet = new Set(briefToolNames);
   // First pass: find which turns (bounded by non-meta user messages) contain
   // a Brief tool_use. Tag each assistant text block with its turn index.
@@ -184,7 +176,7 @@ export function dropTextInBriefTurns<T extends {
   let turn = 0;
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i]!;
-    const block = msg.message?.content[0];
+    const block = getFirstMessageContentBlock(msg.message?.content);
     if (msg.type === 'user' && block?.type !== 'tool_result' && !msg.isMeta) {
       turn++;
       continue;
@@ -313,7 +305,7 @@ export type SliceAnchor = {
 
 /** Exported for testing. Mutates anchorRef when the window needs to advance. */
 export function computeSliceStart(collapsed: ReadonlyArray<{
-  uuid: string;
+  uuid?: string;
 }>, anchorRef: {
   current: SliceAnchor;
 }, cap = MAX_MESSAGES_WITHOUT_VIRTUALIZATION, step = MESSAGE_CAP_STEP): number {
@@ -328,12 +320,12 @@ export function computeSliceStart(collapsed: ReadonlyArray<{
   // Refresh anchor from whatever lives at the current start — heals a
   // stale uuid after fallback and captures a new one after advancement.
   const msgAtStart = collapsed[start];
-  if (msgAtStart && (anchor?.uuid !== msgAtStart.uuid || anchor.idx !== start)) {
+  if (msgAtStart?.uuid && (anchor?.uuid !== msgAtStart.uuid || anchor.idx !== start)) {
     anchorRef.current = {
       uuid: msgAtStart.uuid,
       idx: start
     };
-  } else if (!msgAtStart && anchor) {
+  } else if ((!msgAtStart?.uuid || !msgAtStart) && anchor) {
     anchorRef.current = null;
   }
   return start;
@@ -496,7 +488,7 @@ const MessagesImpl = ({
     const compactAwareMessages = verbose || isFullscreenEnvEnabled() ? normalizedMessages : getMessagesAfterCompactBoundary(normalizedMessages, {
       includeSnipped: true
     });
-    const messagesToShowNotTruncated = reorderMessagesInUI(compactAwareMessages.filter((msg_2): msg_2 is Exclude<NormalizedMessage, ProgressMessageType> => msg_2.type !== 'progress')
+    const messagesToShowNotTruncated = reorderMessagesInUI(compactAwareMessages.filter((msg_2): msg_2 is ReorderableMessage => isReorderableMessage(msg_2))
     // CC-724: drop attachment messages that AttachmentMessage renders as
     // null (hook_success, hook_additional_context, hook_cancelled, etc.)
     // BEFORE counting/slicing so they don't inflate the "N messages"
@@ -549,7 +541,7 @@ const MessagesImpl = ({
   const dividerBeforeIndex = useMemo(() => {
     if (!unseenDivider) return -1;
     const prefix = unseenDivider.firstUnseenUuid.slice(0, 24);
-    return renderableMessages.findIndex(m => m.uuid.slice(0, 24) === prefix);
+    return renderableMessages.findIndex(m => m.uuid?.slice(0, 24) === prefix);
   }, [unseenDivider, renderableMessages]);
   const selectedIdx = useMemo(() => {
     if (!cursor) return -1;

@@ -8,7 +8,7 @@ import { useTerminalSize } from '../hooks/useTerminalSize.js';
 import { Box } from '../ink.js';
 import type { Tools } from '../Tool.js';
 import { type ConnectorTextBlock, isConnectorTextBlock } from '../types/connectorText.js';
-import type { AssistantMessage, AttachmentMessage as AttachmentMessageType, CollapsedReadSearchGroup as CollapsedReadSearchGroupType, GroupedToolUseMessage as GroupedToolUseMessageType, NormalizedUserMessage, ProgressMessage, SystemMessage } from '../types/message.js';
+import { getMessageContentBlocks, type AssistantMessage, type AttachmentMessage as AttachmentMessageType, type CollapsedReadSearchGroup as CollapsedReadSearchGroupType, type GroupedToolUseMessage as GroupedToolUseMessageType, type NormalizedUserMessage, type ProgressMessage, type SystemMessage } from '../types/message.js';
 import { type AdvisorBlock, isAdvisorBlock } from '../utils/advisor.js';
 import { isFullscreenEnvEnabled } from '../utils/fullscreen.js';
 import { logError } from '../utils/log.js';
@@ -591,13 +591,11 @@ function AssistantMessageBlock(t0) {
 export function hasThinkingContent(m: {
   type: string;
   message?: {
-    content: Array<{
-      type: string;
-    }>;
+    content?: unknown;
   };
 }): boolean {
   if (m.type !== 'assistant' || !m.message) return false;
-  return m.message.content.some(b => b.type === 'thinking' || b.type === 'redacted_thinking');
+  return getMessageContentBlocks(m.message.content as Parameters<typeof getMessageContentBlocks>[0]).some(b => b.type === 'thinking' || b.type === 'redacted_thinking');
 }
 
 /** Exported for testing */

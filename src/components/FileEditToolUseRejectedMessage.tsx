@@ -8,6 +8,22 @@ import { Box, Text } from '../ink.js';
 import { HighlightedCode } from './HighlightedCode.js';
 import { MessageResponse } from './MessageResponse.js';
 import { StructuredDiffList } from './StructuredDiffList.js';
+type StructuredDiffListProps = {
+  hunks: StructuredPatchHunk[];
+  dim: boolean;
+  width: number;
+  filePath: string;
+  firstLine: string | null;
+  fileContent?: string;
+};
+type HighlightedCodeProps = {
+  code: string;
+  filePath: string;
+  width: number;
+  dim?: boolean;
+};
+const StructuredDiffListComponent = StructuredDiffList as React.ComponentType<StructuredDiffListProps>;
+const HighlightedCodeComponent = HighlightedCode as React.ComponentType<HighlightedCodeProps>;
 const MAX_LINES_TO_RENDER = 10;
 type Props = {
   file_path: string;
@@ -103,7 +119,7 @@ export function FileEditToolUseRejectedMessage(t0) {
     const t7 = columns - 12;
     let t8;
     if ($[16] !== file_path || $[17] !== t6 || $[18] !== t7) {
-      t8 = <HighlightedCode code={t6} filePath={file_path} width={t7} dim={true} />;
+      t8 = <HighlightedCodeComponent code={t6} filePath={file_path} width={t7} dim={true} />;
       $[16] = file_path;
       $[17] = t6;
       $[18] = t7;
@@ -146,7 +162,7 @@ export function FileEditToolUseRejectedMessage(t0) {
   const t5 = columns - 12;
   let t6;
   if ($[29] !== fileContent || $[30] !== file_path || $[31] !== firstLine || $[32] !== patch || $[33] !== t5) {
-    t6 = <StructuredDiffList hunks={patch} dim={true} width={t5} filePath={file_path} firstLine={firstLine} fileContent={fileContent} />;
+    t6 = <StructuredDiffListComponent hunks={patch} dim={true} width={t5} filePath={file_path} firstLine={firstLine} fileContent={fileContent} />;
     $[29] = fileContent;
     $[30] = file_path;
     $[31] = firstLine;

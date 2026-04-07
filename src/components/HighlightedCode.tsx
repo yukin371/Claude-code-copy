@@ -8,14 +8,14 @@ import sliceAnsi from '../utils/sliceAnsi.js';
 import { countCharInString } from '../utils/stringUtils.js';
 import { HighlightedCodeFallback } from './HighlightedCode/Fallback.js';
 import { expectColorFile } from './StructuredDiff/colorDiff.js';
-type Props = {
+export type HighlightedCodeProps = {
   code: string;
   filePath: string;
   width?: number;
   dim?: boolean;
 };
 const DEFAULT_WIDTH = 80;
-export const HighlightedCode = memo(function HighlightedCode(t0) {
+export const HighlightedCode = memo(function HighlightedCode(t0: HighlightedCodeProps) {
   const $ = _c(21);
   const {
     code,

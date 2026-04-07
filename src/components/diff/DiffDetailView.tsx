@@ -8,6 +8,15 @@ import { getCwd } from '../../utils/cwd.js';
 import { readFileSafe } from '../../utils/file.js';
 import { Divider } from '../design-system/Divider.js';
 import { StructuredDiff } from '../StructuredDiff.js';
+type StructuredDiffProps = {
+  patch: StructuredPatchHunk;
+  filePath: string;
+  firstLine: string | null;
+  fileContent?: string;
+  dim: boolean;
+  width: number;
+};
+const StructuredDiffComponent = StructuredDiff as React.ComponentType<StructuredDiffProps>;
 type Props = {
   filePath: string;
   hunks: StructuredPatchHunk[];
@@ -240,7 +249,7 @@ export function DiffDetailView(t0) {
   }
   let t6;
   if ($[39] !== columns || $[40] !== fileContent || $[41] !== filePath || $[42] !== firstLine || $[43] !== hunks) {
-    t6 = hunks.length === 0 ? <Text dimColor={true}>No diff content</Text> : hunks.map((hunk, index) => <StructuredDiff key={index} patch={hunk} filePath={filePath} firstLine={firstLine} fileContent={fileContent} dim={false} width={columns - 2 - 2} />);
+    t6 = hunks.length === 0 ? <Text dimColor={true}>No diff content</Text> : hunks.map((hunk, index) => <StructuredDiffComponent key={index} patch={hunk} filePath={filePath} firstLine={firstLine} fileContent={fileContent} dim={false} width={columns - 2 - 2} />);
     $[39] = columns;
     $[40] = fileContent;
     $[41] = filePath;

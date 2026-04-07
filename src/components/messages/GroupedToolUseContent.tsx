@@ -10,6 +10,34 @@ type Props = {
   inProgressToolUseIDs: Set<string>;
   shouldAnimate: boolean;
 };
+
+type GroupedToolUseData = {
+  param: ToolUseBlockParam;
+  isResolved: boolean;
+  isError: boolean;
+  isInProgress: boolean;
+  progressMessages: ReturnType<typeof filterToolProgressMessages>;
+  result?: {
+    param: ToolResultBlockParam;
+    output: unknown;
+  };
+};
+
+function isToolResultContentBlock(
+  block: unknown,
+): block is ToolResultBlockParam {
+  return typeof block === 'object' && block !== null && 'type' in block && (block as {
+    type?: unknown;
+  }).type === 'tool_result';
+}
+
+function isToolUseContentBlock(
+  block?: unknown,
+): block is ToolUseBlockParam {
+  return typeof block === 'object' && block !== null && 'type' in block && (block as {
+    type?: unknown;
+  }).type === 'tool_use';
+}
 export function GroupedToolUseContent({
   message,
   tools,
@@ -29,25 +57,31 @@ export function GroupedToolUseContent({
   }>();
   for (const resultMsg of message.results) {
     for (const content of resultMsg.message.content) {
-      if (content.type === 'tool_result') {
-        resultsByToolUseId.set(content.tool_use_id, {
-          param: content,
-          output: resultMsg.toolUseResult
-        });
+      if (!isToolResultContentBlock(content)) {
+        continue;
       }
+      resultsByToolUseId.set(content.tool_use_id, {
+        param: content,
+        output: resultMsg.toolUseResult
+      });
     }
   }
-  const toolUsesData = message.messages.map(msg => {
+  const toolUsesData: GroupedToolUseData[] = message.messages.flatMap(msg => {
     const content = msg.message.content[0];
+    if (!isToolUseContentBlock(content)) {
+      return [];
+    }
     const result = resultsByToolUseId.get(content.id);
-    return {
-      param: content as ToolUseBlockParam,
+    return [{
+      param: content,
       isResolved: lookups.resolvedToolUseIDs.has(content.id),
       isError: lookups.erroredToolUseIDs.has(content.id),
       isInProgress: inProgressToolUseIDs.has(content.id),
-      progressMessages: filterToolProgressMessages(lookups.progressMessagesByToolUseID.get(content.id) ?? []),
+      progressMessages: filterToolProgressMessages(
+        lookups.progressMessagesByToolUseID.get(content.id) ?? [],
+      ),
       result
-    };
+    }];
   });
   const anyInProgress = toolUsesData.some(d => d.isInProgress);
   return tool.renderGroupedToolUse(toolUsesData, {

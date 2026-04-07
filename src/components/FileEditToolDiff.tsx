@@ -11,6 +11,15 @@ import { logError } from '../utils/log.js';
 import { CHUNK_SIZE, openForScan, readCapped, scanForContext } from '../utils/readEditContext.js';
 import { firstLineOf } from '../utils/stringUtils.js';
 import { StructuredDiffList } from './StructuredDiffList.js';
+type StructuredDiffListProps = {
+  hunks: StructuredPatchHunk[];
+  dim: boolean;
+  width: number;
+  filePath: string;
+  firstLine: string | null;
+  fileContent?: string;
+};
+const StructuredDiffListComponent = StructuredDiffList as React.ComponentType<StructuredDiffListProps>;
 type Props = {
   file_path: string;
   edits: FileEdit[];
@@ -19,6 +28,10 @@ type DiffData = {
   patch: StructuredPatchHunk[];
   firstLine: string | null;
   fileContent: string | undefined;
+};
+type DiffBodyProps = {
+  promise: Promise<DiffData>;
+  file_path: string;
 };
 export function FileEditToolDiff(props) {
   const $ = _c(7);
@@ -50,7 +63,7 @@ export function FileEditToolDiff(props) {
   }
   return t2;
 }
-function DiffBody(t0) {
+function DiffBody(t0: DiffBodyProps) {
   const $ = _c(6);
   const {
     promise,
@@ -66,7 +79,7 @@ function DiffBody(t0) {
   } = useTerminalSize();
   let t1;
   if ($[0] !== columns || $[1] !== fileContent || $[2] !== file_path || $[3] !== firstLine || $[4] !== patch) {
-    t1 = <DiffFrame><StructuredDiffList hunks={patch} dim={false} width={columns} filePath={file_path} firstLine={firstLine} fileContent={fileContent} /></DiffFrame>;
+    t1 = <DiffFrame><StructuredDiffListComponent hunks={patch} dim={false} width={columns} filePath={file_path} firstLine={firstLine} fileContent={fileContent} /></DiffFrame>;
     $[0] = columns;
     $[1] = fileContent;
     $[2] = file_path;
