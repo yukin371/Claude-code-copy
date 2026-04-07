@@ -287,6 +287,7 @@ function makeDreamProgressWatcher(
     let text = ''
     let toolUseCount = 0
     const touchedPaths: string[] = []
+    if (!Array.isArray(msg.message.content)) return
     for (const block of msg.message.content) {
       if (block.type === 'text') {
         text += block.text

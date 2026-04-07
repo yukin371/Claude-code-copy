@@ -166,8 +166,8 @@ function addCachedCostToTotalSessionCost(
   if (message.type === 'stream_event') {
     return
   }
-  const model = message.message.model
-  const usage = message.message.usage
+  const model = message.message.model as Parameters<typeof calculateUSDCost>[0]
+  const usage = message.message.usage as Parameters<typeof calculateUSDCost>[1]
   const costUSD = calculateUSDCost(model, usage)
   addToTotalSessionCost(costUSD, usage, model)
 }
@@ -251,25 +251,23 @@ function mapAssistantMessage(
     timestamp: message.timestamp,
     message: {
       ...message.message,
-      content: message.message.content
-        .map(_ => {
-          switch (_.type) {
-            case 'text':
-              return {
-                ..._,
-                text: f(_.text) as string,
-                citations: _.citations || [],
-              } // Ensure citations
-            case 'tool_use':
-              return {
-                ..._,
-                input: mapValuesDeep(_.input as Record<string, unknown>, f),
-              }
-            default:
-              return _ // Handle other block types unchanged
-          }
-        })
-        .filter(Boolean) as BetaContentBlock[],
+      content: message.message.content.map(_ => {
+        switch (_.type) {
+          case 'text':
+            return {
+              ..._,
+              text: f(_.text) as string,
+              citations: _.citations || [],
+            } // Ensure citations
+          case 'tool_use':
+            return {
+              ..._,
+              input: mapValuesDeep(_.input as Record<string, unknown>, f),
+            }
+          default:
+            return _
+        }
+      }) as AssistantMessage['message']['content'],
     },
     type: 'assistant',
   }

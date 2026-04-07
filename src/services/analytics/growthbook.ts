@@ -83,6 +83,7 @@ export function getFeatureValue_CACHED_MAY_BE_STALE<T>(
 export function getFeatureValue_CACHED_WITH_REFRESH<T>(
   feature: string,
   defaultValue: T,
+  _refreshWindowMs?: number,
 ): T {
   return getFeatureValue_CACHED_MAY_BE_STALE(feature, defaultValue)
 }
