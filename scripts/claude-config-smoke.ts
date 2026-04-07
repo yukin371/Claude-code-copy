@@ -20,6 +20,8 @@ type SmokeCase = {
   entrypoint: 'cli' | 'bun-tools'
   args: string[]
   notes: string
+  env?: Record<string, string | undefined>
+  expectedOutputContains?: string[]
 }
 
 type SmokeResult = {
@@ -30,6 +32,7 @@ type SmokeResult = {
   preview: string[]
   commandPreview: string
   notes: string
+  failureReason?: string
 }
 
 type SmokeEnvironment = {
@@ -186,6 +189,46 @@ function getSmokeCases(): SmokeCase[] {
       entrypoint: 'bun-tools',
       args: ['providers'],
       notes: 'Dump provider metadata and routing weights',
+    },
+    {
+      name: 'route-compact-direct-provider',
+      expectedExitCodes: [0],
+      commandLabel:
+        'NEKO_CODE_OPENAI_COMPATIBLE_API_KEY=shared-openai-key bun-tools route compact',
+      entrypoint: 'bun-tools',
+      args: ['route', 'compact'],
+      notes:
+        'Assert that a shared compatible API key alone keeps the default main route in direct-provider mode after config migration',
+      env: {
+        NEKO_CODE_OPENAI_COMPATIBLE_API_KEY: 'shared-openai-key',
+        ANTHROPIC_BASE_URL: undefined,
+      },
+      expectedOutputContains: [
+        '"provider": "glm"',
+        '"transportMode": "direct-provider"',
+        '"baseUrl": null',
+        '"apiKey": null',
+      ],
+    },
+    {
+      name: 'route-compact-gateway',
+      expectedExitCodes: [0],
+      commandLabel:
+        'ANTHROPIC_BASE_URL=https://gateway.example.com/v1/messages bun-tools route compact',
+      entrypoint: 'bun-tools',
+      args: ['route', 'compact'],
+      notes:
+        'Assert that a global Anthropic gateway pins the default main route to a single-upstream transport after config migration',
+      env: {
+        ANTHROPIC_BASE_URL: 'https://gateway.example.com/v1/messages',
+        NEKO_CODE_OPENAI_COMPATIBLE_API_KEY: undefined,
+      },
+      expectedOutputContains: [
+        '"provider": "anthropic"',
+        '"apiStyle": "anthropic"',
+        '"transportMode": "single-upstream"',
+        '"baseUrl": "https://gateway.example.com/v1/messages"',
+      ],
     },
   ]
 }
@@ -439,16 +482,26 @@ async function runSmokeCase(
   const entrypoint =
     smokeCase.entrypoint === 'cli' ? cliEntrypoint : bunToolsEntrypoint
   const command = [bunPath, entrypoint, ...smokeCase.args]
+  const env = {
+    ...process.env,
+    NEKO_CODE_CONFIG_DIR: environment.configDir,
+    CLAUDE_CODE_PLUGIN_CACHE_DIR: environment.pluginCacheDir,
+  } as Record<string, string | undefined>
+
+  for (const [key, value] of Object.entries(smokeCase.env ?? {})) {
+    if (value === undefined) {
+      delete env[key]
+      continue
+    }
+    env[key] = value
+  }
+
   const startedAt = Date.now()
   const proc = Bun.spawn(command, {
     cwd: environment.workspaceDir,
     stdout: 'pipe',
     stderr: 'pipe',
-    env: {
-      ...process.env,
-      NEKO_CODE_CONFIG_DIR: environment.configDir,
-      CLAUDE_CODE_PLUGIN_CACHE_DIR: environment.pluginCacheDir,
-    },
+    env,
   })
 
   const [stdout, stderr, exitCode] = await Promise.all([
@@ -459,15 +512,28 @@ async function runSmokeCase(
   const combinedOutput = [stdout.trim(), stderr.trim()]
     .filter(Boolean)
     .join('\n')
+  let failureReason: string | undefined
+  let passed = smokeCase.expectedExitCodes.includes(exitCode)
+
+  if (passed) {
+    for (const expectedSnippet of smokeCase.expectedOutputContains ?? []) {
+      if (!combinedOutput.includes(expectedSnippet)) {
+        passed = false
+        failureReason = `missing output snippet: ${expectedSnippet}`
+        break
+      }
+    }
+  }
 
   return {
     name: smokeCase.name,
-    passed: smokeCase.expectedExitCodes.includes(exitCode),
+    passed,
     exitCode,
     durationMs: Date.now() - startedAt,
     preview: formatPreview(combinedOutput, maxPreviewLines),
     commandPreview: formatCommand(command),
     notes: smokeCase.notes,
+    failureReason,
   }
 }
 
@@ -478,6 +544,9 @@ function printResult(result: SmokeResult, smokeCase: SmokeCase): void {
   )
   console.log(`  label: ${smokeCase.commandLabel}`)
   console.log(`  notes: ${result.notes}`)
+  if (result.failureReason) {
+    console.log(`  failure: ${result.failureReason}`)
+  }
   console.log(`  command: ${result.commandPreview}`)
   for (const line of result.preview) {
     console.log(`  preview: ${line}`)
@@ -657,6 +726,14 @@ try {
   }
 
   if (!options.keepTemp) {
-    await rm(environment.tempRoot, { recursive: true, force: true })
+    try {
+      await rm(environment.tempRoot, { recursive: true, force: true })
+    } catch (error) {
+      console.warn(
+        `Warning: failed to remove temp directory ${environment.tempRoot}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      )
+    }
   }
 }

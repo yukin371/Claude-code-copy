@@ -149,6 +149,7 @@
 - 已确认：本轮编译产物 `-p` 烟测遇到 API 连接失败；同一时刻源码模式 `bun src/entrypoints/cli.tsx -p ...` 也出现相同错误，因此暂不判定为 native build 回归
 - 已验证：`bun run scripts/bun-tools.ts routes` 现已输出可读 route matrix 与 querySource example matrix，便于继续做 provider/router 阶段回归
 - 已验证：`powershell -ExecutionPolicy Bypass -File scripts/readonly-smoke.ps1 -Workflow routing` 现已覆盖并断言 `direct-provider` 与 `single-upstream gateway` 两种模式
+- 已验证：`bun run smoke:claude-config` 现已在迁移后的隔离配置目录内覆盖并断言 `direct-provider` 与 `single-upstream gateway` 两种模式
 - 已验证：本轮入口收口后再次通过 `bun run typecheck`、`bun run smoke:claude-config`、`bun run test:routing`
 
 更多已确认完成项见归档文档，不再在主 roadmap 中重复展开。

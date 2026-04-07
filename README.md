@@ -115,6 +115,7 @@ bun run smoke:claude-config
 - 基础任务路由诊断与回归
 - 可读的 task route / querySource 路由诊断输出
 - 只读 routing smoke，可断言 `direct-provider` / `single-upstream gateway` 两种模式
+- 迁移后的隔离配置 smoke 也已覆盖并断言 `direct-provider` / `single-upstream gateway` 两种模式
 - native build 编译与基础 CLI 自检
 
 需要注意：
