@@ -44,8 +44,8 @@ export function FastModePicker(t0) {
     onDone,
     unavailableReason
   } = t0;
-  const model = useAppState(_temp);
-  const initialFastMode = useAppState(_temp2);
+  const model = useAppState(_temp) as AppState['mainLoopModel'];
+  const initialFastMode = useAppState(_temp2) as boolean | undefined;
   const setAppState = useSetAppState();
   const [enableFastMode, setEnableFastMode] = useState(initialFastMode ?? false);
   let t1;

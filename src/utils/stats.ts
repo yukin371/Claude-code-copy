@@ -110,6 +110,19 @@ type ProcessOptions = {
   toDate?: string
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function getNumberField(record: Record<string, unknown>, field: string): number {
+  const value = record[field]
+  return typeof value === 'number' ? value : 0
+}
+
+function getModelName(value: unknown): string {
+  return typeof value === 'string' && value.length > 0 ? value : 'unknown'
+}
+
 /**
  * Process session files and extract stats.
  * Can filter by date range.
@@ -306,9 +319,9 @@ async function processSessionFiles(
           }
 
           // Track model usage if available (skip synthetic messages)
-          if (message.message?.usage) {
-            const usage = message.message.usage
-            const model = message.message.model || 'unknown'
+          const usage = message.message?.usage
+          if (isRecord(usage)) {
+            const model = getModelName(message.message?.model)
 
             // Skip synthetic messages - they are internal and shouldn't appear in stats
             if (model === SYNTHETIC_MODEL) {
@@ -328,16 +341,26 @@ async function processSessionFiles(
               }
             }
 
-            modelUsageAgg[model]!.inputTokens += usage.input_tokens || 0
-            modelUsageAgg[model]!.outputTokens += usage.output_tokens || 0
+            const inputTokens = getNumberField(usage, 'input_tokens')
+            const outputTokens = getNumberField(usage, 'output_tokens')
+            const cacheReadInputTokens = getNumberField(
+              usage,
+              'cache_read_input_tokens',
+            )
+            const cacheCreationInputTokens = getNumberField(
+              usage,
+              'cache_creation_input_tokens',
+            )
+
+            modelUsageAgg[model]!.inputTokens += inputTokens
+            modelUsageAgg[model]!.outputTokens += outputTokens
             modelUsageAgg[model]!.cacheReadInputTokens +=
-              usage.cache_read_input_tokens || 0
+              cacheReadInputTokens
             modelUsageAgg[model]!.cacheCreationInputTokens +=
-              usage.cache_creation_input_tokens || 0
+              cacheCreationInputTokens
 
             // Track daily tokens per model
-            const totalTokens =
-              (usage.input_tokens || 0) + (usage.output_tokens || 0)
+            const totalTokens = inputTokens + outputTokens
             if (totalTokens > 0) {
               const dayTokens = dailyModelTokensMap.get(dateKey) || {}
               dayTokens[model] = (dayTokens[model] || 0) + totalTokens

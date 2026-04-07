@@ -15,6 +15,7 @@ import { getClaudeAiUserDefaultModelDescription, getMainLoopModel, modelDisplayS
 import { formatProviderTargetLabel, getMainLoopProviderState } from './model/mainProvider.js';
 import { getProviderLoadBalanceConfigSnapshot } from './model/providerMetadata.js';
 import { getAPIProvider } from './model/providers.js';
+import { getTaskRouteDebugSnapshot } from './model/taskRouting.js';
 import { getMTLSConfig } from './mtls.js';
 import { checkInstall } from './nativeInstaller/index.js';
 import { getProxyUrl } from './proxy.js';
@@ -29,7 +30,7 @@ export type Property = {
 };
 export type Diagnostic = React.ReactNode;
 export function buildSandboxProperties(): Property[] {
-  if ("external" !== 'ant') {
+  if (process.env.USER_TYPE !== 'ant') {
     return [];
   }
   const isSandboxed = SandboxManager.isSandboxingEnabled();
@@ -179,6 +180,34 @@ export async function buildInstallationDiagnostics(): Promise<Diagnostic[]> {
   const installWarnings = await checkInstall();
   return installWarnings.map(warning => warning.message);
 }
+function formatDoctorRouteSnapshotDiagnostic(diagnostic: Awaited<ReturnType<typeof getDoctorDiagnostic>>): string {
+  const snapshot = diagnostic.currentTaskRouteSnapshot;
+  const apiKeyDisplay = snapshot.transport.apiKey ? '[masked]' : 'unset';
+  const baseUrlDisplay = snapshot.transport.baseUrl ?? '[default]';
+  return `Doctor route snapshot (${snapshot.route}): provider=${snapshot.executionTarget.provider} (${snapshot.fields.provider.source}), apiStyle=${snapshot.executionTarget.apiStyle} (${snapshot.fields.apiStyle.source}), model=${snapshot.executionTarget.model} (${snapshot.fields.model.source}), baseUrl=${baseUrlDisplay} (${snapshot.fields.baseUrl.source}), apiKey=${apiKeyDisplay} (${snapshot.fields.apiKey.source})`;
+}
+function buildMainTaskRouteProperties(): Property[] {
+  const snapshot = getTaskRouteDebugSnapshot('main');
+  return [{
+    label: 'Main task route',
+    value: snapshot.route
+  }, {
+    label: 'Task route provider',
+    value: `${snapshot.executionTarget.provider} (${snapshot.fields.provider.source})`
+  }, {
+    label: 'Task route API style',
+    value: `${snapshot.executionTarget.apiStyle} (${snapshot.fields.apiStyle.source})`
+  }, {
+    label: 'Task route model',
+    value: `${snapshot.executionTarget.model ?? '[default]'} (${snapshot.fields.model.source})`
+  }, {
+    label: 'Task route base URL',
+    value: `${snapshot.transport.baseUrl ?? '[default]'} (${snapshot.fields.baseUrl.source})`
+  }, {
+    label: 'Task route API key',
+    value: `${snapshot.transport.apiKey ?? 'unset'} (${snapshot.fields.apiKey.source})`
+  }];
+}
 export async function buildInstallationHealthDiagnostics(): Promise<Diagnostic[]> {
   const diagnostic = await getDoctorDiagnostic();
   const items: Diagnostic[] = [];
@@ -198,6 +227,7 @@ export async function buildInstallationHealthDiagnostics(): Promise<Diagnostic[]
   if (diagnostic.hasUpdatePermissions === false) {
     items.push('No write permissions for auto-updates (requires sudo)');
   }
+  items.push(formatDoctorRouteSnapshotDiagnostic(diagnostic));
   return items;
 }
 export function buildAccountProperties(): Property[] {
@@ -344,6 +374,7 @@ export function buildAPIProviderProperties(): Property[] {
     label: 'Main session model',
     value: `${getModelDisplayLabel(getMainLoopModel())}${sessionModelOverride ? ' (session override)' : ''}`
   });
+  properties.push(...buildMainTaskRouteProperties());
   const proxyUrl = getProxyUrl();
   if (proxyUrl) {
     properties.push({

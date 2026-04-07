@@ -120,7 +120,7 @@ function ShowCurrentEffort(t0) {
   const {
     onDone
   } = t0;
-  const effortValue = useAppState(_temp);
+  const effortValue = useAppState(_temp) as EffortValue | undefined;
   const model = useMainLoopModel();
   const {
     message

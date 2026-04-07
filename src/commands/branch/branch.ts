@@ -36,8 +36,11 @@ type TranscriptEntry = TranscriptMessage & {
  * otherwise flow into the saved title and break the resume hint.
  */
 export function deriveFirstPrompt(
-  firstUserMessage: Extract<SerializedMessage, { type: 'user' }> | undefined,
+  firstUserMessage: SerializedMessage | undefined,
 ): string {
+  if (!firstUserMessage || firstUserMessage.type !== 'user') {
+    return 'Branched conversation'
+  }
   const content = firstUserMessage?.message?.content
   if (!content) return 'Branched conversation'
   const raw =
@@ -128,7 +131,7 @@ async function createFork(customTitle?: string): Promise<{
       isSidechain: false,
       forkedFrom: {
         sessionId: originalSessionId,
-        messageUuid: entry.uuid,
+        messageUuid: entry.uuid as UUID,
       },
     }
 
@@ -140,8 +143,8 @@ async function createFork(customTitle?: string): Promise<{
 
     serializedMessages.push(serialized)
     lines.push(jsonStringify(forkedEntry))
-    if (entry.type !== 'progress') {
-      parentUuid = entry.uuid
+    if (entry.type !== 'progress' && typeof entry.uuid === 'string') {
+      parentUuid = entry.uuid as UUID
     }
   }
 
@@ -240,7 +243,10 @@ export async function call(
     // Build LogOption for resume
     const now = new Date()
     const firstPrompt = deriveFirstPrompt(
-      serializedMessages.find(m => m.type === 'user'),
+      serializedMessages.find(
+        (m): m is Extract<SerializedMessage, { type: 'user' }> =>
+          m.type === 'user',
+      ),
     )
 
     // Save custom title - use provided title or firstPrompt as default

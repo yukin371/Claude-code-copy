@@ -9,7 +9,7 @@ import { Dialog } from '../../components/design-system/Dialog.js';
 import { IdeAutoConnectDialog, IdeDisableAutoConnectDialog, shouldShowAutoConnectDialog, shouldShowDisableAutoConnectDialog } from '../../components/IdeAutoConnectDialog.js';
 import { Box, Text } from '../../ink.js';
 import { clearServerCache } from '../../services/mcp/client.js';
-import type { ScopedMcpServerConfig } from '../../services/mcp/types.js';
+import type { MCPServerConnection, ScopedMcpServerConfig } from '../../services/mcp/types.js';
 import { useAppState, useSetAppState } from '../../state/AppState.js';
 import { getCwd } from '../../utils/cwd.js';
 import { execFileNoThrow } from '../../utils/execFileNoThrow.js';
@@ -524,7 +524,7 @@ function IDECommandFlow({
   onDone
 }: IDECommandFlowProps): React.ReactNode {
   const [connectingIDE, setConnectingIDE] = useState<DetectedIDEInfo | null>(null);
-  const ideClient = useAppState(s => s.mcp.clients.find(c => c.name === 'ide'));
+  const ideClient = useAppState(s => s.mcp.clients.find(c => c.name === 'ide')) as MCPServerConnection | undefined;
   const setAppState = useSetAppState();
   const isFirstCheckRef = useRef(true);
 
