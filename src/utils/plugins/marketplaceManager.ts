@@ -184,11 +184,25 @@ export function getDeclaredMarketplaces(): Record<string, DeclaredMarketplace> {
   // Lowest precedence: implicit < --add-dir < merged settings.
   // An explicit extraKnownMarketplaces entry for claude-plugins-official
   // in --add-dir or settings wins.
-  return {
-    ...implicit,
-    ...getAddDirExtraMarketplaces(),
-    ...(getInitialSettings().extraKnownMarketplaces ?? {}),
+  const declared: Record<string, DeclaredMarketplace> = { ...implicit }
+  Object.assign(declared, getAddDirExtraMarketplaces())
+
+  // Settings merge/delete plumbing can transiently widen values to include
+  // undefined. Keep only materialized entries that still have a source.
+  const fromSettings = (getInitialSettings().extraKnownMarketplaces ??
+    {}) as Record<string, unknown>
+  for (const [name, maybeDeclared] of Object.entries(fromSettings)) {
+    if (
+      maybeDeclared &&
+      typeof maybeDeclared === 'object' &&
+      'source' in maybeDeclared &&
+      maybeDeclared.source
+    ) {
+      declared[name] = maybeDeclared as DeclaredMarketplace
+    }
   }
+
+  return declared
 }
 
 /**

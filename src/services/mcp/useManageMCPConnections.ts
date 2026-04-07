@@ -728,10 +728,11 @@ export function useManageMCPConnections(
                         fetchCommandsForClient(client),
                         fetchMcpSkillsForClient!(client),
                       ])
+                    const commands: Command[] = [...mcpPrompts, ...mcpSkills]
                     updateServer({
                       ...client,
                       resources: newResources,
-                      commands: [...mcpPrompts, ...mcpSkills],
+                      commands,
                     })
                     // MCP skills changed — invalidate skill-search index so
                     // next discovery rebuilds with the new set.

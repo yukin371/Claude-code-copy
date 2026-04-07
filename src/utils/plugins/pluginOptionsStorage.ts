@@ -56,8 +56,11 @@ export function getPluginStorageId(plugin: LoadedPlugin): string {
 export const loadPluginOptions = memoize(
   (pluginId: string): PluginOptionValues => {
     const settings = getSettings_DEPRECATED()
-    const nonSensitive =
-      settings.pluginConfigs?.[pluginId]?.options ?? ({} as PluginOptionValues)
+    const rawNonSensitive = settings.pluginConfigs?.[pluginId]?.options
+    const nonSensitive: PluginOptionValues =
+      rawNonSensitive && typeof rawNonSensitive === 'object'
+        ? (rawNonSensitive as PluginOptionValues)
+        : {}
 
     // NOTE: storage.read() spawns `security find-generic-password` on macOS
     // (~50-100ms, synchronous). Mitigated by the memoize above (per-pluginId,
@@ -65,14 +68,13 @@ export const loadPluginOptions = memoize(
     // per session per plugin-with-options. /reload-plugins clears the memoize
     // and the next hook/MCP-load after that eats a fresh spawn.
     const storage = getSecureStorage()
-    const sensitive =
-      storage.read()?.pluginSecrets?.[pluginId] ??
-      ({} as Record<string, string>)
+    const rawSensitive = storage.read()?.pluginSecrets?.[pluginId]
+    const sensitive = (rawSensitive ?? {}) as Record<string, string>
 
     // secureStorage wins on collision — schema determines destination so
     // collision shouldn't happen, but if a user hand-edits settings.json we
     // trust the more secure source.
-    return { ...nonSensitive, ...sensitive }
+    return Object.assign({}, nonSensitive, sensitive) as PluginOptionValues
   },
 )
 

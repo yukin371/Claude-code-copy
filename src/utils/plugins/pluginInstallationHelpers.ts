@@ -286,7 +286,7 @@ export type InstallCoreResult =
   | {
       ok: false
       reason: 'resolution-failed'
-      resolution: ResolutionResult & { ok: false }
+      resolution: ResolutionFailure
     }
   | { ok: false; reason: 'blocked-by-policy'; pluginName: string }
   | {
@@ -295,6 +295,21 @@ export type InstallCoreResult =
       pluginName: string
       blockedDependency: string
     }
+
+type InstallCoreFailure = Extract<InstallCoreResult, { ok: false }>
+type ResolutionFailure = Extract<ResolutionResult, { ok: false }>
+
+function isInstallCoreFailure(
+  result: InstallCoreResult,
+): result is InstallCoreFailure {
+  return result.ok === false
+}
+
+function isResolutionFailure(
+  result: ResolutionResult,
+): result is ResolutionFailure {
+  return result.ok === false
+}
 
 /**
  * Format a failed ResolutionResult into a user-facing message. Unified on
@@ -407,8 +422,13 @@ export async function installResolvedPlugin({
     getEnabledPluginIdsForScope(settingSource),
     allowedCrossMarketplaces,
   )
-  if (!resolution.ok) {
-    return { ok: false, reason: 'resolution-failed', resolution }
+  if (isResolutionFailure(resolution)) {
+    const failedResolution: ResolutionFailure = resolution
+    return {
+      ok: false,
+      reason: 'resolution-failed',
+      resolution: failedResolution,
+    }
   }
 
   // ── Policy guard for transitive dependencies ──
@@ -524,32 +544,33 @@ export async function installPluginFromMarketplace({
       marketplaceInstallLocation,
     })
 
-    if (!result.ok) {
-      switch (result.reason) {
+    if (result.ok === false) {
+      const failure: InstallCoreFailure = result
+      switch (failure.reason) {
         case 'local-source-no-location':
           return {
             success: false,
-            error: `Cannot install local plugin "${result.pluginName}" without marketplace install location`,
+            error: `Cannot install local plugin "${failure.pluginName}" without marketplace install location`,
           }
         case 'settings-write-failed':
           return {
             success: false,
-            error: `Failed to update settings: ${result.message}`,
+            error: `Failed to update settings: ${failure.message}`,
           }
         case 'resolution-failed':
           return {
             success: false,
-            error: formatResolutionError(result.resolution),
+            error: formatResolutionError(failure.resolution),
           }
         case 'blocked-by-policy':
           return {
             success: false,
-            error: `Plugin "${result.pluginName}" is blocked by your organization's policy and cannot be installed`,
+            error: `Plugin "${failure.pluginName}" is blocked by your organization's policy and cannot be installed`,
           }
         case 'dependency-blocked-by-policy':
           return {
             success: false,
-            error: `Cannot install "${result.pluginName}": dependency "${result.blockedDependency}" is blocked by your organization's policy`,
+            error: `Cannot install "${failure.pluginName}": dependency "${failure.blockedDependency}" is blocked by your organization's policy`,
           }
       }
     }

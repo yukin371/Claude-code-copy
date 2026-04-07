@@ -59,6 +59,44 @@ import {
   isXaaEnabled,
 } from './xaaIdpLogin.js'
 
+type StoredOAuthEntry = {
+  accessToken?: string
+  refreshToken?: string
+  clientId?: string
+  clientSecret?: string
+  expiresAt?: number
+  scope?: string
+  stepUpScope?: string
+  discoveryState?: {
+    authorizationServerUrl?: string
+    resourceMetadataUrl?: string
+    resourceMetadata?: unknown
+    authorizationServerMetadata?: unknown
+  }
+  serverName?: string
+  serverUrl?: string
+}
+
+type StoredOAuthClientConfig = {
+  clientSecret?: string
+}
+
+function getStoredOAuthEntry(
+  data: SecureStorageData | null | undefined,
+  serverKey: string,
+): StoredOAuthEntry | undefined {
+  return data?.mcpOAuth?.[serverKey] as StoredOAuthEntry | undefined
+}
+
+function getStoredOAuthClientConfig(
+  data: SecureStorageData | null | undefined,
+  serverKey: string,
+): StoredOAuthClientConfig | undefined {
+  return data?.mcpOAuthClientConfig?.[serverKey] as
+    | StoredOAuthClientConfig
+    | undefined
+}
+
 /**
  * Timeout for individual OAuth requests (metadata discovery, token refresh, etc.)
  */
@@ -358,7 +396,7 @@ export function hasMcpDiscoveryButNoToken(
     return false
   }
   const serverKey = getServerKey(serverName, serverConfig)
-  const entry = getSecureStorage().read()?.mcpOAuth?.[serverKey]
+  const entry = getStoredOAuthEntry(getSecureStorage().read(), serverKey)
   return entry !== undefined && !entry.accessToken && !entry.refreshToken
 }
 
@@ -474,7 +512,7 @@ export async function revokeServerTokens(
   if (!existingData?.mcpOAuth) return
 
   const serverKey = getServerKey(serverName, serverConfig)
-  const tokenData = existingData.mcpOAuth[serverKey]
+  const tokenData = getStoredOAuthEntry(existingData, serverKey)
 
   // Attempt server-side revocation if there are tokens to revoke (best-effort)
   if (tokenData?.accessToken || tokenData?.refreshToken) {
@@ -584,16 +622,17 @@ export async function revokeServerTokens(
     (tokenData.stepUpScope || tokenData.discoveryState)
   ) {
     const freshData = storage.read() || {}
+    const freshEntry = getStoredOAuthEntry(freshData, serverKey)
     const updatedData: SecureStorageData = {
       ...freshData,
       mcpOAuth: {
         ...freshData.mcpOAuth,
         [serverKey]: {
-          ...freshData.mcpOAuth?.[serverKey],
+          ...(freshEntry ?? {}),
           serverName,
           serverUrl: serverConfig.url,
-          accessToken: freshData.mcpOAuth?.[serverKey]?.accessToken ?? '',
-          expiresAt: freshData.mcpOAuth?.[serverKey]?.expiresAt ?? 0,
+          accessToken: freshEntry?.accessToken ?? '',
+          expiresAt: freshEntry?.expiresAt ?? 0,
           ...(tokenData.stepUpScope
             ? { stepUpScope: tokenData.stepUpScope }
             : {}),
@@ -796,7 +835,7 @@ async function performMCPXaaAuth(
     const storage = getSecureStorage()
     const existingData = storage.read() || {}
     const serverKey = getServerKey(serverName, serverConfig)
-    const prev = existingData.mcpOAuth?.[serverKey]
+    const prev = getStoredOAuthEntry(existingData, serverKey)
     storage.update({
       ...existingData,
       mcpOAuth: {
@@ -905,7 +944,7 @@ export async function performMCPOAuthFlow(
   // a step-up 401, so we can use it here instead of making an extra probe request.
   const storage = getSecureStorage()
   const serverKey = getServerKey(serverName, serverConfig)
-  const cachedEntry = storage.read()?.mcpOAuth?.[serverKey]
+  const cachedEntry = getStoredOAuthEntry(storage.read(), serverKey)
   const cachedStepUpScope = cachedEntry?.stepUpScope
   const cachedResourceMetadataUrl =
     cachedEntry?.discoveryState?.resourceMetadataUrl
@@ -1311,8 +1350,11 @@ export async function performMCPOAuthFlow(
         const existingData = storage.read() || {}
         const serverKey = getServerKey(serverName, serverConfig)
         if (existingData.mcpOAuth?.[serverKey]) {
-          delete existingData.mcpOAuth[serverKey].clientId
-          delete existingData.mcpOAuth[serverKey].clientSecret
+          const existingEntry = existingData.mcpOAuth[
+            serverKey
+          ] as StoredOAuthEntry
+          delete existingEntry.clientId
+          delete existingEntry.clientSecret
           storage.update(existingData)
         }
       }
@@ -1485,7 +1527,7 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
     const serverKey = getServerKey(this.serverName, this.serverConfig)
 
     // Check session credentials first (from DCR or previous auth)
-    const storedInfo = data?.mcpOAuth?.[serverKey]
+    const storedInfo = getStoredOAuthEntry(data, serverKey)
     if (storedInfo?.clientId) {
       logMCPDebug(this.serverName, `Found client info`)
       return {
@@ -1497,7 +1539,7 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
     // Fallback: pre-configured client ID from server config
     const configClientId = this.serverConfig.oauth?.clientId
     if (configClientId) {
-      const clientConfig = data?.mcpOAuthClientConfig?.[serverKey]
+      const clientConfig = getStoredOAuthClientConfig(data, serverKey)
       logMCPDebug(this.serverName, `Using pre-configured client ID`)
       return {
         client_id: configClientId,
@@ -1522,14 +1564,14 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
       mcpOAuth: {
         ...existingData.mcpOAuth,
         [serverKey]: {
-          ...existingData.mcpOAuth?.[serverKey],
+          ...(getStoredOAuthEntry(existingData, serverKey) ?? {}),
           serverName: this.serverName,
           serverUrl: this.serverConfig.url,
           clientId: clientInformation.client_id,
           clientSecret: clientInformation.client_secret,
           // Provide default values for required fields if not present
-          accessToken: existingData.mcpOAuth?.[serverKey]?.accessToken || '',
-          expiresAt: existingData.mcpOAuth?.[serverKey]?.expiresAt || 0,
+          accessToken: getStoredOAuthEntry(existingData, serverKey)?.accessToken || '',
+          expiresAt: getStoredOAuthEntry(existingData, serverKey)?.expiresAt || 0,
         },
       },
     }
@@ -1549,7 +1591,7 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
     const data = await storage.readAsync()
     const serverKey = getServerKey(this.serverName, this.serverConfig)
 
-    const tokenData = data?.mcpOAuth?.[serverKey]
+    const tokenData = getStoredOAuthEntry(data, serverKey)
 
     // XAA: a cached id_token plays the same UX role as a refresh_token — run
     // the silent exchange to get a fresh access_token without a browser. The
@@ -1716,7 +1758,7 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
       mcpOAuth: {
         ...existingData.mcpOAuth,
         [serverKey]: {
-          ...existingData.mcpOAuth?.[serverKey],
+          ...(getStoredOAuthEntry(existingData, serverKey) ?? {}),
           serverName: this.serverName,
           serverUrl: this.serverConfig.url,
           accessToken: tokens.access_token,
@@ -1809,7 +1851,7 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
       const storage = getSecureStorage()
       const existingData = storage.read() || {}
       const serverKey = getServerKey(this.serverName, this.serverConfig)
-      const prev = existingData.mcpOAuth?.[serverKey]
+      const prev = getStoredOAuthEntry(existingData, serverKey)
       storage.update({
         ...existingData,
         mcpOAuth: {
@@ -1891,7 +1933,7 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
       const storage = getSecureStorage()
       const existingData = storage.read() || {}
       const serverKey = getServerKey(this.serverName, this.serverConfig)
-      const existing = existingData.mcpOAuth?.[serverKey]
+      const existing = getStoredOAuthEntry(existingData, serverKey)
       if (existing) {
         existing.stepUpScope = this._scopes
         storage.update(existingData)
@@ -1965,7 +2007,7 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
     if (!existingData?.mcpOAuth) return
 
     const serverKey = getServerKey(this.serverName, this.serverConfig)
-    const tokenData = existingData.mcpOAuth[serverKey]
+    const tokenData = getStoredOAuthEntry(existingData, serverKey)
     if (!tokenData) return
 
     switch (scope) {
@@ -2018,11 +2060,11 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
       mcpOAuth: {
         ...existingData.mcpOAuth,
         [serverKey]: {
-          ...existingData.mcpOAuth?.[serverKey],
+          ...(getStoredOAuthEntry(existingData, serverKey) ?? {}),
           serverName: this.serverName,
           serverUrl: this.serverConfig.url,
-          accessToken: existingData.mcpOAuth?.[serverKey]?.accessToken || '',
-          expiresAt: existingData.mcpOAuth?.[serverKey]?.expiresAt || 0,
+          accessToken: getStoredOAuthEntry(existingData, serverKey)?.accessToken || '',
+          expiresAt: getStoredOAuthEntry(existingData, serverKey)?.expiresAt || 0,
           discoveryState: {
             authorizationServerUrl: state.authorizationServerUrl,
             resourceMetadataUrl: state.resourceMetadataUrl,
@@ -2039,7 +2081,7 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
     const data = storage.read()
     const serverKey = getServerKey(this.serverName, this.serverConfig)
 
-    const cached = data?.mcpOAuth?.[serverKey]?.discoveryState
+    const cached = getStoredOAuthEntry(data, serverKey)?.discoveryState
     if (cached?.authorizationServerUrl) {
       logMCPDebug(
         this.serverName,
@@ -2140,7 +2182,7 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
       clearKeychainCache()
       const storage = getSecureStorage()
       const data = storage.read()
-      const tokenData = data?.mcpOAuth?.[serverKey]
+      const tokenData = getStoredOAuthEntry(data, serverKey)
       if (tokenData) {
         const expiresIn = (tokenData.expiresAt - Date.now()) / 1000
         if (expiresIn > 300) {
@@ -2295,7 +2337,7 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
           const storage = getSecureStorage()
           const data = storage.read()
           const serverKey = getServerKey(this.serverName, this.serverConfig)
-          const tokenData = data?.mcpOAuth?.[serverKey]
+          const tokenData = getStoredOAuthEntry(data, serverKey)
           if (tokenData) {
             const expiresIn = (tokenData.expiresAt - Date.now()) / 1000
             if (expiresIn > 300) {
@@ -2434,7 +2476,7 @@ export function getMcpClientConfig(
   const storage = getSecureStorage()
   const data = storage.read()
   const serverKey = getServerKey(serverName, serverConfig)
-  return data?.mcpOAuthClientConfig?.[serverKey]
+  return getStoredOAuthClientConfig(data, serverKey)
 }
 
 /**

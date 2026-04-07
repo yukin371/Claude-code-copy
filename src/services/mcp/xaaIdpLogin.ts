@@ -116,7 +116,7 @@ function saveIdpIdToken(
   storage.update({
     ...existing,
     mcpXaaIdp: {
-      ...existing.mcpXaaIdp,
+      ...((existing.mcpXaaIdp as Record<string, unknown> | undefined) ?? {}),
       [issuerKey(idpIssuer)]: { idToken, expiresAt },
     },
   })
@@ -165,7 +165,8 @@ export function saveIdpClientSecret(
   return storage.update({
     ...existing,
     mcpXaaIdpConfig: {
-      ...existing.mcpXaaIdpConfig,
+      ...((existing.mcpXaaIdpConfig as Record<string, unknown> | undefined) ??
+        {}),
       [issuerKey(idpIssuer)]: { clientSecret },
     },
   })

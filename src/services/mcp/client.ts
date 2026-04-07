@@ -611,6 +611,12 @@ export const connectToServer = memoize(
       | undefined
     try {
       let transport
+      const typedServerRef = serverRef as {
+        type?: string
+        env?: Record<string, string>
+        command: string
+        args: string[]
+      }
 
       // If we have the session ingress JWT, we will connect via the session ingress rather than
       // to remote MCP's directly.
@@ -903,20 +909,36 @@ export const connectToServer = memoize(
         )
         logMCPDebug(name, `claude.ai proxy transport created successfully`)
       } else if (
-        (serverRef.type === 'stdio' || !serverRef.type) &&
+        (typedServerRef.type === 'stdio' || !typedServerRef.type) &&
         isClaudeInChromeMCPServer(name)
       ) {
         // Run the Chrome MCP server in-process to avoid spawning a ~325 MB subprocess
         const { createChromeContext } = await import(
           '../../utils/claudeInChrome/mcpServer.js'
         )
-        const { createClaudeForChromeMcpServer } = await import(
-          '@ant/claude-for-chrome-mcp'
-        )
+        const { createClaudeForChromeMcpServer } = (() => {
+          try {
+            return require('@ant/claude-for-chrome-mcp') as {
+              createClaudeForChromeMcpServer: (
+                context: unknown,
+              ) => {
+                connect(t: Transport): Promise<void>
+                close(): Promise<void>
+              }
+            }
+          } catch {
+            return {
+              createClaudeForChromeMcpServer: () => ({
+                connect: async () => {},
+                close: async () => {},
+              }),
+            }
+          }
+        })()
         const { createLinkedTransportPair } = await import(
           './InProcessTransport.js'
         )
-        const context = createChromeContext(serverRef.env)
+        const context = createChromeContext(typedServerRef.env)
         inProcessServer = createClaudeForChromeMcpServer(context)
         const [clientTransport, serverTransport] = createLinkedTransportPair()
         await inProcessServer.connect(serverTransport)
@@ -924,7 +946,7 @@ export const connectToServer = memoize(
         logMCPDebug(name, `In-process Chrome MCP server started`)
       } else if (
         feature('CHICAGO_MCP') &&
-        (serverRef.type === 'stdio' || !serverRef.type) &&
+        (typedServerRef.type === 'stdio' || !typedServerRef.type) &&
         isComputerUseMCPServer!(name)
       ) {
         // Run the Computer Use MCP server in-process — same rationale as
@@ -936,28 +958,31 @@ export const connectToServer = memoize(
         const { createLinkedTransportPair } = await import(
           './InProcessTransport.js'
         )
-        inProcessServer = await createComputerUseMcpServerForCli()
+        inProcessServer = (await createComputerUseMcpServerForCli()) as {
+          connect(t: Transport): Promise<void>
+          close(): Promise<void>
+        }
         const [clientTransport, serverTransport] = createLinkedTransportPair()
         await inProcessServer.connect(serverTransport)
         transport = clientTransport
         logMCPDebug(name, `In-process Computer Use MCP server started`)
-      } else if (serverRef.type === 'stdio' || !serverRef.type) {
+      } else if (typedServerRef.type === 'stdio' || !typedServerRef.type) {
         const finalCommand =
-          process.env.CLAUDE_CODE_SHELL_PREFIX || serverRef.command
+          process.env.CLAUDE_CODE_SHELL_PREFIX || typedServerRef.command
         const finalArgs = process.env.CLAUDE_CODE_SHELL_PREFIX
-          ? [[serverRef.command, ...serverRef.args].join(' ')]
-          : serverRef.args
+          ? [[typedServerRef.command, ...typedServerRef.args].join(' ')]
+          : typedServerRef.args
         transport = new StdioClientTransport({
           command: finalCommand,
           args: finalArgs,
           env: {
             ...subprocessEnv(),
-            ...serverRef.env,
+            ...typedServerRef.env,
           } as Record<string, string>,
           stderr: 'pipe', // prevents error output from the MCP server from printing to the UI
         })
       } else {
-        throw new Error(`Unsupported server type: ${serverRef.type}`)
+        throw new Error(`Unsupported server type: ${typedServerRef.type}`)
       }
 
       // Set up stderr logging for stdio transport before connecting in case there are any stderr

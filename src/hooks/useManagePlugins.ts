@@ -16,7 +16,10 @@ import { logError } from '../utils/log.js'
 import { loadPluginAgents } from '../utils/plugins/loadPluginAgents.js'
 import { getPluginCommands } from '../utils/plugins/loadPluginCommands.js'
 import { loadPluginHooks } from '../utils/plugins/loadPluginHooks.js'
-import { loadPluginLspServers } from '../utils/plugins/lspPluginIntegration.js'
+import {
+  addPluginScopeToLspServers,
+  loadPluginLspServers,
+} from '../utils/plugins/lspPluginIntegration.js'
 import { loadPluginMcpServers } from '../utils/plugins/mcpPluginIntegration.js'
 import { detectAndUninstallDelistedPlugins } from '../utils/plugins/pluginBlocklist.js'
 import { getFlaggedPlugins } from '../utils/plugins/pluginFlagging.js'
@@ -137,7 +140,9 @@ export function useManagePlugins({
         enabled.map(async p => {
           if (p.lspServers) return Object.keys(p.lspServers).length
           const servers = await loadPluginLspServers(p, errors)
-          if (servers) p.lspServers = servers
+          if (servers) {
+            p.lspServers = addPluginScopeToLspServers(servers, p.name)
+          }
           return servers ? Object.keys(servers).length : 0
         }),
       )

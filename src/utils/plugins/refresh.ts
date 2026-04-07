@@ -30,7 +30,10 @@ import { logError } from '../log.js'
 import { clearAllCaches } from './cacheUtils.js'
 import { getPluginCommands } from './loadPluginCommands.js'
 import { loadPluginHooks } from './loadPluginHooks.js'
-import { loadPluginLspServers } from './lspPluginIntegration.js'
+import {
+  addPluginScopeToLspServers,
+  loadPluginLspServers,
+} from './lspPluginIntegration.js'
 import { loadPluginMcpServers } from './mcpPluginIntegration.js'
 import { clearPluginCacheExclusions } from './orphanedPluginFilter.js'
 import { loadAllPlugins } from './pluginLoader.js'
@@ -112,7 +115,9 @@ export async function refreshActivePlugins(
       enabled.map(async p => {
         if (p.lspServers) return Object.keys(p.lspServers).length
         const servers = await loadPluginLspServers(p, errors)
-        if (servers) p.lspServers = servers
+        if (servers) {
+          p.lspServers = addPluginScopeToLspServers(servers, p.name)
+        }
         return servers ? Object.keys(servers).length : 0
       }),
     ),

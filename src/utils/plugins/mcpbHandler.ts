@@ -1,6 +1,5 @@
 import type {
-  McpbManifest,
-  McpbUserConfigurationOption,
+  McpbManifestAny as McpbManifest,
 } from '@anthropic-ai/mcpb'
 import axios from 'axios'
 import { createHash } from 'crypto'
@@ -32,7 +31,18 @@ export type UserConfigValues = Record<
 /**
  * User configuration schema from DXT manifest
  */
-export type UserConfigSchema = Record<string, McpbUserConfigurationOption>
+export type UserConfigSchema = Record<
+  string,
+  {
+    sensitive?: boolean
+    type?: string
+    title?: string
+    required?: boolean
+    min?: number
+    max?: number
+    [key: string]: unknown
+  }
+>
 
 /**
  * Result of loading an MCPB file (success case)
@@ -144,13 +154,13 @@ export function loadMcpServerUserConfig(
 ): UserConfigValues | null {
   try {
     const settings = getSettings_DEPRECATED()
-    const nonSensitive =
-      settings.pluginConfigs?.[pluginId]?.mcpServers?.[serverName]
+    const nonSensitive = settings.pluginConfigs?.[pluginId]?.mcpServers?.[
+      serverName
+    ] as UserConfigValues | undefined
 
-    const sensitive =
-      getSecureStorage().read()?.pluginSecrets?.[
-        serverSecretsKey(pluginId, serverName)
-      ]
+    const sensitive = getSecureStorage().read()?.pluginSecrets?.[
+      serverSecretsKey(pluginId, serverName)
+    ] as Record<string, string> | undefined
 
     if (!nonSensitive && !sensitive) {
       return null
@@ -159,7 +169,7 @@ export function loadMcpServerUserConfig(
     logForDebugging(
       `Loaded user config for ${pluginId}/${serverName} (settings + secureStorage)`,
     )
-    return { ...nonSensitive, ...sensitive }
+    return { ...(nonSensitive ?? {}), ...(sensitive ?? {}) }
   } catch (error) {
     const errorObj = toError(error)
     logError(errorObj)
@@ -391,14 +401,16 @@ export function validateUserConfig(
 
     // Number range validation
     if (fieldSchema.type === 'number' && typeof value === 'number') {
-      if (fieldSchema.min !== undefined && value < fieldSchema.min) {
+      const min = typeof fieldSchema.min === 'number' ? fieldSchema.min : undefined
+      const max = typeof fieldSchema.max === 'number' ? fieldSchema.max : undefined
+      if (min !== undefined && value < min) {
         errors.push(
-          `${fieldSchema.title || key} must be at least ${fieldSchema.min}`,
+          `${fieldSchema.title || key} must be at least ${min}`,
         )
       }
-      if (fieldSchema.max !== undefined && value > fieldSchema.max) {
+      if (max !== undefined && value > max) {
         errors.push(
-          `${fieldSchema.title || key} must be at most ${fieldSchema.max}`,
+          `${fieldSchema.title || key} must be at most ${max}`,
         )
       }
     }
