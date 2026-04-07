@@ -7,6 +7,7 @@ import {
 type EnvSnapshot = Record<string, string | undefined>
 
 const ENV_KEYS = [
+  'ANTHROPIC_BASE_URL',
   'OPENAI_BASE_URL',
   'OPENAI_API_KEY',
   'NEKO_CODE_OPENAI_COMPATIBLE_BASE_URL',
@@ -73,6 +74,24 @@ describe('taskRouting transport compatibility', () => {
     expect(route.baseUrl).toBe('https://gateway.example.com/v1')
     expect(route.apiKey).toBe('shared-openai-key')
     expect(route.transportMode).toBe('single-upstream')
+  })
+
+  test('global anthropic base url pins default routes to anthropic single-upstream', async () => {
+    process.env.ANTHROPIC_BASE_URL = 'https://gateway.example.com/v1/messages'
+
+    const { getTaskRouteTransportConfig } = await import('./taskRouting.js')
+    const mainRoute = getTaskRouteTransportConfig('main')
+    const subagentRoute = getTaskRouteTransportConfig('subagent')
+
+    expect(mainRoute.provider).toBe('anthropic')
+    expect(mainRoute.apiStyle).toBe('anthropic')
+    expect(mainRoute.baseUrl).toBe('https://gateway.example.com/v1/messages')
+    expect(mainRoute.transportMode).toBe('single-upstream')
+
+    expect(subagentRoute.provider).toBe('anthropic')
+    expect(subagentRoute.apiStyle).toBe('anthropic')
+    expect(subagentRoute.baseUrl).toBe('https://gateway.example.com/v1/messages')
+    expect(subagentRoute.transportMode).toBe('single-upstream')
   })
 
   test('explicit route base url can still switch an anthropic route to openai-compatible', async () => {
@@ -205,6 +224,25 @@ describe('taskRouting transport compatibility', () => {
     expect(snapshot.fields.baseUrl.explicit).toBe(true)
     expect(snapshot.fields.apiKey.source).toBe('global-env')
     expect(snapshot.fields.apiKey.explicit).toBe(true)
+    expect(snapshot.transportMode).toBe('single-upstream')
+  })
+
+  test('debug snapshot reflects global anthropic gateway fallback', async () => {
+    process.env.ANTHROPIC_BASE_URL = 'https://gateway.example.com/v1/messages'
+
+    const { getTaskRouteDebugSnapshot } = await import('./taskRouting.js')
+    const snapshot = getTaskRouteDebugSnapshot('main')
+
+    expect(snapshot.transport.provider).toBe('anthropic')
+    expect(snapshot.transport.apiStyle).toBe('anthropic')
+    expect(snapshot.transport.baseUrl).toBe(
+      'https://gateway.example.com/v1/messages',
+    )
+    expect(snapshot.fields.provider.source).toBe('global-env')
+    expect(snapshot.fields.provider.explicit).toBe(true)
+    expect(snapshot.fields.apiStyle.source).toBe('global-env')
+    expect(snapshot.fields.apiStyle.explicit).toBe(true)
+    expect(snapshot.fields.baseUrl.source).toBe('global-env')
     expect(snapshot.transportMode).toBe('single-upstream')
   })
 

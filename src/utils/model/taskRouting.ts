@@ -282,6 +282,28 @@ function getGlobalOpenAICompatibleApiKey(): string | undefined {
   )
 }
 
+function getGlobalAnthropicBaseUrl(): string | undefined {
+  return normalizeConfiguredValue(process.env.ANTHROPIC_BASE_URL)
+}
+
+function shouldUseGlobalAnthropicUpstream(params: {
+  routeEnv: TaskRouteDebugRouteEnv
+  routeSettings: TaskRouteDebugSettings
+}): boolean {
+  if (getGlobalAnthropicBaseUrl() === undefined) {
+    return false
+  }
+
+  return (
+    normalizeProviderName(params.routeEnv.provider) === undefined &&
+    normalizeProviderName(params.routeSettings.provider) === undefined &&
+    normalizeApiStyle(params.routeEnv.apiStyle) === undefined &&
+    normalizeApiStyle(params.routeSettings.apiStyle) === undefined &&
+    params.routeEnv.baseUrl === undefined &&
+    params.routeSettings.baseUrl === undefined
+  )
+}
+
 function maskSecret(value?: string): string | undefined {
   if (value === undefined) return undefined
   return MASKED_SECRET_VALUE
@@ -382,10 +404,25 @@ export function getTaskRouteExecutionTarget(
   const provider = process.env[TASK_ROUTE_PROVIDER_ENV[route]]?.trim()
   const apiStyle = process.env[TASK_ROUTE_API_STYLE_ENV[route]]?.trim()
   const model = process.env[TASK_ROUTE_MODEL_ENV[route]]?.trim()
+  const routeEnv: TaskRouteDebugRouteEnv = {
+    provider: normalizeConfiguredValue(provider),
+    apiStyle: normalizeConfiguredValue(apiStyle),
+    model: normalizeConfiguredValue(model),
+    baseUrl: normalizeConfiguredValue(process.env[TASK_ROUTE_BASE_URL_ENV[route]]),
+    apiKey: normalizeConfiguredValue(process.env[TASK_ROUTE_API_KEY_ENV[route]]),
+  }
+  const routeDebugSettings = getTaskRouteDebugSettings(route)
+  const globalAnthropicFallback = shouldUseGlobalAnthropicUpstream({
+    routeEnv,
+    routeSettings: routeDebugSettings,
+  })
+    ? { provider: 'anthropic' as const, apiStyle: 'anthropic' as const }
+    : undefined
   const configuredProvider =
     sessionProviderOverride ??
     normalizeProviderName(provider) ??
     normalizeProviderName(routeSettings?.provider) ??
+    globalAnthropicFallback?.provider ??
     defaultTarget.provider
   const configuredApiStyle =
     inferApiStyleFromProvider(sessionProviderOverride) ??
@@ -395,6 +432,7 @@ export function getTaskRouteExecutionTarget(
       normalizeProviderName(provider) ??
         normalizeProviderName(routeSettings?.provider),
     ) ??
+    globalAnthropicFallback?.apiStyle ??
     defaultTarget.apiStyle
 
   return {
@@ -416,11 +454,14 @@ export function getTaskRouteTransportConfig(
     explicitBaseUrl !== undefined ||
     target.apiStyle === 'openai-compatible' ||
     getProviderFamily(target.provider) === 'openai-compatible'
-  const globalBaseUrl = usesOpenAICompatibleTransport
+  const globalOpenAIBaseUrl = usesOpenAICompatibleTransport
     ? getGlobalOpenAICompatibleBaseUrl()
     : undefined
-  const baseUrl =
-    explicitBaseUrl || globalBaseUrl
+  const globalAnthropicBaseUrl =
+    explicitBaseUrl === undefined && target.apiStyle === 'anthropic'
+      ? getGlobalAnthropicBaseUrl()
+      : undefined
+  const baseUrl = explicitBaseUrl || globalOpenAIBaseUrl || globalAnthropicBaseUrl
   const routeApiKey = process.env[TASK_ROUTE_API_KEY_ENV[route]]?.trim()
   const globalApiKey = usesOpenAICompatibleTransport
     ? getGlobalOpenAICompatibleApiKey()
@@ -436,7 +477,7 @@ export function getTaskRouteTransportConfig(
       ? 'route-env'
       : settingsBaseUrl !== undefined
         ? 'route-settings'
-        : globalBaseUrl !== undefined
+        : globalOpenAIBaseUrl !== undefined || globalAnthropicBaseUrl !== undefined
           ? 'global-env'
           : 'none'
   const apiKeySource: TaskRouteDebugSource =
@@ -448,7 +489,8 @@ export function getTaskRouteTransportConfig(
 
   return {
     ...target,
-    apiStyle: explicitBaseUrl ? 'openai-compatible' : target.apiStyle,
+    apiStyle:
+      explicitBaseUrl || globalOpenAIBaseUrl ? 'openai-compatible' : target.apiStyle,
     baseUrl,
     apiKey,
     transportMode,
@@ -499,6 +541,19 @@ function getTaskRouteProviderDebugField(params: {
       value: settingsProvider,
       explicit: true,
       source: 'route-settings',
+    }
+  }
+
+  if (
+    shouldUseGlobalAnthropicUpstream({
+      routeEnv: params.routeEnv,
+      routeSettings: params.routeSettings,
+    })
+  ) {
+    return {
+      value: 'anthropic',
+      explicit: true,
+      source: 'global-env',
     }
   }
 
@@ -556,6 +611,19 @@ function getTaskRouteExecutionApiStyleDebugField(params: {
     }
   }
 
+  if (
+    shouldUseGlobalAnthropicUpstream({
+      routeEnv: params.routeEnv,
+      routeSettings: params.routeSettings,
+    })
+  ) {
+    return {
+      value: 'anthropic',
+      explicit: true,
+      source: 'global-env',
+    }
+  }
+
   return {
     value: params.defaultTarget.apiStyle,
     explicit: false,
@@ -610,6 +678,23 @@ function getTaskRouteBaseUrlDebugField(params: {
       value: params.routeSettings.baseUrl,
       explicit: true,
       source: 'route-settings',
+    }
+  }
+
+  if (params.executionTarget.apiStyle === 'anthropic') {
+    const globalAnthropicBaseUrl = getGlobalAnthropicBaseUrl()
+    if (!globalAnthropicBaseUrl) {
+      return {
+        value: undefined,
+        explicit: false,
+        source: 'none',
+      }
+    }
+
+    return {
+      value: globalAnthropicBaseUrl,
+      explicit: true,
+      source: 'global-env',
     }
   }
 
