@@ -17,6 +17,8 @@
     "check:docs": "powershell -ExecutionPolicy Bypass -File scripts/check-docs.ps1",
     "check:text-hygiene": "bun run scripts/check-text-hygiene.ts",
     "smoke:claude-config": "bun run scripts/claude-config-smoke.ts",
+    "smoke:mcp-state": "bun run scripts/mcp-state-smoke.ts",
+    "smoke:plugin-state": "bun run scripts/plugin-state-smoke.ts",
     "test:routing": "bun test src/services/api/openaiCompatibleClient.test.ts src/utils/promptCategory.test.ts src/utils/model/taskRouting.test.ts",
     "typecheck": "tsc --noEmit"
   },
