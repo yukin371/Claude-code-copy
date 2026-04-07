@@ -3984,7 +3984,7 @@ async function run(): Promise<CommanderCommand> {
   // Interactive mode (without -p) is handled by early argv rewriting in main()
   // which redirects to the main command with full TUI support.
   if (feature('DIRECT_CONNECT')) {
-    program.command('open <cc-url>').description('Connect to a Claude Code server (internal — use cc:// URLs)').option('-p, --print [prompt]', 'Print mode (headless)').option('--output-format <format>', 'Output format: text, json, stream-json', 'text').action(async (ccUrl: string, opts: {
+    program.command('open <cc-url>').description('Connect to a Claude Code server (internal — use cc:// URLs)').option('-p, --print [prompt]', 'Print mode (headless)').option('--output-format <format>', 'Headless output format (currently stream-json only)', 'stream-json').action(async (ccUrl: string, opts: {
       print?: string | boolean;
       outputFormat: string;
     }) => {
@@ -4019,7 +4019,13 @@ async function run(): Promise<CommanderCommand> {
       } = await import('./server/connectHeadless.js');
       const prompt = typeof opts.print === 'string' ? opts.print : '';
       const interactive = opts.print === true;
-      await runConnectHeadless(connectConfig, prompt, opts.outputFormat, interactive);
+      try {
+        await runConnectHeadless(connectConfig, prompt, opts.outputFormat, interactive);
+      } catch (err) {
+        // biome-ignore lint/suspicious/noConsole: intentional error output
+        console.error(err instanceof Error ? err.message : String(err));
+        process.exit(1);
+      }
     });
   }
 
