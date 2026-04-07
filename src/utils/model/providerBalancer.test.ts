@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import type { TaskRouteTransportConfig } from './taskRouting.js'
 import {
   buildProviderEndpointCandidates,
+  getProviderEndpointHealthSnapshot,
   markProviderEndpointFailure,
+  markProviderEndpointSuccess,
   type ProviderEndpointCandidate,
   resetProviderBalancerForTests,
   selectProviderEndpointCandidates,
@@ -29,7 +31,7 @@ describe('providerBalancer', () => {
     }
   })
 
-  test('buildProviderEndpointCandidates expands baseUrls and apiKeys', () => {
+  test('buildProviderEndpointCandidates rejects explicit transport pools', () => {
     const transport: TaskRouteTransportConfig = {
       provider: 'gemini',
       apiStyle: 'openai-compatible',
@@ -37,47 +39,42 @@ describe('providerBalancer', () => {
       apiKey: 'key-1,key-2',
     }
 
+    expect(() => buildProviderEndpointCandidates(transport)).toThrow(
+      'Explicit task-route baseUrl pools are not supported.',
+    )
+  })
+
+  test('buildProviderEndpointCandidates keeps a single explicit upstream', () => {
+    const transport: TaskRouteTransportConfig = {
+      provider: 'gemini',
+      apiStyle: 'openai-compatible',
+      baseUrl: 'https://gateway.example.com/v1',
+      apiKey: 'gateway-key',
+    }
+
     const candidates = buildProviderEndpointCandidates(transport)
 
-    expect(candidates).toHaveLength(4)
-    expect(
-      candidates.map(candidate => ({
-        provider: candidate.provider,
-        baseUrl: candidate.baseUrl,
-        apiKey: candidate.apiKey,
-        baseUrlIndex: candidate.baseUrlIndex,
-        apiKeyIndex: candidate.apiKeyIndex,
-      })),
-    ).toEqual([
-      {
-        provider: 'gemini',
-        baseUrl: 'https://a.example.com/v1',
-        apiKey: 'key-1',
-        baseUrlIndex: 0,
-        apiKeyIndex: 0,
-      },
-      {
-        provider: 'gemini',
-        baseUrl: 'https://a.example.com/v1',
-        apiKey: 'key-2',
-        baseUrlIndex: 0,
-        apiKeyIndex: 1,
-      },
-      {
-        provider: 'gemini',
-        baseUrl: 'https://b.example.com/v1',
-        apiKey: 'key-1',
-        baseUrlIndex: 1,
-        apiKeyIndex: 0,
-      },
-      {
-        provider: 'gemini',
-        baseUrl: 'https://b.example.com/v1',
-        apiKey: 'key-2',
-        baseUrlIndex: 1,
-        apiKeyIndex: 1,
-      },
-    ])
+    expect(candidates).toHaveLength(1)
+    expect(candidates[0]).toMatchObject({
+      provider: 'gemini',
+      baseUrl: 'https://gateway.example.com/v1',
+      apiKey: 'gateway-key',
+      baseUrlIndex: 0,
+      apiKeyIndex: 0,
+    })
+  })
+
+  test('buildProviderEndpointCandidates rejects explicit apiKey pools', () => {
+    const transport: TaskRouteTransportConfig = {
+      provider: 'gemini',
+      apiStyle: 'openai-compatible',
+      baseUrl: 'https://gateway.example.com/v1',
+      apiKey: 'key-1,key-2',
+    }
+
+    expect(() => buildProviderEndpointCandidates(transport)).toThrow(
+      'Explicit task-route apiKey pools are not supported.',
+    )
   })
 
   test('buildProviderEndpointCandidates applies provider weight overrides from env', () => {
@@ -99,18 +96,19 @@ describe('providerBalancer', () => {
     const transport: TaskRouteTransportConfig = {
       provider: 'gemini',
       apiStyle: 'openai-compatible',
-      baseUrl: 'https://a.example.com/v1,https://b.example.com/v1',
-      apiKey: 'key-1',
     }
 
-    const candidates = buildProviderEndpointCandidates(transport)
+    const candidates = [
+      createCandidate('gemini', 1, 0),
+      createCandidate('gemini', 1, 1),
+    ]
     markProviderEndpointFailure(candidates[0]!, 'upstream overloaded')
 
     const ordered = selectProviderEndpointCandidates(transport, candidates)
 
     expect(ordered).toHaveLength(1)
     expect(ordered[0]?.endpointId).toBe(candidates[1]?.endpointId)
-    expect(ordered[0]?.baseUrl).toBe('https://b.example.com/v1')
+    expect(ordered[0]?.baseUrl).toBe('https://gemini-1.example.com/v1')
   })
 
   test('fallback strategy preserves preferred provider before compatible fallbacks', () => {
@@ -226,6 +224,97 @@ describe('providerBalancer', () => {
     expect(ordered.map(candidate => candidate.provider)).toEqual([
       'gemini',
       'codex',
+    ])
+  })
+
+  test('provider health snapshot records failures and resets after success', () => {
+    const [candidate] = createCandidates(['gemini'])
+    const beforeFailure = Date.now()
+    markProviderEndpointFailure(candidate, 'timeout')
+
+    const failureSnapshot = getProviderEndpointHealthSnapshot('gemini')[0]
+    expect(failureSnapshot).toBeDefined()
+    expect(failureSnapshot!.failures).toBe(1)
+    expect(failureSnapshot!.lastFailureReason).toBe('timeout')
+    expect(failureSnapshot!.cooldownUntil).toBeGreaterThan(beforeFailure)
+
+    markProviderEndpointSuccess(candidate)
+    const successSnapshot = getProviderEndpointHealthSnapshot('gemini')[0]
+    expect(successSnapshot).toBeDefined()
+    expect(successSnapshot!.failures).toBe(0)
+    expect(successSnapshot!.cooldownUntil).toBe(0)
+    expect(successSnapshot!.lastSuccessAt).toBeDefined()
+  })
+
+  test('fallback strategy skips cooled providers and preserves order otherwise', () => {
+    process.env.NEKO_CODE_OPENAI_PROVIDER_STRATEGY = 'fallback'
+    const transport: TaskRouteTransportConfig = {
+      provider: 'glm',
+      apiStyle: 'openai-compatible',
+    }
+    const candidates = createCandidates(['glm', 'codex', 'gemini'])
+    markProviderEndpointFailure(candidates[0], 'preferred down')
+
+    const ordered = selectProviderEndpointCandidates(transport, candidates)
+
+    expect(ordered.map(candidate => candidate.provider)).toEqual([
+      'codex',
+      'gemini',
+    ])
+  })
+
+  test('round-robin rotates only healthy providers when others cool down', () => {
+    process.env.NEKO_CODE_OPENAI_PROVIDER_STRATEGY = 'round-robin'
+    const transport: TaskRouteTransportConfig = {
+      provider: 'glm',
+      apiStyle: 'openai-compatible',
+    }
+    const candidates = createCandidates(['glm', 'gemini', 'codex'])
+    markProviderEndpointFailure(candidates[1], 'cooling down')
+
+    const first = selectProviderEndpointCandidates(transport, candidates)
+    const second = selectProviderEndpointCandidates(transport, candidates)
+
+    expect(first.map(candidate => candidate.provider)).toEqual([
+      'glm',
+      'codex',
+    ])
+    expect(second.map(candidate => candidate.provider)).toEqual([
+      'codex',
+      'glm',
+    ])
+  })
+
+  test('weighted strategy rotates remaining providers while hot provider cools down', () => {
+    process.env.NEKO_CODE_OPENAI_PROVIDER_STRATEGY = 'weighted'
+    const transport: TaskRouteTransportConfig = {
+      provider: 'gemini',
+      apiStyle: 'openai-compatible',
+    }
+    const candidates = [
+      createCandidate('gemini', 2),
+      createCandidate('codex', 1),
+      createCandidate('glm', 1),
+    ]
+    markProviderEndpointFailure(candidates[0], 'timeout')
+
+    const first = selectProviderEndpointCandidates(transport, candidates)
+    const second = selectProviderEndpointCandidates(transport, candidates)
+    markProviderEndpointSuccess(candidates[0])
+    const third = selectProviderEndpointCandidates(transport, candidates)
+
+    expect(first.map(candidate => candidate.provider)).toEqual([
+      'codex',
+      'glm',
+    ])
+    expect(second.map(candidate => candidate.provider)).toEqual([
+      'glm',
+      'codex',
+    ])
+    expect(third.map(candidate => candidate.provider)).toEqual([
+      'codex',
+      'glm',
+      'gemini',
     ])
   })
 })

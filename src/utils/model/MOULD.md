@@ -18,6 +18,7 @@ This module is the source of truth for task-level model and provider routing.
 - `apiStyle` selects the transport shape.
 - `model` is user-configured and opaque to the router.
 - `baseUrl` is optional and forces OpenAI-compatible transport.
+- Explicit `baseUrl` / `apiKey` values must point at a single upstream. Do not treat them as comma-separated local pools.
 
 ## Change flow
 

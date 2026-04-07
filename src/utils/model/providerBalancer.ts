@@ -185,7 +185,9 @@ function resolveBaseUrls(
   transport: TaskRouteTransportConfig,
   isPreferredProvider: boolean,
 ): string[] {
-  const explicit = isPreferredProvider ? splitList(transport.baseUrl) : []
+  const explicit = isPreferredProvider
+    ? resolveExplicitTransportValue(transport.baseUrl, 'baseUrl')
+    : []
   if (explicit.length > 0) return explicit
   const fallback = getProviderDefaultBaseUrls(transport.provider)
   return fallback.length > 0 ? [...fallback] : []
@@ -195,7 +197,9 @@ function resolveApiKeys(
   transport: TaskRouteTransportConfig,
   isPreferredProvider: boolean,
 ): string[] {
-  const explicit = isPreferredProvider ? splitList(transport.apiKey) : []
+  const explicit = isPreferredProvider
+    ? resolveExplicitTransportValue(transport.apiKey, 'apiKey')
+    : []
   if (explicit.length > 0) return explicit
   const envNames = getProviderKeyEnvNames(transport.provider)
   const keys: string[] = []
@@ -280,4 +284,16 @@ function splitList(value?: string): string[] {
     .split(/[\n,;|]/)
     .map(part => part.trim())
     .filter(Boolean)
+}
+
+function resolveExplicitTransportValue(
+  value: string | undefined,
+  fieldName: 'baseUrl' | 'apiKey',
+): string[] {
+  const values = splitList(value)
+  if (values.length <= 1) return values
+
+  throw new Error(
+    `Explicit task-route ${fieldName} pools are not supported. Point the route at a single upstream or external gateway instead.`,
+  )
 }

@@ -164,6 +164,7 @@ taskRoutes -> route decision -> unified request -> provider adapter -> direct pr
 模型名不要在源码里硬编码，应该由用户自己在配置里提供。
 
 如果某条 route 要接外部网关，优先通过该 route 的 `baseUrl` 指向网关 OpenAI-compatible 入口，而不是继续往应用内增加新的均衡策略字段。
+显式 `baseUrl` / `apiKey` 应指向单一上游；不要再用逗号把它们配置成应用内 endpoint/key 池。
 
 ## 接入顺序
 

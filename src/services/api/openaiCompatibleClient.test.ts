@@ -112,7 +112,7 @@ function createJsonResponse(body: unknown, status = 200): Response {
     restoreEnv(envSnapshot)
   })
 
-  test('fails over to the next endpoint within the same provider', async () => {
+  test('rejects explicit transport pools before sending a request', async () => {
     const { createOpenAICompatibleAnthropicClient } = await import(
       './openaiCompatibleClient.js'
     )
@@ -122,10 +122,10 @@ function createJsonResponse(body: unknown, status = 200): Response {
         provider: 'gemini',
         apiStyle: 'openai-compatible',
         baseUrl: 'https://a.example.com/v1,https://b.example.com/v1',
-        apiKey: 'key-1',
+        apiKey: 'key-1,key-2',
       },
       maxRetries: 0,
-      fetchOverride: async (input, init) => {
+      fetchOverride: (async (input, init) => {
         const url = input instanceof Request ? input.url : String(input)
         const headers = new Headers(init?.headers)
         calls.push({
@@ -134,55 +134,79 @@ function createJsonResponse(body: unknown, status = 200): Response {
           googleClient: headers.get('x-goog-api-client'),
         })
 
-        if (calls.length === 1) {
-          return createJsonResponse(
-            { error: { message: 'upstream overloaded' } },
-            500,
-          )
-        }
-
         return createJsonResponse({
-          id: 'msg_same_provider',
+          id: 'unexpected_request',
           model: 'gemini-2.5-pro',
-          choices: [
-            {
-              index: 0,
-              message: {
-                role: 'assistant',
-                content: 'recovered on second endpoint',
-              },
-              finish_reason: 'stop',
-            },
-          ],
+          choices: [],
           usage: {
-            prompt_tokens: 11,
-            completion_tokens: 7,
+            prompt_tokens: 0,
+            completion_tokens: 0,
           },
         })
-      },
+      }) as typeof fetch,
     })
 
-    const message = await client.beta.messages.create({
-      model: 'gemini-2.5-pro',
-      max_tokens: 128,
-      messages: [{ role: 'user', content: 'ping' }],
-      stream: false,
-    } as any)
+    await expect(
+      client.beta.messages.create({
+        model: 'gemini-2.5-pro',
+        max_tokens: 128,
+        messages: [{ role: 'user', content: 'ping' }],
+        stream: false,
+      } as any),
+    ).rejects.toThrow(
+      'Explicit task-route baseUrl pools are not supported.',
+    )
 
-    expect(calls.map(call => call.url)).toEqual([
-      'https://a.example.com/v1/chat/completions',
-      'https://b.example.com/v1/chat/completions',
-    ])
-    expect(calls.every(call => call.authorization === 'Bearer key-1')).toBe(true)
-    expect(calls.every(call => call.googleClient === 'neko-code')).toBe(true)
-    expect(message.model).toBe('gemini-2.5-pro')
-    expect(message.stop_reason).toBe('end_turn')
-    expect(message.content).toEqual([
-      {
-        type: 'text',
-        text: 'recovered on second endpoint',
+    expect(calls).toHaveLength(0)
+  })
+
+  test('explicit baseUrl and apiKey prevent cross-provider fallback', async () => {
+    const { createOpenAICompatibleAnthropicClient } = await import(
+      './openaiCompatibleClient.js'
+    )
+    process.env.NEKO_CODE_GEMINI_API_KEY = 'gemini-key'
+    process.env.OPENAI_API_KEY = 'codex-key'
+
+    const calls: FetchCall[] = []
+    const client = await createOpenAICompatibleAnthropicClient({
+      transport: {
+        provider: 'gemini',
+        apiStyle: 'openai-compatible',
+        baseUrl: 'https://a.example.com/v1',
+        apiKey: 'explicit-gemini-key',
       },
-    ])
+      maxRetries: 0,
+      fetchOverride: (async (input, init) => {
+        const url = input instanceof Request ? input.url : String(input)
+        const headers = new Headers(init?.headers)
+        calls.push({
+          url,
+          authorization: headers.get('authorization'),
+          googleClient: headers.get('x-goog-api-client'),
+        })
+
+        return createJsonResponse(
+          { error: { message: 'explicit provider failed' } },
+          500,
+        )
+      }) as typeof fetch,
+    })
+
+    await expect(
+      client.beta.messages.create({
+        model: 'gemini-2.5-pro',
+        max_tokens: 16,
+        messages: [{ role: 'user', content: 'ping' }],
+        stream: false,
+      } as any),
+    ).rejects.toThrow(MockAPIError)
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toEqual({
+      url: 'https://a.example.com/v1/chat/completions',
+      authorization: 'Bearer explicit-gemini-key',
+      googleClient: 'neko-code',
+    })
   })
 
   test('fails over across providers when the preferred provider is unavailable', async () => {
@@ -199,7 +223,7 @@ function createJsonResponse(body: unknown, status = 200): Response {
         apiStyle: 'openai-compatible',
       },
       maxRetries: 0,
-      fetchOverride: async (input, init) => {
+      fetchOverride: (async (input, init) => {
         const url = input instanceof Request ? input.url : String(input)
         const headers = new Headers(init?.headers)
         calls.push({
@@ -233,7 +257,7 @@ function createJsonResponse(body: unknown, status = 200): Response {
             completion_tokens: 3,
           },
         })
-      },
+      }) as typeof fetch,
     })
 
     const message = await client.beta.messages.create({
@@ -258,6 +282,135 @@ function createJsonResponse(body: unknown, status = 200): Response {
         type: 'text',
         text: 'served by fallback provider',
       },
+    ] as unknown as typeof message.content)
+  })
+
+  test('preferred provider recovers after failure and future requests prefer it', async () => {
+    const { createOpenAICompatibleAnthropicClient } = await import(
+      './openaiCompatibleClient.js'
+    )
+    process.env.NEKO_CODE_GEMINI_API_KEY = 'gemini-key'
+    process.env.OPENAI_API_KEY = 'codex-key'
+
+    const responseSequence = [
+      {
+        status: 500,
+        body: { error: { message: 'primary down' } },
+      },
+      {
+        status: 200,
+        payload: {
+          id: 'msg_fallback',
+          model: 'gpt-4.1',
+          text: 'served by fallback provider',
+        },
+      },
+      {
+        status: 200,
+        payload: {
+          id: 'msg_recovery',
+          model: 'gemini-2.5-pro',
+          text: 'primary recovered',
+        },
+      },
+    ] as const
+
+    const calls: FetchCall[] = []
+    const client = await createOpenAICompatibleAnthropicClient({
+      transport: {
+        provider: 'gemini',
+        apiStyle: 'openai-compatible',
+      },
+      maxRetries: 0,
+      fetchOverride: (async (input, init) => {
+        const url = input instanceof Request ? input.url : String(input)
+        const headers = new Headers(init?.headers)
+        const invocationIndex = calls.length
+        calls.push({
+          url,
+          authorization: headers.get('authorization'),
+          googleClient: headers.get('x-goog-api-client'),
+        })
+        const config = responseSequence[invocationIndex]
+        if (!config) {
+          throw new Error('unexpected fetch invocation')
+        }
+
+        if (config.status !== 200) {
+          return createJsonResponse(config.body, config.status)
+        }
+
+        return createJsonResponse({
+          id: config.payload.id,
+          model: config.payload.model,
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: 'assistant',
+                content: config.payload.text,
+              },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: {
+            prompt_tokens: 1,
+            completion_tokens: 1,
+          },
+        })
+      }) as typeof fetch,
+    })
+
+    const realDateNow = Date.now
+    let fakeNow = realDateNow()
+    Date.now = () => fakeNow
+
+    try {
+      const fallbackMessage = await client.beta.messages.create({
+        model: 'gpt-4.1',
+        max_tokens: 64,
+        messages: [{ role: 'user', content: 'ping' }],
+        stream: false,
+      } as any)
+      expect(fallbackMessage.content).toEqual([
+        {
+          type: 'text',
+          text: 'served by fallback provider',
+        },
+      ] as unknown as typeof fallbackMessage.content)
+
+      fakeNow += 120_000
+
+      const recoveryMessage = await client.beta.messages.create({
+        model: 'gemini-2.5-pro',
+        max_tokens: 64,
+        messages: [{ role: 'user', content: 'ping again' }],
+        stream: false,
+      } as any)
+      expect(recoveryMessage.content).toEqual([
+        {
+          type: 'text',
+          text: 'primary recovered',
+        },
+      ] as unknown as typeof recoveryMessage.content)
+    } finally {
+      Date.now = realDateNow
+    }
+
+    expect(calls.map(call => call.url)).toEqual([
+      'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      'https://api.openai.com/v1/chat/completions',
+      'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+    ])
+    expect(calls.map(call => call.authorization)).toEqual([
+      'Bearer gemini-key',
+      'Bearer codex-key',
+      'Bearer gemini-key',
+    ])
+    expect(calls.map(call => call.googleClient)).toEqual([
+      'neko-code',
+      null,
+      'neko-code',
     ])
   })
 
@@ -276,7 +429,7 @@ function createJsonResponse(body: unknown, status = 200): Response {
         apiStyle: 'openai-compatible',
       },
       maxRetries: 0,
-      fetchOverride: async (input, init) => {
+      fetchOverride: (async (input, init) => {
         const url = input instanceof Request ? input.url : String(input)
         const headers = new Headers(init?.headers)
         calls.push({
@@ -303,7 +456,7 @@ function createJsonResponse(body: unknown, status = 200): Response {
             completion_tokens: 2,
           },
         })
-      },
+      }) as typeof fetch,
     })
 
     await client.beta.messages.create({
@@ -348,7 +501,7 @@ function createJsonResponse(body: unknown, status = 200): Response {
         apiStyle: 'openai-compatible',
       },
       maxRetries: 0,
-      fetchOverride: async (input, init) => {
+      fetchOverride: (async (input, init) => {
         const url = input instanceof Request ? input.url : String(input)
         const headers = new Headers(init?.headers)
         calls.push({
@@ -375,7 +528,7 @@ function createJsonResponse(body: unknown, status = 200): Response {
             completion_tokens: 2,
           },
         })
-      },
+      }) as typeof fetch,
     })
 
     for (const content of ['ping-1', 'ping-2', 'ping-3']) {
