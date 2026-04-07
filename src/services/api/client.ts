@@ -30,6 +30,8 @@ import {
 } from '../../utils/envUtils.js'
 import { createOpenAICompatibleAnthropicClient } from './openaiCompatibleClient.js'
 import {
+  getTaskRouteTransportConfig,
+  type TaskRouteName,
   resolveTaskRouteClientConfigFromQuerySource,
   type TaskRouteTransportConfig,
 } from '../../utils/model/taskRouting.js'
@@ -387,6 +389,31 @@ export async function getTaskRouteAnthropicClient({
     fetchOverride,
     source,
     transport: routeConfig,
+  })
+}
+
+export async function getAnthropicClientForTaskRoute({
+  apiKey,
+  maxRetries,
+  model,
+  fetchOverride,
+  source,
+  route,
+}: {
+  apiKey?: string
+  maxRetries: number
+  model?: string
+  fetchOverride?: ClientOptions['fetch']
+  source?: string
+  route: TaskRouteName
+}): Promise<Anthropic> {
+  return getAnthropicClient({
+    apiKey,
+    maxRetries,
+    model,
+    fetchOverride,
+    source,
+    transport: getTaskRouteTransportConfig(route),
   })
 }
 
