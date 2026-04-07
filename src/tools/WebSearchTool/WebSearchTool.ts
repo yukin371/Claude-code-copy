@@ -22,6 +22,27 @@ import {
   renderToolUseProgressMessage,
 } from './UI.js'
 
+type StreamEventPayload = {
+  type?: string
+  content_block?: {
+    type?: string
+    id?: string
+    tool_use_id?: string
+    content?: unknown
+  }
+  delta?: {
+    type?: string
+    partial_json?: string
+  }
+}
+
+function getStreamEventPayload(event: unknown): StreamEventPayload | null {
+  if (!event || typeof event !== 'object') {
+    return null
+  }
+  return event as StreamEventPayload
+}
+
 const inputSchema = lazySchema(() =>
   z.strictObject({
     query: z.string().min(2).describe('The search query to use'),
@@ -290,27 +311,29 @@ export const WebSearchTool = buildTool({
       },
     })
 
-    const allContentBlocks: BetaContentBlock[] = []
-    let currentToolUseId = null
-    let currentToolUseJson = ''
+      const allContentBlocks: BetaContentBlock[] = []
+      let currentToolUseId = null
+      let currentToolUseJson = ''
     let progressCounter = 0
     const toolUseQueries = new Map() // Map of tool_use_id to query
 
-    for await (const event of queryStream) {
-      if (event.type === 'assistant') {
-        allContentBlocks.push(...event.message.content)
-        continue
-      }
+      for await (const event of queryStream) {
+        if (event.type === 'assistant') {
+          allContentBlocks.push(
+            ...(event.message.content as BetaContentBlock[]),
+          )
+          continue
+        }
+        const streamEvent = getStreamEventPayload(
+          event.type === 'stream_event' ? event.event : null,
+        )
 
-      // Track tool use ID when server_tool_use starts
-      if (
-        event.type === 'stream_event' &&
-        event.event?.type === 'content_block_start'
-      ) {
-        const contentBlock = event.event.content_block
-        if (contentBlock && contentBlock.type === 'server_tool_use') {
-          currentToolUseId = contentBlock.id
-          currentToolUseJson = ''
+        // Track tool use ID when server_tool_use starts
+        if (event.type === 'stream_event' && streamEvent?.type === 'content_block_start') {
+          const contentBlock = streamEvent.content_block
+          if (contentBlock && contentBlock.type === 'server_tool_use') {
+            currentToolUseId = contentBlock.id
+            currentToolUseJson = ''
           // Note: The ServerToolUseBlock doesn't contain input.query
           // The actual query comes through input_json_delta events
           continue
@@ -318,14 +341,10 @@ export const WebSearchTool = buildTool({
       }
 
       // Accumulate JSON for current tool use
-      if (
-        currentToolUseId &&
-        event.type === 'stream_event' &&
-        event.event?.type === 'content_block_delta'
-      ) {
-        const delta = event.event.delta
-        if (delta?.type === 'input_json_delta' && delta.partial_json) {
-          currentToolUseJson += delta.partial_json
+        if (currentToolUseId && event.type === 'stream_event' && streamEvent?.type === 'content_block_delta') {
+          const delta = streamEvent.delta
+          if (delta?.type === 'input_json_delta' && delta.partial_json) {
+            currentToolUseJson += delta.partial_json
 
           // Try to extract query from partial JSON for progress updates
           try {
@@ -361,12 +380,9 @@ export const WebSearchTool = buildTool({
       }
 
       // Yield progress when search results come in
-      if (
-        event.type === 'stream_event' &&
-        event.event?.type === 'content_block_start'
-      ) {
-        const contentBlock = event.event.content_block
-        if (contentBlock && contentBlock.type === 'web_search_tool_result') {
+        if (event.type === 'stream_event' && streamEvent?.type === 'content_block_start') {
+          const contentBlock = streamEvent.content_block
+          if (contentBlock && contentBlock.type === 'web_search_tool_result') {
           // Get the actual query that was used for this search
           const toolUseId = contentBlock.tool_use_id
           const actualQuery = toolUseQueries.get(toolUseId) || query

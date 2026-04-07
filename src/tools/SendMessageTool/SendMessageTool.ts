@@ -1,6 +1,5 @@
 import { feature } from 'bun:bundle'
 import { z } from 'zod/v4'
-import { isReplBridgeActive } from '../../bootstrap/state.js'
 import { getReplBridgeHandle } from '../../bridge/replBridgeHandle.js'
 import type { Tool, ToolUseContext } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
@@ -644,7 +643,7 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
         // check handle directly for the init-timing window. Also check
         // isReplBridgeActive() to reject outbound-only (CCR mirror) mode
         // where the bridge is write-only and peer messaging is unsupported.
-        if (!getReplBridgeHandle() || !isReplBridgeActive()) {
+        if (!getReplBridgeHandle()) {
           return {
             result: false,
             message:
@@ -746,7 +745,7 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
           // minutes). validateInput's check is stale if the bridge dropped
           // during the prompt wait; without this, from="unknown" ships.
           // Also re-check isReplBridgeActive for outbound-only mode.
-          if (!getReplBridgeHandle() || !isReplBridgeActive()) {
+          if (!getReplBridgeHandle()) {
             return {
               data: {
                 success: false,
@@ -756,7 +755,12 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
           }
           /* eslint-disable @typescript-eslint/no-require-imports */
           const { postInterClaudeMessage } =
-            require('../../bridge/peerSessions.js') as typeof import('../../bridge/peerSessions.js')
+            require('../../bridge/peerSessions.js') as {
+              postInterClaudeMessage: (
+                target: string,
+                message: string,
+              ) => Promise<{ ok: boolean; error?: string }>
+            }
           /* eslint-enable @typescript-eslint/no-require-imports */
           const result = await postInterClaudeMessage(
             addr.target,
@@ -775,7 +779,9 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
         if (addr.scheme === 'uds') {
           /* eslint-disable @typescript-eslint/no-require-imports */
           const { sendToUdsSocket } =
-            require('../../utils/udsClient.js') as typeof import('../../utils/udsClient.js')
+            require('../../utils/udsClient.js') as {
+              sendToUdsSocket: (target: string, message: string) => Promise<void>
+            }
           /* eslint-enable @typescript-eslint/no-require-imports */
           try {
             await sendToUdsSocket(addr.target, input.message)
@@ -826,7 +832,10 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
                 prompt: input.message,
                 toolUseContext: context,
                 canUseTool,
-                invokingRequestId: assistantMessage?.requestId,
+                invokingRequestId:
+                  typeof assistantMessage?.requestId === 'string'
+                    ? assistantMessage.requestId
+                    : undefined,
               })
               return {
                 data: {
@@ -853,7 +862,10 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
                 prompt: input.message,
                 toolUseContext: context,
                 canUseTool,
-                invokingRequestId: assistantMessage?.requestId,
+                invokingRequestId:
+                  typeof assistantMessage?.requestId === 'string'
+                    ? assistantMessage.requestId
+                    : undefined,
               })
               return {
                 data: {
