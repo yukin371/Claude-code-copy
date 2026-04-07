@@ -1,8 +1,26 @@
 {
   "compilerOptions": {
+    "target": "ESNext",
+    "lib": ["ESNext"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "allowImportingTsExtensions": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "useDefineForClassFields": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "types": ["bun"],
+    "noEmit": true,
+    "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
       "src/*": ["src/*"]
     }
-  }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts"],
+  "exclude": ["node_modules", "docs", "scripts"]
 }

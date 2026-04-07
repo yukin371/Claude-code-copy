@@ -92,7 +92,11 @@ export async function handleUrlSchemeLaunch(): Promise<number | null> {
   }
 
   try {
-    const { waitForUrlEvent } = await import('url-handler-napi')
+    /* eslint-disable @typescript-eslint/no-require-imports */
+    const { waitForUrlEvent } = require('url-handler-napi') as {
+      waitForUrlEvent: (timeoutMs: number) => string | null
+    }
+    /* eslint-enable @typescript-eslint/no-require-imports */
     const url = waitForUrlEvent(5000)
     if (!url) {
       return null

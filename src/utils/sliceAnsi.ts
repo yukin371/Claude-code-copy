@@ -1,5 +1,8 @@
 import {
   type AnsiCode,
+  type Char,
+  type ControlCode,
+  type Token,
   ansiCodesToString,
   reduceAnsiCodes,
   tokenize,
@@ -15,6 +18,18 @@ function isEndCode(code: AnsiCode): boolean {
 // Filter to only include "start codes" (not end codes)
 function filterStartCodes(codes: AnsiCode[]): AnsiCode[] {
   return codes.filter(c => !isEndCode(c))
+}
+
+function isCharToken(token: Token): token is Char {
+  return token.type === 'char'
+}
+
+function isControlToken(token: Token): token is ControlCode {
+  return token.type === 'control'
+}
+
+function isAnsiToken(token: Token): token is AnsiCode {
+  return token.type === 'ansi'
 }
 
 /**
@@ -42,8 +57,11 @@ export default function sliceAnsi(
     // advanced position past `end` early and truncated the slice. Callers
     // pass start/end in display cells (via stringWidth), so position must
     // track the same units.
-    const width =
-      token.type === 'ansi' ? 0 : token.fullWidth ? 2 : stringWidth(token.value)
+    const width = isCharToken(token)
+      ? token.fullWidth
+        ? 2
+        : stringWidth(token.value)
+      : 0
 
     // Break AFTER trailing zero-width marks — a combining mark attaches to
     // the preceding base char, so "भा" (भ + ा, 1 display cell) sliced at
@@ -54,13 +72,17 @@ export default function sliceAnsi(
     // !include guard ensures empty slices (start===end) stay empty even
     // when the string starts with a zero-width char (BOM, ZWJ).
     if (end !== undefined && position >= end) {
-      if (token.type === 'ansi' || width > 0 || !include) break
+      if (token.type !== 'char' || width > 0 || !include) break
     }
 
-    if (token.type === 'ansi') {
+    if (isAnsiToken(token)) {
       activeCodes.push(token)
       if (include) {
         // Emit all ANSI codes during the slice
+        result += token.code
+      }
+    } else if (isControlToken(token)) {
+      if (include) {
         result += token.code
       }
     } else {

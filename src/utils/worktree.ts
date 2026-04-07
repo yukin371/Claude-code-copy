@@ -1291,10 +1291,9 @@ export async function execIntoTmuxWorktree(args: string[]): Promise<{
         prNumber !== null ? { prNumber } : undefined,
       )
       if (!result.existed) {
+        const baseRef = 'baseBranch' in result ? result.baseBranch : result.headCommit
         // biome-ignore lint/suspicious/noConsole: intentional console output
-        console.log(
-          `Created worktree: ${worktreeDir} (based on ${result.baseBranch})`,
-        )
+        console.log(`Created worktree: ${worktreeDir} (based on ${baseRef})`)
         await performPostCreationSetup(repoRoot, worktreeDir)
       }
     } catch (error) {

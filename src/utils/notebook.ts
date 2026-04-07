@@ -144,7 +144,7 @@ function cellOutputToToolResult(output: NotebookCellSourceOutput) {
       type: 'image',
       source: {
         data: output.image.image_data,
-        media_type: output.image.media_type,
+        media_type: output.image.media_type as 'image/png' | 'image/jpeg',
         type: 'base64',
       },
     })

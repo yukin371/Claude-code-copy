@@ -32,6 +32,10 @@ import {
 } from './nativeInstaller/packageManagers.js'
 import { getPlatform } from './platform.js'
 import { getRipgrepStatus } from './ripgrep.js'
+import {
+  getTaskRouteDebugSnapshot,
+  type TaskRouteDebugSnapshot,
+} from './model/taskRouting.js'
 import { SandboxManager } from './sandbox/sandbox-adapter.js'
 import { getManagedFilePath } from './settings/managedPath.js'
 import { CUSTOMIZATION_SURFACES } from './settings/types.js'
@@ -68,6 +72,7 @@ export type DiagnosticInfo = {
     mode: 'system' | 'builtin' | 'embedded'
     systemPath: string | null
   }
+  currentTaskRouteSnapshot: TaskRouteDebugSnapshot
 }
 
 function getNormalizedPaths(): [invokedPath: string, execPath: string] {
@@ -619,6 +624,7 @@ export async function getDoctorDiagnostic(): Promise<DiagnosticInfo> {
     warnings,
     packageManager,
     ripgrepStatus,
+    currentTaskRouteSnapshot: getTaskRouteDebugSnapshot('main'),
   }
 
   return diagnostic
