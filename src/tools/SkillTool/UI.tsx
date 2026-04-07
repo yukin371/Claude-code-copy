@@ -10,13 +10,68 @@ import { Message as MessageComponent } from '../../components/Message.js';
 import { MessageResponse } from '../../components/MessageResponse.js';
 import { Box, Text } from '../../ink.js';
 import type { Tools } from '../../Tool.js';
-import type { ProgressMessage } from '../../types/message.js';
+import {
+  getMessageContentBlocks,
+  type AssistantMessage,
+  type Message,
+  type NormalizedUserMessage,
+  type ProgressMessage,
+} from '../../types/message.js';
 import { buildSubagentLookups, EMPTY_LOOKUPS } from '../../utils/messages.js';
 import { plural } from '../../utils/stringUtils.js';
 import type { inputSchema, Output, Progress } from './SkillTool.js';
 type Input = z.infer<ReturnType<typeof inputSchema>>;
 const MAX_PROGRESS_MESSAGES_TO_SHOW = 3;
 const INITIALIZING_TEXT = 'Initializing…';
+type SkillProgressMessageValue = Message & {
+  message: {
+    content: unknown;
+  };
+};
+
+function hasProgressMessage(data: Progress): data is Progress & { message: Message } {
+  if (!('message' in data)) {
+    return false;
+  }
+  const message = (data as {
+    message?: unknown;
+  }).message;
+  return message != null && typeof message === 'object' && 'type' in message;
+}
+
+function toSubagentMessage(data: Progress): AssistantMessage | NormalizedUserMessage | null {
+  if (!hasProgressMessage(data)) {
+    return null;
+  }
+  const message = data.message as SkillProgressMessageValue;
+  if (message.type !== 'assistant' && message.type !== 'user') {
+    return null;
+  }
+  return {
+    ...message,
+    message: {
+      ...message.message,
+      content: getMessageContentBlocks(message.message.content),
+    },
+  } as AssistantMessage | NormalizedUserMessage;
+}
+
+function toLookupMessages(progressMessages: ProgressMessage<Progress>[]): Array<{
+  message: AssistantMessage | NormalizedUserMessage;
+}> {
+  const messages: Array<{
+    message: AssistantMessage | NormalizedUserMessage;
+  }> = [];
+  for (const progressMessage of progressMessages) {
+    const message = toSubagentMessage(progressMessage.data);
+    if (message) {
+      messages.push({
+        message,
+      });
+    }
+  }
+  return messages;
+}
 export function renderToolResultMessage(output: Output): React.ReactNode {
   // Handle forked skill result
   if ('status' in output && output.status === 'forked') {
@@ -77,13 +132,19 @@ export function renderToolUseProgressMessage(progressMessages: ProgressMessage<P
   const hiddenCount = progressMessages.length - displayedMessages.length;
   const {
     inProgressToolUseIDs
-  } = buildSubagentLookups(progressMessages.map(pm => pm.data));
+  } = buildSubagentLookups(toLookupMessages(progressMessages));
   return <MessageResponse>
       <Box flexDirection="column">
         <SubAgentProvider>
-          {displayedMessages.map(progressMessage => <Box key={progressMessage.uuid} height={1} overflow="hidden">
-              <MessageComponent message={progressMessage.data.message} lookups={EMPTY_LOOKUPS} addMargin={false} tools={tools} commands={[]} verbose={verbose} inProgressToolUseIDs={inProgressToolUseIDs} progressMessagesForMessage={[]} shouldAnimate={false} shouldShowDot={false} style="condensed" isTranscriptMode={false} isStatic={true} />
-            </Box>)}
+          {displayedMessages.flatMap(progressMessage => {
+          const message = toSubagentMessage(progressMessage.data);
+          if (!message) {
+            return [];
+          }
+          return [<Box key={progressMessage.uuid} height={1} overflow="hidden">
+                <MessageComponent message={message} lookups={EMPTY_LOOKUPS} addMargin={false} tools={tools} commands={[]} verbose={verbose} inProgressToolUseIDs={inProgressToolUseIDs} progressMessagesForMessage={[]} shouldAnimate={false} shouldShowDot={false} style="condensed" isTranscriptMode={false} isStatic={true} />
+              </Box>];
+        })}
         </SubAgentProvider>
         {hiddenCount > 0 && <Text dimColor>
             +{hiddenCount} more tool {plural(hiddenCount, 'use')}

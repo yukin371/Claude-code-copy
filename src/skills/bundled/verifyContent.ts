@@ -1,13 +1,14 @@
 // Content for the verify bundled skill.
-// Each .md file is inlined as a string at build time via Bun's text loader.
+// The upstream markdown assets are optional in this snapshot. Keep startup
+// resilient by falling back to an inline placeholder when they are absent.
 
-import cliMd from './verify/examples/cli.md'
-import serverMd from './verify/examples/server.md'
-import skillMd from './verify/SKILL.md'
+export const SKILL_MD = `---
+description: Verify a code change does what it should by running the app.
+---
 
-export const SKILL_MD: string = skillMd
+Use this skill to verify a code change end-to-end.
 
-export const SKILL_FILES: Record<string, string> = {
-  'examples/cli.md': cliMd,
-  'examples/server.md': serverMd,
-}
+When richer verify skill markdown assets are available, they can replace this
+inline fallback without changing the registration surface.`
+
+export const SKILL_FILES: Record<string, string> = {}

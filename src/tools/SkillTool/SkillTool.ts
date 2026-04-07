@@ -18,12 +18,13 @@ import type {
 } from 'src/Tool.js'
 import { buildTool, type ToolDef } from 'src/Tool.js'
 import type { Command } from 'src/types/command.js'
-import type {
-  AssistantMessage,
-  AttachmentMessage,
-  Message,
-  SystemMessage,
-  UserMessage,
+import {
+  getMessageContentBlocks,
+  type AssistantMessage,
+  type AttachmentMessage,
+  type Message,
+  type SystemMessage,
+  type UserMessage,
 } from 'src/types/message.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import type { PermissionDecision } from 'src/utils/permissions/PermissionResult.js'
@@ -107,10 +108,39 @@ import type { SkillToolProgress as Progress } from '../../types/tools.js'
 /* eslint-disable @typescript-eslint/no-require-imports */
 const remoteSkillModules = feature('EXPERIMENTAL_SKILL_SEARCH')
   ? {
-      ...(require('../../services/skillSearch/remoteSkillState.js') as typeof import('../../services/skillSearch/remoteSkillState.js')),
-      ...(require('../../services/skillSearch/remoteSkillLoader.js') as typeof import('../../services/skillSearch/remoteSkillLoader.js')),
-      ...(require('../../services/skillSearch/telemetry.js') as typeof import('../../services/skillSearch/telemetry.js')),
-      ...(require('../../services/skillSearch/featureCheck.js') as typeof import('../../services/skillSearch/featureCheck.js')),
+      ...(require('../../services/skillSearch/remoteSkillState.js') as {
+        getDiscoveredRemoteSkill: (slug: string) => { url: string } | null
+      }),
+      ...(require('../../services/skillSearch/remoteSkillLoader.js') as {
+        loadRemoteSkill: (
+          slug: string,
+          url: string,
+        ) => Promise<{
+          cacheHit: boolean
+          latencyMs: number
+          skillPath: string
+          content: string
+          fileCount: number
+          totalBytes: number
+          fetchMethod?: string
+        }>
+      }),
+      ...(require('../../services/skillSearch/telemetry.js') as {
+        logRemoteSkillLoaded: (input: {
+          slug: string
+          cacheHit: boolean
+          latencyMs: number
+          urlScheme: string
+          fileCount?: number
+          totalBytes?: number
+          fetchMethod?: string
+          error?: string
+        }) => void
+      }),
+      ...(require('../../services/skillSearch/featureCheck.js') as {
+        isSkillSearchEnabled: () => boolean
+        stripCanonicalPrefix: (input: string) => string | null
+      }),
     }
   : null
 /* eslint-enable @typescript-eslint/no-require-imports */
@@ -243,7 +273,11 @@ async function executeForkedSkill(
       ) {
         const normalizedNew = normalizeMessages([message])
         for (const m of normalizedNew) {
-          const hasToolContent = m.message.content.some(
+          const hasToolContent = getMessageContentBlocks(
+            (m as {
+              message: { content: Parameters<typeof getMessageContentBlocks>[0] }
+            }).message.content,
+          ).some(
             c => c.type === 'tool_use' || c.type === 'tool_result',
           )
           if (hasToolContent) {

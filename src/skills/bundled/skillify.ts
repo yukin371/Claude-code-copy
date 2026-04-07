@@ -5,7 +5,14 @@ import { registerBundledSkill } from '../bundledSkills.js'
 
 function extractUserMessages(messages: Message[]): string[] {
   return messages
-    .filter((m): m is Extract<typeof m, { type: 'user' }> => m.type === 'user')
+    .filter(
+      (
+        m,
+      ): m is Message & {
+        type: 'user'
+        message: { content: string | { type?: string; text?: string }[] }
+      } => m.type === 'user' && !!m.message,
+    )
     .map(m => {
       const content = m.message.content
       if (typeof content === 'string') return content
