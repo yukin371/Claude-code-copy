@@ -49,6 +49,17 @@ import {
 } from './sessionStorage.js'
 import type { ContentReplacementRecord } from './toolResultStorage.js'
 
+type UnknownRecord = Record<string, unknown>
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null
+}
+
+function getStringField(record: UnknownRecord, key: string): string | undefined {
+  const value = record[key]
+  return typeof value === 'string' ? value : undefined
+}
+
 // Dead code elimination: ant-only tool names are conditionally required so
 // their strings don't leak into external builds. Static imports always bundle.
 /* eslint-disable @typescript-eslint/no-require-imports */
@@ -79,44 +90,49 @@ function migrateLegacyAttachmentTypes(message: Message): Message {
     return message
   }
 
-  const attachment = message.attachment as {
-    type: string
-    [key: string]: unknown
-  } // Handle legacy types not in current type system
+  if (!isRecord(message.attachment)) {
+    return message
+  }
+  const attachment = message.attachment
+  const attachmentType = getStringField(attachment, 'type')
 
   // Transform legacy attachment types
-  if (attachment.type === 'new_file') {
+  if (attachmentType === 'new_file') {
+    const filename = getStringField(attachment, 'filename')
+    if (!filename) {
+      return message
+    }
     return {
       ...message,
       attachment: {
         ...attachment,
         type: 'file',
-        displayPath: relative(getCwd(), attachment.filename as string),
+        displayPath: relative(getCwd(), filename),
       },
-    } as SerializedMessage // Cast entire message since we know the structure is correct
+    }
   }
 
-  if (attachment.type === 'new_directory') {
+  if (attachmentType === 'new_directory') {
+    const path = getStringField(attachment, 'path')
+    if (!path) {
+      return message
+    }
     return {
       ...message,
       attachment: {
         ...attachment,
         type: 'directory',
-        displayPath: relative(getCwd(), attachment.path as string),
+        displayPath: relative(getCwd(), path),
       },
-    } as SerializedMessage // Cast entire message since we know the structure is correct
+    }
   }
 
   // Backfill displayPath for attachments from old sessions
-  if (!('displayPath' in attachment)) {
+  if (typeof attachment.displayPath !== 'string') {
     const path =
-      'filename' in attachment
-        ? (attachment.filename as string)
-        : 'path' in attachment
-          ? (attachment.path as string)
-          : 'skillDir' in attachment
-            ? (attachment.skillDir as string)
-            : undefined
+      getStringField(attachment, 'filename') ??
+      getStringField(attachment, 'path') ??
+      getStringField(attachment, 'skillDir')
     if (path) {
       return {
         ...message,
@@ -124,7 +140,7 @@ function migrateLegacyAttachmentTypes(message: Message): Message {
           ...attachment,
           displayPath: relative(getCwd(), path),
         },
-      } as Message
+      }
     }
   }
 
@@ -174,34 +190,32 @@ export function deserializeMessagesWithInterruptDetection(
     // The field is unvalidated JSON from disk and may contain modes from a different build.
     const validModes = new Set<string>(PERMISSION_MODES)
     for (const msg of migratedMessages) {
+      const permissionMode = msg.permissionMode
       if (
         msg.type === 'user' &&
-        msg.permissionMode !== undefined &&
-        !validModes.has(msg.permissionMode)
+        typeof permissionMode === 'string' &&
+        !validModes.has(permissionMode)
       ) {
         msg.permissionMode = undefined
       }
     }
 
     // Filter out unresolved tool uses and any synthetic messages that follow them
-    const filteredToolUses = filterUnresolvedToolUses(
-      migratedMessages,
-    ) as NormalizedMessage[]
+    const filteredToolUses = filterUnresolvedToolUses(migratedMessages)
 
     // Filter out orphaned thinking-only assistant messages that can cause API errors
     // during resume. These occur when streaming yields separate messages per content
     // block and interleaved user messages prevent proper merging by message.id.
-    const filteredThinking = filterOrphanedThinkingOnlyMessages(
-      filteredToolUses,
-    ) as NormalizedMessage[]
+    const filteredThinking =
+      filterOrphanedThinkingOnlyMessages(filteredToolUses)
 
     // Filter out assistant messages with only whitespace text content.
     // This can happen when model outputs "\n\n" before thinking, user cancels mid-stream.
-    const filteredMessages = filterWhitespaceOnlyAssistantMessages(
-      filteredThinking,
-    ) as NormalizedMessage[]
+    const filteredMessages =
+      filterWhitespaceOnlyAssistantMessages(filteredThinking)
+    const normalizedForDetection = normalizeMessages(filteredMessages)
 
-    const internalState = detectTurnInterruption(filteredMessages)
+    const internalState = detectTurnInterruption(normalizedForDetection)
 
     // Transform mid-turn interruptions into interrupted_prompt by appending
     // a synthetic continuation message. This unifies both interruption kinds
@@ -240,7 +254,7 @@ export function deserializeMessagesWithInterruptDetection(
         0,
         createAssistantMessage({
           content: NO_RESPONSE_REQUESTED,
-        }) as NormalizedMessage,
+        }),
       )
     }
 
@@ -381,14 +395,23 @@ function isTerminalToolResult(
  */
 export function restoreSkillStateFromMessages(messages: Message[]): void {
   for (const message of messages) {
-    if (message.type !== 'attachment') {
+    if (message.type !== 'attachment' || !isRecord(message.attachment)) {
       continue
     }
     if (message.attachment.type === 'invoked_skills') {
-      for (const skill of message.attachment.skills) {
-        if (skill.name && skill.path && skill.content) {
-          // Resume only happens for the main session, so agentId is null
-          addInvokedSkill(skill.name, skill.path, skill.content, null)
+      const skills = message.attachment.skills
+      if (Array.isArray(skills)) {
+        for (const skill of skills) {
+          if (!isRecord(skill)) {
+            continue
+          }
+          const name = getStringField(skill, 'name')
+          const path = getStringField(skill, 'path')
+          const content = getStringField(skill, 'content')
+          if (name && path && content) {
+            // Resume only happens for the main session, so agentId is null
+            addInvokedSkill(name, path, content, null)
+          }
         }
       }
     }
@@ -421,7 +444,8 @@ export async function loadMessagesFromJsonlPath(path: string): Promise<{
   let tip: (typeof byUuid extends Map<UUID, infer T> ? T : never) | null = null
   let tipTs = 0
   for (const m of byUuid.values()) {
-    if (m.isSidechain || !leafUuids.has(m.uuid)) continue
+    const messageUuid = typeof m.uuid === 'string' ? (m.uuid as UUID) : undefined
+    if (m.isSidechain || !messageUuid || !leafUuids.has(messageUuid)) continue
     const ts = new Date(m.timestamp).getTime()
     if (ts > tipTs) {
       tipTs = ts
@@ -436,6 +460,43 @@ export async function loadMessagesFromJsonlPath(path: string): Promise<{
     // transcript, so the root retains the source session's ID. Matches
     // loadFullLog's mostRecentLeaf.sessionId.
     sessionId: tip.sessionId as UUID | undefined,
+  }
+}
+
+function isNonInteractiveLiveSession(
+  session: unknown,
+): session is { kind: string; sessionId: string } {
+  if (!isRecord(session)) {
+    return false
+  }
+  return (
+    typeof session.kind === 'string' &&
+    session.kind !== 'interactive' &&
+    typeof session.sessionId === 'string'
+  )
+}
+
+async function getLiveNonInteractiveSessionIds(): Promise<Set<string>> {
+  try {
+    // Keep path dynamic so typecheck doesn't require a concrete source file.
+    const udsClientModulePath = './udsClient.js'
+    const uds = (await import(udsClientModulePath)) as {
+      listAllLiveSessions?: () => Promise<unknown>
+    }
+    if (typeof uds.listAllLiveSessions !== 'function') {
+      return new Set<string>()
+    }
+    const live = await uds.listAllLiveSessions()
+    if (!Array.isArray(live)) {
+      return new Set<string>()
+    }
+    return new Set(
+      live
+        .filter(isNonInteractiveLiveSession)
+        .map(session => session.sessionId),
+    )
+  } catch {
+    return new Set<string>()
   }
 }
 
@@ -490,19 +551,7 @@ export async function loadConversationForResume(
       const logsPromise = loadMessageLogs()
       let skip = new Set<string>()
       if (feature('BG_SESSIONS')) {
-        try {
-          const { listAllLiveSessions } = await import('./udsClient.js')
-          const live = await listAllLiveSessions()
-          skip = new Set(
-            live.flatMap(s =>
-              s.kind && s.kind !== 'interactive' && s.sessionId
-                ? [s.sessionId]
-                : [],
-            ),
-          )
-        } catch {
-          // UDS unavailable — treat all sessions as continuable
-        }
+        skip = await getLiveNonInteractiveSessionIds()
       }
       const logs = await logsPromise
       log =

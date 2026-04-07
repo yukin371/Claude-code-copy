@@ -195,6 +195,10 @@ export function isEphemeralToolProgress(dataType: unknown): boolean {
   return typeof dataType === 'string' && EPHEMERAL_PROGRESS_TYPES.has(dataType)
 }
 
+function asUuid(value: unknown): UUID | undefined {
+  return validateUuid(value) ?? undefined
+}
+
 export function getProjectsDir(): string {
   return join(getClaudeConfigHomeDir(), 'projects')
 }
@@ -1033,10 +1037,13 @@ class Project {
           'sourceToolAssistantUUID' in message &&
           message.sourceToolAssistantUUID
         ) {
-          effectiveParentUuid = message.sourceToolAssistantUUID
+          const sourceToolAssistantUuid = asUuid(message.sourceToolAssistantUUID)
+          if (sourceToolAssistantUuid) {
+            effectiveParentUuid = sourceToolAssistantUuid
+          }
         }
 
-        const transcriptMessage: TranscriptMessage = {
+        const transcriptMessage = {
           parentUuid: isCompactBoundary ? null : effectiveParentUuid,
           logicalParentUuid: isCompactBoundary ? parentUuid : undefined,
           isSidechain,
@@ -1061,10 +1068,13 @@ class Project {
           version: VERSION,
           gitBranch,
           slug,
-        }
+        } as TranscriptMessage
         await this.appendEntry(transcriptMessage)
         if (isChainParticipant(message)) {
-          parentUuid = message.uuid
+          const messageUuid = asUuid(message.uuid)
+          if (messageUuid) {
+            parentUuid = messageUuid
+          }
         }
       }
 
@@ -1202,7 +1212,7 @@ class Project {
       // go to the sidechain file (for AgentTool resume); main-thread
       // records go to the session file (for /resume).
       const targetFile = entry.agentId
-        ? getAgentTranscriptPath(entry.agentId)
+        ? getAgentTranscriptPath(asAgentId(entry.agentId))
         : sessionFile
       void this.enqueueWrite(targetFile, entry)
     } else if (entry.type === 'marble-origami-commit') {
@@ -1219,8 +1229,14 @@ class Project {
         // Queue operations are always appended to the session file
         void this.enqueueWrite(sessionFile, entry)
       } else {
-        // At this point, entry must be a TranscriptMessage (user/assistant/attachment/system)
-        // All other entry types have been handled above
+        if (!isTranscriptMessage(entry)) {
+          return
+        }
+        const entryUuid = asUuid(entry.uuid)
+        if (!entryUuid) {
+          return
+        }
+
         const isAgentSidechain =
           entry.isSidechain && entry.agentId !== undefined
         const targetFile = isAgentSidechain
@@ -1239,7 +1255,7 @@ class Project {
         // persistence (session-ingress) uses a single Last-Uuid chain per
         // sessionId, so re-POSTing a UUID it already has 409s and eventually
         // exhausts retries → gracefulShutdownSync(1). See inc-4718.
-        const isNewUuid = !messageSet.has(entry.uuid)
+        const isNewUuid = !messageSet.has(entryUuid)
         if (isAgentSidechain || isNewUuid) {
           // Enqueue write — appendToFile handles ENOENT by creating directories
           void this.enqueueWrite(targetFile, entry)
@@ -1253,7 +1269,7 @@ class Project {
             // and --resume's buildConversationChain terminates at the dangling ref.
             // Same constraint for remote (inc-4718 above): sidechain persisting a
             // UUID the main thread hasn't written yet → 409 when main writes it.
-            messageSet.add(entry.uuid)
+            messageSet.add(entryUuid)
 
             if (isTranscriptMessage(entry)) {
               await this.persistToRemote(sessionId, entry)
@@ -1850,8 +1866,8 @@ function applyPreservedSegmentRelinks(
   let absoluteLastBoundaryIdx = -1
   const entryIndex = new Map<UUID, number>()
   let i = 0
-  for (const entry of messages.values()) {
-    entryIndex.set(entry.uuid, i)
+  for (const [uuid, entry] of messages) {
+    entryIndex.set(uuid, i)
     if (isCompactBoundaryMessage(entry)) {
       absoluteLastBoundaryIdx = i
       const seg = entry.compactMetadata?.preservedSegment
@@ -1873,17 +1889,25 @@ function applyPreservedSegmentRelinks(
   // no-op (walk stops at headUuid, doesn't need the relink to run first).
   const preservedUuids = new Set<UUID>()
   if (segIsLive) {
+    const tailUuid = asUuid(lastSeg.tailUuid)
+    const headUuid = asUuid(lastSeg.headUuid)
+    const anchorUuid = asUuid(lastSeg.anchorUuid)
+    if (!tailUuid || !headUuid || !anchorUuid) {
+      return
+    }
+
     const walkSeen = new Set<UUID>()
-    let cur = messages.get(lastSeg.tailUuid)
+    let curUuid: UUID | null = tailUuid
     let reachedHead = false
-    while (cur && !walkSeen.has(cur.uuid)) {
-      walkSeen.add(cur.uuid)
-      preservedUuids.add(cur.uuid)
-      if (cur.uuid === lastSeg.headUuid) {
+    while (curUuid && !walkSeen.has(curUuid)) {
+      walkSeen.add(curUuid)
+      preservedUuids.add(curUuid)
+      if (curUuid === headUuid) {
         reachedHead = true
         break
       }
-      cur = cur.parentUuid ? messages.get(cur.parentUuid) : undefined
+      const cur = messages.get(curUuid)
+      curUuid = cur?.parentUuid ?? null
     }
     if (!reachedHead) {
       // tail→head walk broke — a UUID in the preserved segment isn't in the
@@ -1892,9 +1916,9 @@ function applyPreservedSegmentRelinks(
       // attachment pushed to mutableMessages but never recordTranscript'd
       // (SDK subprocess restarted before next turn's qe:420 flush).
       logEvent('tengu_relink_walk_broken', {
-        tailInTranscript: messages.has(lastSeg.tailUuid),
-        headInTranscript: messages.has(lastSeg.headUuid),
-        anchorInTranscript: messages.has(lastSeg.anchorUuid),
+        tailInTranscript: messages.has(tailUuid),
+        headInTranscript: messages.has(headUuid),
+        anchorInTranscript: messages.has(anchorUuid),
         walkSteps: walkSeen.size,
         transcriptSize: messages.size,
       })
@@ -1903,18 +1927,25 @@ function applyPreservedSegmentRelinks(
   }
 
   if (segIsLive) {
-    const head = messages.get(lastSeg.headUuid)
+    const headUuid = asUuid(lastSeg.headUuid)
+    const tailUuid = asUuid(lastSeg.tailUuid)
+    const anchorUuid = asUuid(lastSeg.anchorUuid)
+    if (!headUuid || !tailUuid || !anchorUuid) {
+      return
+    }
+
+    const head = messages.get(headUuid)
     if (head) {
-      messages.set(lastSeg.headUuid, {
+      messages.set(headUuid, {
         ...head,
-        parentUuid: lastSeg.anchorUuid,
+        parentUuid: anchorUuid,
       })
     }
     // Tail-splice: anchor's other children → tail. No-op if already pointing
     // at tail (the useLogMessages race case).
     for (const [uuid, msg] of messages) {
-      if (msg.parentUuid === lastSeg.anchorUuid && uuid !== lastSeg.headUuid) {
-        messages.set(uuid, { ...msg, parentUuid: lastSeg.tailUuid })
+      if (msg.parentUuid === anchorUuid && uuid !== headUuid) {
+        messages.set(uuid, { ...msg, parentUuid: tailUuid })
       }
     }
     // Zero stale usage: on-disk input_tokens reflect pre-compact context
@@ -1923,12 +1954,16 @@ function applyPreservedSegmentRelinks(
     for (const uuid of preservedUuids) {
       const msg = messages.get(uuid)
       if (msg?.type !== 'assistant') continue
+      const usage =
+        typeof msg.message.usage === 'object' && msg.message.usage !== null
+          ? msg.message.usage
+          : {}
       messages.set(uuid, {
         ...msg,
         message: {
           ...msg.message,
           usage: {
-            ...msg.message.usage,
+            ...usage,
             input_tokens: 0,
             output_tokens: 0,
             cache_creation_input_tokens: 0,
@@ -2072,22 +2107,29 @@ export function buildConversationChain(
 ): TranscriptMessage[] {
   const transcript: TranscriptMessage[] = []
   const seen = new Set<UUID>()
-  let currentMsg: TranscriptMessage | undefined = leafMessage
-  while (currentMsg) {
-    if (seen.has(currentMsg.uuid)) {
+  const leafUuid = asUuid(leafMessage.uuid)
+  if (!leafUuid) {
+    return transcript
+  }
+
+  let currentUuid: UUID | null = leafUuid
+  while (currentUuid) {
+    if (seen.has(currentUuid)) {
       logError(
         new Error(
-          `Cycle detected in parentUuid chain at message ${currentMsg.uuid}. Returning partial transcript.`,
+          `Cycle detected in parentUuid chain at message ${currentUuid}. Returning partial transcript.`,
         ),
       )
       logEvent('tengu_chain_parent_cycle', {})
       break
     }
-    seen.add(currentMsg.uuid)
+    seen.add(currentUuid)
+    const currentMsg = messages.get(currentUuid)
+    if (!currentMsg) {
+      break
+    }
     transcript.push(currentMsg)
-    currentMsg = currentMsg.parentUuid
-      ? messages.get(currentMsg.parentUuid)
-      : undefined
+    currentUuid = currentMsg.parentUuid
   }
   transcript.reverse()
   return recoverOrphanedParallelToolResults(messages, transcript, seen)
@@ -2120,9 +2162,12 @@ function recoverOrphanedParallelToolResults(
   chain: TranscriptMessage[],
   seen: Set<UUID>,
 ): TranscriptMessage[] {
-  type ChainAssistant = Extract<TranscriptMessage, { type: 'assistant' }>
+  type ChainAssistant = TranscriptMessage & AssistantMessage
   const chainAssistants = chain.filter(
-    (m): m is ChainAssistant => m.type === 'assistant',
+    (m): m is ChainAssistant =>
+      m.type === 'assistant' &&
+      typeof m.message === 'object' &&
+      m.message !== null,
   )
   if (chainAssistants.length === 0) return chain
 
@@ -2168,13 +2213,19 @@ function recoverOrphanedParallelToolResults(
     processedGroups.add(msgId)
 
     const group = siblingsByMsgId.get(msgId) ?? [asst]
-    const orphanedSiblings = group.filter(s => !seen.has(s.uuid))
+    const orphanedSiblings = group.filter(s => {
+      const uuid = asUuid(s.uuid)
+      return uuid ? !seen.has(uuid) : false
+    })
     const orphanedTRs: TranscriptMessage[] = []
     for (const member of group) {
-      const trs = toolResultsByAsst.get(member.uuid)
+      const memberUuid = asUuid(member.uuid)
+      if (!memberUuid) continue
+      const trs = toolResultsByAsst.get(memberUuid)
       if (!trs) continue
       for (const tr of trs) {
-        if (!seen.has(tr.uuid)) orphanedTRs.push(tr)
+        const trUuid = asUuid(tr.uuid)
+        if (trUuid && !seen.has(trUuid)) orphanedTRs.push(tr)
       }
     }
     if (orphanedSiblings.length === 0 && orphanedTRs.length === 0) continue
@@ -2186,9 +2237,15 @@ function recoverOrphanedParallelToolResults(
 
     const anchor = anchorByMsgId.get(msgId)!
     const recovered = [...orphanedSiblings, ...orphanedTRs]
-    for (const r of recovered) seen.add(r.uuid)
+    for (const r of recovered) {
+      const uuid = asUuid(r.uuid)
+      if (uuid) seen.add(uuid)
+    }
     recoveredCount += recovered.length
-    inserts.set(anchor.uuid, recovered)
+    const anchorUuid = asUuid(anchor.uuid)
+    if (anchorUuid) {
+      inserts.set(anchorUuid, recovered)
+    }
   }
 
   if (recoveredCount === 0) return chain
@@ -2199,7 +2256,8 @@ function recoverOrphanedParallelToolResults(
   const result: TranscriptMessage[] = []
   for (const m of chain) {
     result.push(m)
-    const toInsert = inserts.get(m.uuid)
+    const messageUuid = asUuid(m.uuid)
+    const toInsert = messageUuid ? inserts.get(messageUuid) : undefined
     if (toInsert) result.push(...toInsert)
   }
   return result
@@ -2226,7 +2284,7 @@ export function checkResumeConsistency(chain: Message[]): void {
     const m = chain[i]!
     if (m.type !== 'system' || m.subtype !== 'turn_duration') continue
     const expected = m.messageCount
-    if (expected === undefined) return
+    if (typeof expected !== 'number') return
     // `i` is the 0-based index of the checkpoint in the reconstructed chain.
     // The checkpoint was appended AFTER messageCount messages, so its own
     // position should be messageCount (i.e., i === expected).
@@ -2253,7 +2311,11 @@ function buildFileHistorySnapshotChain(
   // messageId → last index in snapshots[] for O(1) update lookup
   const indexByMessageId = new Map<string, number>()
   for (const message of conversation) {
-    const snapshotMessage = fileHistorySnapshots.get(message.uuid)
+    const messageUuid = asUuid(message.uuid)
+    if (!messageUuid) {
+      continue
+    }
+    const snapshotMessage = fileHistorySnapshots.get(messageUuid)
     if (!snapshotMessage) {
       continue
     }
@@ -2315,7 +2377,7 @@ export async function loadTranscriptFromFile(
 
     // Find the most recent leaf message using pre-computed leaf UUIDs
     const leafMessage = findLatestMessage(messages.values(), msg =>
-      leafUuids.has(msg.uuid),
+      Boolean(asUuid(msg.uuid) && leafUuids.has(asUuid(msg.uuid)!)),
     )
 
     if (!leafMessage) {
@@ -2325,10 +2387,11 @@ export async function loadTranscriptFromFile(
     // Build the conversation chain backwards from leaf to root
     const transcript = buildConversationChain(messages, leafMessage)
 
-    const summary = summaries.get(leafMessage.uuid)
-    const customTitle = customTitles.get(leafMessage.sessionId as UUID)
-    const tag = tags.get(leafMessage.sessionId as UUID)
-    const sessionId = leafMessage.sessionId as UUID
+    const leafUuid = asUuid(leafMessage.uuid)
+    const sessionId = asUuid(leafMessage.sessionId)
+    const summary = leafUuid ? summaries.get(leafUuid) : undefined
+    const customTitle = sessionId ? customTitles.get(sessionId) : undefined
+    const tag = sessionId ? tags.get(sessionId) : undefined
     return {
       ...convertToLogOption(
         transcript,
@@ -2340,16 +2403,16 @@ export async function loadTranscriptFromFile(
         filePath,
         buildAttributionSnapshotChain(attributionSnapshots, transcript),
         undefined,
-        contentReplacements.get(sessionId) ?? [],
+        sessionId ? (contentReplacements.get(sessionId) ?? []) : [],
       ),
       contextCollapseCommits: contextCollapseCommits.filter(
         e => e.sessionId === sessionId,
       ),
       contextCollapseSnapshot:
-        contextCollapseSnapshot?.sessionId === sessionId
+        sessionId && contextCollapseSnapshot?.sessionId === sessionId
           ? contextCollapseSnapshot
           : undefined,
-      worktreeSession: worktreeStates.has(sessionId)
+      worktreeSession: sessionId && worktreeStates.has(sessionId)
         ? worktreeStates.get(sessionId)
         : undefined,
     }
@@ -2511,7 +2574,7 @@ function convertToLogOption(
     teamName: firstMessage.teamName,
     agentName: firstMessage.agentName,
     agentSetting,
-    leafUuid: lastMessage.uuid,
+    leafUuid: asUuid(lastMessage.uuid),
     summary,
     customTitle,
     tag,
@@ -2988,7 +3051,7 @@ export async function loadFullLog(log: LogOption): Promise<LogOption> {
     const mostRecentLeaf = findLatestMessage(
       messages.values(),
       msg =>
-        leafUuids.has(msg.uuid) &&
+        Boolean(asUuid(msg.uuid) && leafUuids.has(asUuid(msg.uuid)!)) &&
         (msg.type === 'user' || msg.type === 'assistant'),
     )
     if (!mostRecentLeaf) {
@@ -2999,15 +3062,17 @@ export async function loadFullLog(log: LogOption): Promise<LogOption> {
     const transcript = buildConversationChain(messages, mostRecentLeaf)
     // Leaf's sessionId — forked sessions copy chain[0] from the source, but
     // metadata entries (custom-title etc.) are keyed by the current session.
-    const sessionId = mostRecentLeaf.sessionId as UUID | undefined
+    const sessionId = asUuid(mostRecentLeaf.sessionId)
+    const mostRecentLeafUuid = asUuid(mostRecentLeaf.uuid)
     return {
       ...log,
       messages: removeExtraFields(transcript),
       firstPrompt: extractFirstPrompt(transcript),
       messageCount: countVisibleMessages(transcript),
-      summary: mostRecentLeaf
-        ? summaries.get(mostRecentLeaf.uuid)
-        : log.summary,
+      summary:
+        mostRecentLeaf && mostRecentLeafUuid
+          ? summaries.get(mostRecentLeafUuid)
+          : log.summary,
       customTitle: sessionId ? customTitles.get(sessionId) : log.customTitle,
       tag: sessionId ? tags.get(sessionId) : log.tag,
       agentName: sessionId ? agentNames.get(sessionId) : log.agentName,
@@ -3026,7 +3091,7 @@ export async function loadFullLog(log: LogOption): Promise<LogOption> {
       gitBranch: mostRecentLeaf?.gitBranch ?? log.gitBranch,
       isSidechain: transcript[0]?.isSidechain ?? log.isSidechain,
       teamName: transcript[0]?.teamName ?? log.teamName,
-      leafUuid: mostRecentLeaf?.uuid ?? log.leafUuid,
+      leafUuid: mostRecentLeafUuid ?? log.leafUuid,
       fileHistorySnapshots: buildFileHistorySnapshotChain(
         fileHistorySnapshots,
         transcript,
@@ -3587,26 +3652,73 @@ export async function loadTranscriptFile(
         Buffer.from(metadataLines.join('\n')),
       )
       for (const entry of metaEntries) {
-        if (entry.type === 'summary' && entry.leafUuid) {
-          summaries.set(entry.leafUuid, entry.summary)
-        } else if (entry.type === 'custom-title' && entry.sessionId) {
-          customTitles.set(entry.sessionId, entry.customTitle)
-        } else if (entry.type === 'tag' && entry.sessionId) {
-          tags.set(entry.sessionId, entry.tag)
-        } else if (entry.type === 'agent-name' && entry.sessionId) {
-          agentNames.set(entry.sessionId, entry.agentName)
-        } else if (entry.type === 'agent-color' && entry.sessionId) {
-          agentColors.set(entry.sessionId, entry.agentColor)
-        } else if (entry.type === 'agent-setting' && entry.sessionId) {
-          agentSettings.set(entry.sessionId, entry.agentSetting)
-        } else if (entry.type === 'mode' && entry.sessionId) {
-          modes.set(entry.sessionId, entry.mode)
-        } else if (entry.type === 'worktree-state' && entry.sessionId) {
-          worktreeStates.set(entry.sessionId, entry.worktreeSession)
-        } else if (entry.type === 'pr-link' && entry.sessionId) {
-          prNumbers.set(entry.sessionId, entry.prNumber)
-          prUrls.set(entry.sessionId, entry.prUrl)
-          prRepositories.set(entry.sessionId, entry.prRepository)
+        if (entry.type === 'summary') {
+          const leafUuid =
+            'leafUuid' in entry ? asUuid(entry.leafUuid) : undefined
+          if (leafUuid && typeof entry.summary === 'string') {
+            summaries.set(leafUuid, entry.summary)
+          }
+        } else if (entry.type === 'custom-title') {
+          const sessionId =
+            'sessionId' in entry ? asUuid(entry.sessionId) : undefined
+          if (sessionId && typeof entry.customTitle === 'string') {
+            customTitles.set(sessionId, entry.customTitle)
+          }
+        } else if (entry.type === 'tag') {
+          const sessionId =
+            'sessionId' in entry ? asUuid(entry.sessionId) : undefined
+          if (sessionId && typeof entry.tag === 'string') {
+            tags.set(sessionId, entry.tag)
+          }
+        } else if (entry.type === 'agent-name') {
+          const sessionId =
+            'sessionId' in entry ? asUuid(entry.sessionId) : undefined
+          if (sessionId && typeof entry.agentName === 'string') {
+            agentNames.set(sessionId, entry.agentName)
+          }
+        } else if (entry.type === 'agent-color') {
+          const sessionId =
+            'sessionId' in entry ? asUuid(entry.sessionId) : undefined
+          if (sessionId && typeof entry.agentColor === 'string') {
+            agentColors.set(sessionId, entry.agentColor)
+          }
+        } else if (entry.type === 'agent-setting') {
+          const sessionId =
+            'sessionId' in entry ? asUuid(entry.sessionId) : undefined
+          if (sessionId && typeof entry.agentSetting === 'string') {
+            agentSettings.set(sessionId, entry.agentSetting)
+          }
+        } else if (entry.type === 'mode') {
+          const sessionId =
+            'sessionId' in entry ? asUuid(entry.sessionId) : undefined
+          if (
+            sessionId &&
+            (entry.mode === 'coordinator' || entry.mode === 'normal')
+          ) {
+            modes.set(sessionId, entry.mode)
+          }
+        } else if (entry.type === 'worktree-state') {
+          const sessionId =
+            'sessionId' in entry ? asUuid(entry.sessionId) : undefined
+          if (sessionId) {
+            worktreeStates.set(
+              sessionId,
+              entry.worktreeSession as PersistedWorktreeSession | null,
+            )
+          }
+        } else if (entry.type === 'pr-link') {
+          const sessionId =
+            'sessionId' in entry ? asUuid(entry.sessionId) : undefined
+          if (
+            sessionId &&
+            typeof entry.prNumber === 'number' &&
+            typeof entry.prUrl === 'string' &&
+            typeof entry.prRepository === 'string'
+          ) {
+            prNumbers.set(sessionId, entry.prNumber)
+            prUrls.set(sessionId, entry.prUrl)
+            prRepositories.set(sessionId, entry.prRepository)
+          }
         }
       }
     }
@@ -3643,7 +3755,11 @@ export async function loadTranscriptFile(
         if (entry.parentUuid && progressBridge.has(entry.parentUuid)) {
           entry.parentUuid = progressBridge.get(entry.parentUuid) ?? null
         }
-        messages.set(entry.uuid, entry)
+        const entryUuid = asUuid(entry.uuid)
+        if (!entryUuid) {
+          continue
+        }
+        messages.set(entryUuid, entry)
         // Compact boundary: prior marble-origami-commit entries reference
         // messages that won't be in the post-boundary chain. The >5MB
         // backward-scan path discards them naturally by never reading the
@@ -3655,26 +3771,53 @@ export async function loadTranscriptFile(
           contextCollapseCommits.length = 0
           contextCollapseSnapshot = undefined
         }
-      } else if (entry.type === 'summary' && entry.leafUuid) {
-        summaries.set(entry.leafUuid, entry.summary)
-      } else if (entry.type === 'custom-title' && entry.sessionId) {
-        customTitles.set(entry.sessionId, entry.customTitle)
-      } else if (entry.type === 'tag' && entry.sessionId) {
-        tags.set(entry.sessionId, entry.tag)
-      } else if (entry.type === 'agent-name' && entry.sessionId) {
-        agentNames.set(entry.sessionId, entry.agentName)
-      } else if (entry.type === 'agent-color' && entry.sessionId) {
-        agentColors.set(entry.sessionId, entry.agentColor)
-      } else if (entry.type === 'agent-setting' && entry.sessionId) {
-        agentSettings.set(entry.sessionId, entry.agentSetting)
-      } else if (entry.type === 'mode' && entry.sessionId) {
-        modes.set(entry.sessionId, entry.mode)
-      } else if (entry.type === 'worktree-state' && entry.sessionId) {
-        worktreeStates.set(entry.sessionId, entry.worktreeSession)
-      } else if (entry.type === 'pr-link' && entry.sessionId) {
-        prNumbers.set(entry.sessionId, entry.prNumber)
-        prUrls.set(entry.sessionId, entry.prUrl)
-        prRepositories.set(entry.sessionId, entry.prRepository)
+      } else if (entry.type === 'summary') {
+        const leafUuid = asUuid(entry.leafUuid)
+        if (leafUuid) {
+          summaries.set(leafUuid, entry.summary)
+        }
+      } else if (entry.type === 'custom-title') {
+        const sessionId = asUuid(entry.sessionId)
+        if (sessionId) {
+          customTitles.set(sessionId, entry.customTitle)
+        }
+      } else if (entry.type === 'tag') {
+        const sessionId = asUuid(entry.sessionId)
+        if (sessionId) {
+          tags.set(sessionId, entry.tag)
+        }
+      } else if (entry.type === 'agent-name') {
+        const sessionId = asUuid(entry.sessionId)
+        if (sessionId) {
+          agentNames.set(sessionId, entry.agentName)
+        }
+      } else if (entry.type === 'agent-color') {
+        const sessionId = asUuid(entry.sessionId)
+        if (sessionId) {
+          agentColors.set(sessionId, entry.agentColor)
+        }
+      } else if (entry.type === 'agent-setting') {
+        const sessionId = asUuid(entry.sessionId)
+        if (sessionId) {
+          agentSettings.set(sessionId, entry.agentSetting)
+        }
+      } else if (entry.type === 'mode') {
+        const sessionId = asUuid(entry.sessionId)
+        if (sessionId) {
+          modes.set(sessionId, entry.mode)
+        }
+      } else if (entry.type === 'worktree-state') {
+        const sessionId = asUuid(entry.sessionId)
+        if (sessionId) {
+          worktreeStates.set(sessionId, entry.worktreeSession)
+        }
+      } else if (entry.type === 'pr-link') {
+        const sessionId = asUuid(entry.sessionId)
+        if (sessionId) {
+          prNumbers.set(sessionId, entry.prNumber)
+          prUrls.set(sessionId, entry.prUrl)
+          prRepositories.set(sessionId, entry.prRepository)
+        }
       } else if (entry.type === 'file-history-snapshot') {
         fileHistorySnapshots.set(entry.messageId, entry)
       } else if (entry.type === 'attribution-snapshot') {
@@ -3687,9 +3830,12 @@ export async function loadTranscriptFile(
           agentContentReplacements.set(entry.agentId, existing)
           existing.push(...entry.replacements)
         } else {
-          const existing = contentReplacements.get(entry.sessionId) ?? []
-          contentReplacements.set(entry.sessionId, existing)
-          existing.push(...entry.replacements)
+          const sessionId = asUuid(entry.sessionId)
+          if (sessionId) {
+            const existing = contentReplacements.get(sessionId) ?? []
+            contentReplacements.set(sessionId, existing)
+            existing.push(...entry.replacements)
+          }
         }
       } else if (entry.type === 'marble-origami-commit') {
         contextCollapseCommits.push(entry)
@@ -3723,7 +3869,10 @@ export async function loadTranscriptFile(
   )
 
   // Find all terminal messages (messages with no children)
-  const terminalMessages = allMessages.filter(msg => !parentUuids.has(msg.uuid))
+  const terminalMessages = allMessages.filter(msg => {
+    const uuid = asUuid(msg.uuid)
+    return uuid ? !parentUuids.has(uuid) : false
+  })
 
   const leafUuids = new Set<UUID>()
   let hasCycle = false
@@ -3746,14 +3895,16 @@ export async function loadTranscriptFile(
       const seen = new Set<UUID>()
       let current: TranscriptMessage | undefined = terminal
       while (current) {
-        if (seen.has(current.uuid)) {
+        const currentUuid = asUuid(current.uuid)
+        if (!currentUuid) break
+        if (seen.has(currentUuid)) {
           hasCycle = true
           break
         }
-        seen.add(current.uuid)
+        seen.add(currentUuid)
         if (current.type === 'user' || current.type === 'assistant') {
-          if (!hasUserAssistantChild.has(current.uuid)) {
-            leafUuids.add(current.uuid)
+          if (!hasUserAssistantChild.has(currentUuid)) {
+            leafUuids.add(currentUuid)
           }
           break
         }
@@ -3769,13 +3920,15 @@ export async function loadTranscriptFile(
       const seen = new Set<UUID>()
       let current: TranscriptMessage | undefined = terminal
       while (current) {
-        if (seen.has(current.uuid)) {
+        const currentUuid = asUuid(current.uuid)
+        if (!currentUuid) break
+        if (seen.has(currentUuid)) {
           hasCycle = true
           break
         }
-        seen.add(current.uuid)
+        seen.add(currentUuid)
         if (current.type === 'user' || current.type === 'assistant') {
-          leafUuids.add(current.uuid)
+          leafUuids.add(currentUuid)
           break
         }
         current = current.parentUuid
@@ -3820,7 +3973,13 @@ async function loadSessionFile(sessionId: UUID): Promise<{
   summaries: Map<UUID, string>
   customTitles: Map<UUID, string>
   tags: Map<UUID, string>
+  agentNames: Map<UUID, string>
+  agentColors: Map<UUID, string>
   agentSettings: Map<UUID, string>
+  prNumbers: Map<UUID, number>
+  prUrls: Map<UUID, string>
+  prRepositories: Map<UUID, string>
+  modes: Map<UUID, string>
   worktreeStates: Map<UUID, PersistedWorktreeSession | null>
   fileHistorySnapshots: Map<UUID, FileHistorySnapshotMessage>
   attributionSnapshots: Map<UUID, AttributionSnapshotMessage>
@@ -3875,7 +4034,13 @@ export async function getLastSessionLog(
     summaries,
     customTitles,
     tags,
+    agentNames,
+    agentColors,
     agentSettings,
+    prNumbers,
+    prUrls,
+    prRepositories,
+    modes,
     worktreeStates,
     fileHistorySnapshots,
     attributionSnapshots,
@@ -3903,9 +4068,13 @@ export async function getLastSessionLog(
   // Build the transcript chain from the last message
   const transcript = buildConversationChain(messages, lastMessage)
 
-  const summary = summaries.get(lastMessage.uuid)
-  const customTitle = customTitles.get(lastMessage.sessionId as UUID)
-  const tag = tags.get(lastMessage.sessionId as UUID)
+  const lastMessageUuid = asUuid(lastMessage.uuid)
+  const lastSessionId = asUuid(lastMessage.sessionId)
+  const summary = lastMessageUuid ? summaries.get(lastMessageUuid) : undefined
+  const customTitle = lastSessionId
+    ? customTitles.get(lastSessionId)
+    : undefined
+  const tag = lastSessionId ? tags.get(lastSessionId) : undefined
   const agentSetting = agentSettings.get(sessionId)
   return {
     ...convertToLogOption(
@@ -3920,6 +4089,13 @@ export async function getLastSessionLog(
       agentSetting,
       contentReplacements.get(sessionId) ?? [],
     ),
+    sessionId,
+    agentName: agentNames.get(sessionId),
+    agentColor: agentColors.get(sessionId),
+    mode: modes.get(sessionId) as LogOption['mode'],
+    prNumber: prNumbers.get(sessionId),
+    prUrl: prUrls.get(sessionId),
+    prRepository: prRepositories.get(sessionId),
     worktreeSession: worktreeStates.get(sessionId),
     contextCollapseCommits: contextCollapseCommits.filter(
       e => e.sessionId === sessionId,
@@ -4207,10 +4383,17 @@ export async function getAgentTranscript(agentId: AgentId): Promise<{
     }
 
     // Find the most recent leaf message with this agentId
-    const parentUuids = new Set(agentMessages.map(msg => msg.parentUuid))
+    const parentUuids = new Set(
+      agentMessages
+        .map(msg => msg.parentUuid)
+        .filter((uuid): uuid is UUID => uuid !== null),
+    )
     const leafMessage = findLatestMessage(
       agentMessages,
-      msg => !parentUuids.has(msg.uuid),
+      msg => {
+        const msgUuid = asUuid(msg.uuid)
+        return msgUuid ? !parentUuids.has(msgUuid) : false
+      },
     )
 
     if (!leafMessage) {
@@ -4623,7 +4806,8 @@ export async function loadAllLogsFromSessionFile(
   // Build parentUuid → children index once (O(n)), so trailing-message lookup is O(1) per leaf
   const childrenByParent = new Map<UUID, TranscriptMessage[]>()
   for (const msg of messages.values()) {
-    if (leafUuids.has(msg.uuid)) {
+    const msgUuid = asUuid(msg.uuid)
+    if (msgUuid && leafUuids.has(msgUuid)) {
       leafMessages.push(msg)
     } else if (msg.parentUuid) {
       const siblings = childrenByParent.get(msg.parentUuid)
@@ -4640,9 +4824,13 @@ export async function loadAllLogsFromSessionFile(
   for (const leafMessage of leafMessages) {
     const chain = buildConversationChain(messages, leafMessage)
     if (chain.length === 0) continue
+    const leafUuid = asUuid(leafMessage.uuid)
+    if (!leafUuid) {
+      continue
+    }
 
     // Append trailing messages that are children of the leaf
-    const trailingMessages = childrenByParent.get(leafMessage.uuid)
+    const trailingMessages = childrenByParent.get(leafUuid)
     if (trailingMessages) {
       // ISO-8601 UTC timestamps are lexically sortable
       trailingMessages.sort((a, b) =>
@@ -4652,7 +4840,10 @@ export async function loadAllLogsFromSessionFile(
     }
 
     const firstMessage = chain[0]!
-    const sessionId = leafMessage.sessionId as UUID
+    const sessionId = asUuid(leafMessage.sessionId)
+    if (!sessionId) {
+      continue
+    }
 
     logs.push({
       date: leafMessage.timestamp,
@@ -4665,8 +4856,8 @@ export async function loadAllLogsFromSessionFile(
       messageCount: countVisibleMessages(chain),
       isSidechain: firstMessage.isSidechain ?? false,
       sessionId,
-      leafUuid: leafMessage.uuid,
-      summary: summaries.get(leafMessage.uuid),
+      leafUuid,
+      summary: summaries.get(leafUuid),
       customTitle: customTitles.get(sessionId),
       tag: tags.get(sessionId),
       agentName: agentNames.get(sessionId),
