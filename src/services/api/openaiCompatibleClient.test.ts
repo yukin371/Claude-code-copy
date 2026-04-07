@@ -285,6 +285,87 @@ function createJsonResponse(body: unknown, status = 200): Response {
     ] as unknown as typeof message.content)
   })
 
+  test('direct-provider mode ignores shared transport apiKey and keeps provider-specific fallback', async () => {
+    const { createOpenAICompatibleAnthropicClient } = await import(
+      './openaiCompatibleClient.js'
+    )
+    process.env.NEKO_CODE_GEMINI_API_KEY = 'gemini-key'
+    process.env.NEKO_CODE_CODEX_API_KEY = 'codex-key'
+
+    const calls: FetchCall[] = []
+    const client = await createOpenAICompatibleAnthropicClient({
+      transport: {
+        provider: 'gemini',
+        apiStyle: 'openai-compatible',
+        apiKey: 'shared-openai-key',
+        apiKeySource: 'global-env',
+        transportMode: 'direct-provider',
+      },
+      maxRetries: 0,
+      fetchOverride: (async (input, init) => {
+        const url = input instanceof Request ? input.url : String(input)
+        const headers = new Headers(init?.headers)
+        calls.push({
+          url,
+          authorization: headers.get('authorization'),
+          googleClient: headers.get('x-goog-api-client'),
+        })
+
+        if (calls.length === 1) {
+          return createJsonResponse(
+            { error: { message: 'provider temporarily unavailable' } },
+            500,
+          )
+        }
+
+        return createJsonResponse({
+          id: 'msg_direct_provider_fallback',
+          model: 'gpt-4.1',
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: 'assistant',
+                content: 'served by provider-specific fallback',
+              },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: {
+            prompt_tokens: 5,
+            completion_tokens: 3,
+          },
+        })
+      }) as typeof fetch,
+    })
+
+    const message = await client.beta.messages.create({
+      model: 'gpt-4.1',
+      max_tokens: 64,
+      messages: [{ role: 'user', content: 'ping' }],
+      stream: false,
+    } as any)
+
+    expect(calls.map(call => call.url)).toEqual([
+      'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      'https://api.openai.com/v1/chat/completions',
+    ])
+    expect(calls.map(call => call.authorization)).toEqual([
+      'Bearer gemini-key',
+      'Bearer codex-key',
+    ])
+    expect(calls.map(call => call.googleClient)).toEqual([
+      'neko-code',
+      null,
+    ])
+    expect(message.content).toEqual([
+      {
+        type: 'text',
+        text: 'served by provider-specific fallback',
+      },
+    ] as unknown as typeof message.content)
+  })
+
   test('preferred provider recovers after failure and future requests prefer it', async () => {
     const { createOpenAICompatibleAnthropicClient } = await import(
       './openaiCompatibleClient.js'

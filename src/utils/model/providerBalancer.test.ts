@@ -285,6 +285,26 @@ describe('providerBalancer', () => {
     ])
   })
 
+  test('direct-provider mode keeps compatible fallback even if a shared apiKey is present', () => {
+    process.env.NEKO_CODE_OPENAI_PROVIDER_STRATEGY = 'fallback'
+    const transport: TaskRouteTransportConfig = {
+      provider: 'gemini',
+      apiStyle: 'openai-compatible',
+      apiKey: 'shared-openai-key',
+      apiKeySource: 'global-env',
+      transportMode: 'direct-provider',
+    }
+    const candidates = createCandidates(['gemini', 'codex', 'glm'])
+
+    const ordered = selectProviderEndpointCandidates(transport, candidates)
+
+    expect(ordered.map(candidate => candidate.provider)).toEqual([
+      'gemini',
+      'codex',
+      'glm',
+    ])
+  })
+
   test('weighted strategy rotates remaining providers while hot provider cools down', () => {
     process.env.NEKO_CODE_OPENAI_PROVIDER_STRATEGY = 'weighted'
     const transport: TaskRouteTransportConfig = {

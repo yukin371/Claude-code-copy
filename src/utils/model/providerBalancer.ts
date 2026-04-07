@@ -1,4 +1,8 @@
-import type { TaskRouteProviderName, TaskRouteTransportConfig } from './taskRouting.js'
+import {
+  getTaskRouteTransportMode,
+  type TaskRouteProviderName,
+  type TaskRouteTransportConfig,
+} from './taskRouting.js'
 import {
   getProviderLoadBalanceStrategy,
   getOpenAICompatibleProviderOrder,
@@ -139,7 +143,7 @@ export function resetProviderBalancerForTests(): void {
 
 function getProviderOrder(transport: TaskRouteTransportConfig): TaskRouteProviderName[] {
   const preferred = transport.provider
-  if (transport.baseUrl?.trim() || transport.apiKey?.trim()) {
+  if (getTaskRouteTransportMode(transport) === 'single-upstream') {
     return [preferred]
   }
 
@@ -185,7 +189,9 @@ function resolveBaseUrls(
   transport: TaskRouteTransportConfig,
   isPreferredProvider: boolean,
 ): string[] {
-  const explicit = isPreferredProvider
+  const explicit =
+    isPreferredProvider &&
+    getTaskRouteTransportMode(transport) === 'single-upstream'
     ? resolveExplicitTransportValue(transport.baseUrl, 'baseUrl')
     : []
   if (explicit.length > 0) return explicit
@@ -197,7 +203,9 @@ function resolveApiKeys(
   transport: TaskRouteTransportConfig,
   isPreferredProvider: boolean,
 ): string[] {
-  const explicit = isPreferredProvider
+  const explicit =
+    isPreferredProvider &&
+    getTaskRouteTransportMode(transport) === 'single-upstream'
     ? resolveExplicitTransportValue(transport.apiKey, 'apiKey')
     : []
   if (explicit.length > 0) return explicit

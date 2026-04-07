@@ -11,7 +11,13 @@ const ENV_KEYS = [
   'OPENAI_API_KEY',
   'NEKO_CODE_OPENAI_COMPATIBLE_BASE_URL',
   'NEKO_CODE_OPENAI_COMPATIBLE_API_KEY',
+  'NEKO_CODE_MAIN_PROVIDER',
+  'NEKO_CODE_MAIN_API_STYLE',
+  'NEKO_CODE_MAIN_MODEL',
+  'NEKO_CODE_MAIN_BASE_URL',
+  'NEKO_CODE_MAIN_API_KEY',
   'NEKO_CODE_PLAN_BASE_URL',
+  'NEKO_CODE_PLAN_API_KEY',
 ] as const
 
 function snapshotEnv(keys: readonly string[]): EnvSnapshot {
@@ -66,6 +72,7 @@ describe('taskRouting transport compatibility', () => {
     expect(route.apiStyle).toBe('openai-compatible')
     expect(route.baseUrl).toBe('https://gateway.example.com/v1')
     expect(route.apiKey).toBe('shared-openai-key')
+    expect(route.transportMode).toBe('single-upstream')
   })
 
   test('explicit route base url can still switch an anthropic route to openai-compatible', async () => {
@@ -79,6 +86,20 @@ describe('taskRouting transport compatibility', () => {
     expect(route.apiStyle).toBe('openai-compatible')
     expect(route.baseUrl).toBe('https://custom-gateway.example.com/v1')
     expect(route.apiKey).toBe('shared-openai-key')
+    expect(route.transportMode).toBe('single-upstream')
+  })
+
+  test('global openai-compatible apiKey alone does not pin direct-provider routing', async () => {
+    process.env.NEKO_CODE_OPENAI_COMPATIBLE_API_KEY = 'shared-openai-key'
+
+    const { getTaskRouteTransportConfig } = await import('./taskRouting.js')
+    const route = getTaskRouteTransportConfig('main')
+
+    expect(route.provider).toBe('glm')
+    expect(route.apiStyle).toBe('openai-compatible')
+    expect(route.baseUrl).toBeUndefined()
+    expect(route.apiKey).toBeUndefined()
+    expect(route.transportMode).toBe('direct-provider')
   })
 
   test('main route prefers session provider override over env provider', async () => {
@@ -95,5 +116,172 @@ describe('taskRouting transport compatibility', () => {
     expect(route.apiStyle).toBe('openai-compatible')
     expect(baseRoute.provider).toBe('anthropic')
     expect(baseRoute.apiStyle).toBe('anthropic')
+  })
+
+  test('querySource snapshot reports expected querySource -> route mapping', async () => {
+    const { getTaskRoutingDebugSnapshot } = await import('./taskRouting.js')
+    const snapshot = getTaskRoutingDebugSnapshot({
+      querySources: [
+        'compact',
+        'verification_agent',
+        'agent:builtin:plan',
+        'agent:builtin:statusline-setup',
+        'agent:custom',
+        'web_search_tool',
+      ],
+    })
+
+    expect(snapshot.routes.map(route => route.route)).toEqual([
+      'main',
+      'subagent',
+      'frontend',
+      'review',
+      'explore',
+      'plan',
+      'guide',
+      'statusline',
+    ])
+    expect(snapshot.querySources).toEqual([
+      {
+        querySource: 'compact',
+        normalizedQuerySource: 'compact',
+        route: 'main',
+      },
+      {
+        querySource: 'verification_agent',
+        normalizedQuerySource: 'verification_agent',
+        route: 'review',
+      },
+      {
+        querySource: 'agent:builtin:plan',
+        normalizedQuerySource: 'agent:builtin:plan',
+        route: 'plan',
+      },
+      {
+        querySource: 'agent:builtin:statusline-setup',
+        normalizedQuerySource: 'agent:builtin:statusline-setup',
+        route: 'statusline',
+      },
+      {
+        querySource: 'agent:custom',
+        normalizedQuerySource: 'agent:custom',
+        route: 'subagent',
+      },
+      {
+        querySource: 'web_search_tool',
+        normalizedQuerySource: 'web_search_tool',
+        route: 'main',
+      },
+    ])
+  })
+
+  test('debug snapshot marks provider env override and global transport fallback', async () => {
+    process.env.NEKO_CODE_MAIN_PROVIDER = 'gemini'
+    process.env.NEKO_CODE_OPENAI_COMPATIBLE_BASE_URL =
+      'https://gateway.example.com/v1'
+    process.env.NEKO_CODE_OPENAI_COMPATIBLE_API_KEY = 'shared-openai-key'
+
+    const { getTaskRouteDebugSnapshot } = await import('./taskRouting.js')
+    const snapshot = getTaskRouteDebugSnapshot('main')
+
+    expect(snapshot.route).toBe('main')
+    expect(snapshot.transport.provider).toBe('gemini')
+    expect(snapshot.transport.apiStyle).toBe('openai-compatible')
+    expect(snapshot.fields.provider.source).toBe('route-env')
+    expect(snapshot.fields.provider.explicit).toBe(true)
+    expect(snapshot.fields.baseUrl.source).toBe('global-env')
+    expect(snapshot.fields.baseUrl.explicit).toBe(true)
+    expect(snapshot.fields.apiKey.source).toBe('global-env')
+    expect(snapshot.fields.apiKey.explicit).toBe(true)
+    expect(snapshot.transportMode).toBe('single-upstream')
+  })
+
+  test('debug snapshot keeps explicit baseUrl forcing openai-compatible apiStyle', async () => {
+    process.env.NEKO_CODE_PLAN_BASE_URL = 'https://custom-gateway.example.com/v1'
+    process.env.OPENAI_API_KEY = 'shared-openai-key'
+
+    const { getTaskRouteDebugSnapshot } = await import('./taskRouting.js')
+    const snapshot = getTaskRouteDebugSnapshot('plan')
+
+    expect(snapshot.transport.provider).toBe('anthropic')
+    expect(snapshot.transport.apiStyle).toBe('openai-compatible')
+    expect(snapshot.fields.baseUrl.source).toBe('route-env')
+    expect(snapshot.fields.baseUrl.explicit).toBe(true)
+    expect(snapshot.fields.apiStyle.source).toBe('forced-by-base-url')
+    expect(snapshot.fields.apiStyle.explicit).toBe(true)
+    expect(snapshot.fields.apiKey.source).toBe('global-env')
+    expect(snapshot.transportMode).toBe('single-upstream')
+  })
+
+  test('debug snapshot keeps global apiKey-only routes in direct-provider mode', async () => {
+    process.env.NEKO_CODE_OPENAI_COMPATIBLE_API_KEY = 'shared-openai-key'
+
+    const { getTaskRouteDebugSnapshot } = await import('./taskRouting.js')
+    const snapshot = getTaskRouteDebugSnapshot('main')
+
+    expect(snapshot.transport.baseUrl).toBeUndefined()
+    expect(snapshot.transport.apiKey).toBeUndefined()
+    expect(snapshot.fields.apiKey.source).toBe('none')
+    expect(snapshot.transportMode).toBe('direct-provider')
+  })
+
+  test('debug snapshot masks apiKey by default across route and querySource helpers', async () => {
+    process.env.NEKO_CODE_MAIN_API_KEY = 'main-route-secret'
+
+    const {
+      getTaskRouteDebugSnapshot,
+      getTaskRouteDebugSnapshotFromQuerySource,
+      getTaskRoutingDebugSnapshot,
+    } = await import('./taskRouting.js')
+    const routeSnapshot = getTaskRouteDebugSnapshot('main')
+    const querySourceSnapshot =
+      getTaskRouteDebugSnapshotFromQuerySource('repl_main_thread')
+    const routingSnapshot = getTaskRoutingDebugSnapshot({
+      querySources: ['compact'],
+    })
+    const mainRouteSnapshot = routingSnapshot.routes.find(
+      route => route.route === 'main',
+    )
+
+    expect(routeSnapshot.routeEnv.apiKey).toBe('[masked]')
+    expect(routeSnapshot.transport.apiKey).toBe('[masked]')
+    expect(routeSnapshot.fields.apiKey.value).toBe('[masked]')
+    expect(querySourceSnapshot.routeSnapshot.transport.apiKey).toBe('[masked]')
+    expect(mainRouteSnapshot?.transport.apiKey).toBe('[masked]')
+    expect(JSON.stringify(routeSnapshot)).not.toContain('main-route-secret')
+  })
+
+  test('debug snapshot can include raw apiKey only when includeSecrets is true', async () => {
+    process.env.NEKO_CODE_MAIN_API_KEY = 'main-route-secret'
+
+    const {
+      getTaskRouteDebugSnapshot,
+      getTaskRouteDebugSnapshotFromQuerySource,
+      getTaskRoutingDebugSnapshot,
+    } = await import('./taskRouting.js')
+    const routeSnapshot = getTaskRouteDebugSnapshot('main', {
+      includeSecrets: true,
+    })
+    const querySourceSnapshot = getTaskRouteDebugSnapshotFromQuerySource(
+      'repl_main_thread',
+      {
+        includeSecrets: true,
+      },
+    )
+    const routingSnapshot = getTaskRoutingDebugSnapshot({
+      querySources: ['compact'],
+      includeSecrets: true,
+    })
+    const mainRouteSnapshot = routingSnapshot.routes.find(
+      route => route.route === 'main',
+    )
+
+    expect(routeSnapshot.routeEnv.apiKey).toBe('main-route-secret')
+    expect(routeSnapshot.transport.apiKey).toBe('main-route-secret')
+    expect(routeSnapshot.fields.apiKey.value).toBe('main-route-secret')
+    expect(querySourceSnapshot.routeSnapshot.transport.apiKey).toBe(
+      'main-route-secret',
+    )
+    expect(mainRouteSnapshot?.transport.apiKey).toBe('main-route-secret')
   })
 })
