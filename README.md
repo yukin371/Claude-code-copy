@@ -29,46 +29,53 @@ Neko Code 是一个从 Claude Code 源码快照反向补全出来的可运行项
 - 逐步让主线程、subagent、review、前端修改等任务使用不同模型
 - 在迁移成本尽可能低的前提下，把 Claude Code 配置平滑迁入 Neko Code
 
-## 已完成进度
+## 已验证能力
 
-当前已经完成或基本完成的部分：
+当前已经完成并经过验证的部分：
 
 - 默认品牌切换为 `Neko Code`
 - 默认配置目录、临时目录、tmux socket 与 Claude Code 隔离
+- 默认关闭 analytics / telemetry，相关 sink 改为 no-op
 - 保守的 Claude 配置迁移
   - 首次启动可从 `~/.claude` 导入核心配置到 `~/.neko-code`
   - 迁移范围包含全局配置、settings、credentials、用户 `CLAUDE.md`
   - 同步迁移用户自定义 `rules/`、`agents/`、`commands/`、`skills/`、`plans/`
-- 新增隔离迁移 smoke
+- 隔离 smoke 已接入
   - 可把 `~/.claude` 迁入临时 `NEKO_CODE_CONFIG_DIR`
-  - 使用临时 plugin cache 跑一组只读 CLI / routing 诊断命令
-- analytics 默认关闭，sink 改为 no-op
-- 任务路由已支持从 `settings.json` 读取 route 级 provider / apiStyle / model / baseUrl
-- query 主路径已按 route transport 切到 openai-compatible shim
-- helper 路径已按任务 transport 走对应 provider 路由
+  - 可使用临时 plugin cache 跑只读 CLI / routing 诊断命令
+- 任务路由已支持从 `settings.json` 读取 route 级 `provider` / `apiStyle` / `model` / `baseUrl`
+- 主查询路径、helper 路径、route helper 已接入 route-aware transport
+- 当存在全局 `ANTHROPIC_BASE_URL` 且未显式覆盖 route 时，默认任务路由可回退到 Anthropic 单上游
+- 源码模式 `--print` / headless 主链路已恢复到真实可用
+  - 已修补 headless 未等待 `runHeadless(...)` 的提前退出问题
+  - 已补齐关键 `MACRO.*` bootstrap / 兜底
+  - 已修补 OpenAI-compatible stream `.withResponse()` 兼容问题
+  - 使用迁移后的真实 Claude 配置回放 `bun src/entrypoints/cli.tsx -p --max-turns 1 "Reply with exactly OK"` 已可返回 `OK`
 - Bun 工程依赖基线已补齐
-- 源码模式 CLI 基础入口已可运行
 - `bun run typecheck` 已通过
 - `bun run test:routing` 已通过
+- `bun run smoke:claude-config` 已通过
 
 ## 当前状态
 
 当前项目状态应理解为：
 
-- `CLI 基础启动可用`
-- `依赖基线已补齐`
-- `任务路由主链路已基本收口`
-- `完整交互能力仍未完全恢复`
+- `基础 CLI 可用`
+- `基础 headless / --print 可用`
+- `多 provider / 多 route 基础能力可用`
+- `仍处于从源码快照向长期可维护版本收口的阶段`
 
 换句话说：
 
 - 这已经不是“无法运行的源码残片”
+- 基本功能已经能跑起来并做真实 API 回放
 - 但也还不是“完整恢复的上游源码仓库”
 
 它更接近一个：
 
 - 可运行
 - 可继续开发
+- 可用于迁移现有配置做逐步回归
 - 但仍存在若干缺失模块和占位类型的恢复中快照
 
 ## 当前可用部分
@@ -84,6 +91,7 @@ bun src/entrypoints/cli.tsx agents --help
 bun src/entrypoints/cli.tsx plugin --help
 bun src/entrypoints/cli.tsx mcp --help
 bun src/entrypoints/cli.tsx doctor --help
+bun src/entrypoints/cli.tsx -p --max-turns 1 "Reply with exactly OK"
 bun run typecheck
 bun run test:routing
 bun run smoke:claude-config
@@ -95,41 +103,46 @@ bun run smoke:claude-config
 - CLI 顶层参数解析
 - provider/model 入口参数
 - agents / plugin / mcp / doctor 等顶层命令注册
+- 真实 `--print` / headless 单轮执行
+- 配置迁移后的真实网关回放
+- 基础任务路由诊断与回归
 
-## 当前缺失与未完成部分
+需要注意：
+
+- `--print` 已验证主链路可用，但若显式设置过低的 `--max-budget-usd`，仍会因预算上限而退出
+- 这类报错属于预算策略，不再是当前已修复的应用内执行链故障
+
+## 预计继续补完
 
 当前最主要的缺失不在“启动入口”，而在“深层功能恢复”。
 
-### 1. 一部分功能目前只是可降级，不是完整恢复
-
-已经补了若干占位模块和 graceful fallback，用于避免 CLI 因缺件直接崩溃。
-
-这意味着某些功能当前的状态是：
-
-- 入口存在
-- 不会在模块解析时直接崩
-- 但深层实现仍未完整恢复或仍待真实配置回归验证
-
-### 2. 高级路径仍在恢复
-
-目前仍在逐步恢复中的部分包括：
+### 1. 高级交互与会话链路
 
 - bridge / remote control 相关链路
 - compact / context collapse 相关链路
-- 更完整的 plugin 管理界面类型与行为
-- computer use 相关依赖或 shim 层
+- 更完整的 resume / continue / 长会话回归
 - 更完整的 SDK 类型与控制协议导出
 
-### 3. 仍有部分构建期注入依赖待系统梳理
+### 2. 插件、MCP 与周边恢复深度
 
-目前源码模式已经为若干 `MACRO.VERSION` / `MACRO.BUILD_TIME` 入口做了兜底，但还没有完成全仓梳理。
+- 更完整的 plugin 管理界面类型与行为
+- 更多写路径 smoke 与真实插件回归
+- MCP 写配置、刷新、严格校验之外的更深链路验证
+- computer use 相关依赖或 shim 层
 
-这意味着：
+### 3. provider/router 与外部网关边界继续收口
 
-- 常用 CLI 帮助和版本命令已经可运行
-- 但如果继续扩大“源码直跑”覆盖面，后续仍可能遇到尚未显式兜底的 `MACRO.*` 入口
+- 继续补齐非主查询路径的 route-aware 行为
+- 继续降低不同 provider 下的行为漂移
+- 围绕“应用内只做任务路由，流量治理交给外部网关”补齐文档、样例和回归
 
-## 为什么要先做“可运行”而不是“全量恢复”
+### 4. 源码模式长期维护性
+
+- 继续系统梳理剩余 `MACRO.*` 构建注入点
+- 继续移除临时占位类型与兼容 shim
+- 把更多“可降级但未完整恢复”的路径替换成真实实现
+
+## 为什么先做“可运行”
 
 因为项目当前最现实的推进方式是：
 
@@ -183,8 +196,8 @@ bun run smoke:claude-config
 
 当前开发重点不是再补一层入口，而是继续收口这两类问题：
 
-1. 高频缺失薄模块
-2. bridge / SDK 类型收口
+1. provider/router 主链路与真实回归继续收口
+2. 高级交互链路与类型债继续收口
 
 现阶段最值得继续推进的方向：
 
@@ -193,6 +206,7 @@ bun run smoke:claude-config
 - 逐步把 SDK 占位类型替换成真实结构
 - 沿 `bridgeMessaging -> inboundMessages -> initReplBridge -> structuredIO` 主链路收口类型问题
 - 系统梳理剩余 `MACRO.*` 构建注入点，提升源码模式直跑覆盖面
+- 补齐任务级模型/API 路由与外部网关模式的回归验证
 
 ## 相关文档
 
