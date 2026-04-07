@@ -72,7 +72,7 @@ export function Notifications(t0) {
   const isNarrow = t2 === undefined ? false : t2;
   let t3;
   if ($[0] !== messages) {
-    const messagesForTokenCount = getMessagesAfterCompactBoundary(messages);
+    const messagesForTokenCount = getMessagesAfterCompactBoundary<Message>(messages);
     t3 = tokenCountFromLastAPIResponse(messagesForTokenCount);
     $[0] = messages;
     $[1] = t3;
