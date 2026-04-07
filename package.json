@@ -16,6 +16,7 @@
     "analyze:text-hygiene": "bun run scripts/analyze-text-hygiene.ts",
     "check:docs": "powershell -ExecutionPolicy Bypass -File scripts/check-docs.ps1",
     "check:text-hygiene": "bun run scripts/check-text-hygiene.ts",
+    "test:routing": "bun test src/services/api/openaiCompatibleClient.test.ts src/utils/promptCategory.test.ts src/utils/model/taskRouting.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

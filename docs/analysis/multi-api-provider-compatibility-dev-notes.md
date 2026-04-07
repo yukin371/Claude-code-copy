@@ -40,6 +40,7 @@
 
 - `bun run scripts/bun-tools.ts providers` 可以直接查看当前 provider 默认端点和密钥环境变量映射。
 - `bun run scripts/bun-tools.ts health [provider]` 可以查看当前 endpoint 健康状态。
+- `bun run test:routing` 可以一次性回归 task routing、spawned agent route hint、route helper transport matrix。
 
 ## 实施计划
 
