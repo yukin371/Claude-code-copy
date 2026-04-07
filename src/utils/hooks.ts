@@ -657,17 +657,28 @@ function processHookJSONOutput({
       case 'PermissionRequest':
         // Extract the permission request decision
         if (json.hookSpecificOutput.decision) {
-          result.permissionRequestResult = json.hookSpecificOutput.decision
+          const decision = json.hookSpecificOutput.decision
+          const permissionRequestResult =
+            decision.behavior === 'allow'
+              ? ({
+                  behavior: 'allow',
+                  updatedInput: decision.updatedInput,
+                  updatedPermissions: decision.updatedPermissions,
+                } as PermissionRequestResult)
+              : ({
+                  behavior: 'deny',
+                  message: decision.message,
+                  interrupt: decision.interrupt,
+                } as PermissionRequestResult)
+          result.permissionRequestResult = permissionRequestResult
           // Also update permissionBehavior for consistency
           result.permissionBehavior =
-            json.hookSpecificOutput.decision.behavior === 'allow'
-              ? 'allow'
-              : 'deny'
+            decision.behavior === 'allow' ? 'allow' : 'deny'
           if (
-            json.hookSpecificOutput.decision.behavior === 'allow' &&
-            json.hookSpecificOutput.decision.updatedInput
+            decision.behavior === 'allow' &&
+            decision.updatedInput
           ) {
-            result.updatedInput = json.hookSpecificOutput.decision.updatedInput
+            result.updatedInput = decision.updatedInput
           }
         }
         break
@@ -2203,13 +2214,17 @@ async function* executeHooks({
     try {
       const jsonInputRes = getJsonInput()
       if (!jsonInputRes.ok) {
+        const inputError =
+          'error' in jsonInputRes
+            ? jsonInputRes.error
+            : new Error('Unknown hook input preparation error')
         yield {
           message: createAttachmentMessage({
             type: 'hook_error_during_execution',
             hookName,
             toolUseID,
             hookEvent,
-            content: `Failed to prepare hook input: ${errorMessage(jsonInputRes.error)}`,
+            content: `Failed to prepare hook input: ${errorMessage(inputError)}`,
             command: hookCommand,
             durationMs: Date.now() - hookStartMs,
           }),
@@ -2410,7 +2425,7 @@ async function* executeHooks({
           return
         }
 
-        if (httpJson) {
+        if (httpJson && isSyncHookJSONOutput(httpJson)) {
           const processed = processHookJSONOutput({
             json: httpJson,
             command: hook.url,
@@ -3609,12 +3624,15 @@ export async function executeStopFailureHooks(
   // Some createAssistantAPIErrorMessage call sites omit `error` (e.g.
   // image-size at errors.ts:431). Default to 'unknown' so matcher filtering
   // at getMatchingHooks:1525 always applies.
-  const error = lastMessage.error ?? 'unknown'
+  const error = getStopFailureError(lastMessage.error)
   const hookInput: StopFailureHookInput = {
     ...createBaseHookInput(undefined, undefined, toolUseContext),
     hook_event_name: 'StopFailure',
     error,
-    error_details: lastMessage.errorDetails,
+    error_details:
+      typeof lastMessage.errorDetails === 'string'
+        ? lastMessage.errorDetails
+        : undefined,
     last_assistant_message: lastAssistantText,
   }
 
@@ -3624,6 +3642,37 @@ export async function executeStopFailureHooks(
     timeoutMs,
     matchQuery: error,
   })
+}
+
+const STOP_FAILURE_ERROR_VALUES = new Set<StopFailureHookInput['error']>([
+  'authentication_failed',
+  'billing_error',
+  'rate_limit',
+  'invalid_request',
+  'server_error',
+  'unknown',
+  'max_output_tokens',
+])
+
+function getStopFailureError(error: unknown): StopFailureHookInput['error'] {
+  if (typeof error === 'string') {
+    return STOP_FAILURE_ERROR_VALUES.has(error as StopFailureHookInput['error'])
+      ? (error as StopFailureHookInput['error'])
+      : 'unknown'
+  }
+  if (
+    error &&
+    typeof error === 'object' &&
+    'type' in error &&
+    typeof error.type === 'string'
+  ) {
+    return STOP_FAILURE_ERROR_VALUES.has(
+      error.type as StopFailureHookInput['error'],
+    )
+      ? (error.type as StopFailureHookInput['error'])
+      : 'unknown'
+  }
+  return 'unknown'
 }
 
 /**

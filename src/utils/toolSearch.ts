@@ -24,7 +24,11 @@ import {
   isDeferredTool,
   TOOL_SEARCH_TOOL_NAME,
 } from '../tools/ToolSearchTool/prompt.js'
-import type { Message } from '../types/message.js'
+import type {
+  CompactMetadata,
+  Message,
+  MessageAttachment,
+} from '../types/message.js'
 import {
   countToolDefinitionTokens,
   TOOL_TOKEN_COUNT_OVERHEAD,
@@ -521,6 +525,10 @@ function isToolResultBlockWithContent(obj: unknown): obj is ToolResultBlock {
   )
 }
 
+type CompactMetadataWithDiscoveredTools = CompactMetadata & {
+  preCompactDiscoveredTools?: string[]
+}
+
 /**
  * Extract tool names from tool_reference blocks in message history.
  *
@@ -551,7 +559,9 @@ export function extractDiscoveredToolNames(messages: Message[]): Set<string> {
     // check rather than isCompactBoundaryMessage — utils/messages.ts imports
     // from this file, so importing back would be circular.
     if (msg.type === 'system' && msg.subtype === 'compact_boundary') {
-      const carried = msg.compactMetadata?.preCompactDiscoveredTools
+      const compactMetadata =
+        msg.compactMetadata as CompactMetadataWithDiscoveredTools | undefined
+      const carried = compactMetadata?.preCompactDiscoveredTools
       if (carried) {
         for (const name of carried) discoveredTools.add(name)
         carriedFromBoundary += carried.length
@@ -596,6 +606,24 @@ export type DeferredToolsDelta = {
   /** Rendered lines for addedNames; the scan reconstructs from names. */
   addedLines: string[]
   removedNames: string[]
+}
+
+type DeferredToolsDeltaAttachment = MessageAttachment & {
+  type: 'deferred_tools_delta'
+  addedNames: string[]
+  removedNames: string[]
+}
+
+function isDeferredToolsDeltaAttachment(
+  attachment: MessageAttachment | undefined,
+): attachment is DeferredToolsDeltaAttachment {
+  return (
+    attachment?.type === 'deferred_tools_delta' &&
+    Array.isArray(attachment.addedNames) &&
+    attachment.addedNames.every(name => typeof name === 'string') &&
+    Array.isArray(attachment.removedNames) &&
+    attachment.removedNames.every(name => typeof name === 'string')
+  )
 }
 
 /**
@@ -654,12 +682,14 @@ export function getDeferredToolsDelta(
   const attachmentTypesSeen = new Set<string>()
   for (const msg of messages) {
     if (msg.type !== 'attachment') continue
+    const attachment = msg.attachment
+    if (!attachment) continue
     attachmentCount++
-    attachmentTypesSeen.add(msg.attachment.type)
-    if (msg.attachment.type !== 'deferred_tools_delta') continue
+    attachmentTypesSeen.add(attachment.type)
+    if (!isDeferredToolsDeltaAttachment(attachment)) continue
     dtdCount++
-    for (const n of msg.attachment.addedNames) announced.add(n)
-    for (const n of msg.attachment.removedNames) announced.delete(n)
+    for (const n of attachment.addedNames) announced.add(n)
+    for (const n of attachment.removedNames) announced.delete(n)
   }
 
   const deferred: Tool[] = tools.filter(isDeferredTool)

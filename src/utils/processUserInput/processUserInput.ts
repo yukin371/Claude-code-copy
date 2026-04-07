@@ -82,6 +82,49 @@ export type ProcessUserInputBaseResult = {
   submitNextInput?: boolean
 }
 
+function isProcessUserInputMessage(
+  message: Message,
+): message is
+  | UserMessage
+  | AssistantMessage
+  | AttachmentMessage
+  | SystemMessage
+  | ProgressMessage {
+  return (
+    message.type === 'user' ||
+    message.type === 'assistant' ||
+    message.type === 'attachment' ||
+    message.type === 'system' ||
+    message.type === 'progress'
+  )
+}
+
+function isHookSuccessAttachmentMessage(
+  message: Message,
+): message is AttachmentMessage & {
+  attachment: AttachmentMessage['attachment'] & {
+    type: 'hook_success'
+    content: string
+  }
+} {
+  return (
+    message.type === 'attachment' &&
+    message.attachment.type === 'hook_success' &&
+    typeof message.attachment.content === 'string'
+  )
+}
+
+function isAgentMentionAttachmentMessage(
+  message: AttachmentMessage,
+): message is AttachmentMessage & {
+  attachment: AgentMentionAttachment
+} {
+  return (
+    message.attachment.type === 'agent_mention' &&
+    typeof message.attachment.agentType === 'string'
+  )
+}
+
 export async function processUserInput({
   input,
   preExpansionInput,
@@ -241,23 +284,16 @@ export async function processUserInput({
 
     // TODO: Clean this up
     if (hookResult.message) {
-      switch (hookResult.message.attachment.type) {
-        case 'hook_success':
-          if (!hookResult.message.attachment.content) {
-            // Skip if there is no content
-            break
-          }
-          result.messages.push({
-            ...hookResult.message,
-            attachment: {
-              ...hookResult.message.attachment,
-              content: applyTruncation(hookResult.message.attachment.content),
-            },
-          })
-          break
-        default:
-          result.messages.push(hookResult.message)
-          break
+      if (isHookSuccessAttachmentMessage(hookResult.message)) {
+        result.messages.push({
+          ...hookResult.message,
+          attachment: {
+            ...hookResult.message.attachment,
+            content: applyTruncation(hookResult.message.attachment.content),
+          },
+        })
+      } else if (isProcessUserInputMessage(hookResult.message)) {
+        result.messages.push(hookResult.message)
       }
     }
   }
@@ -554,10 +590,7 @@ async function processUserInputBase(
   if (inputString !== null && mode === 'prompt') {
     const trimmedInput = inputString.trim()
 
-    const agentMention = attachmentMessages.find(
-      (m): m is AttachmentMessage<AgentMentionAttachment> =>
-        m.attachment.type === 'agent_mention',
-    )
+    const agentMention = attachmentMessages.find(isAgentMentionAttachmentMessage)
 
     if (agentMention) {
       const agentMentionString = `@agent-${agentMention.attachment.agentType}`

@@ -1,22 +1,35 @@
 import type { BetaUsage as Usage } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import { roughTokenCountEstimationForMessages } from '../services/tokenEstimation.js'
-import type { AssistantMessage, Message } from '../types/message.js'
+import {
+  getFirstMessageContentBlock,
+  type AssistantMessage,
+  type Message,
+} from '../types/message.js'
 import { SYNTHETIC_MESSAGES, SYNTHETIC_MODEL } from './messages.js'
 import { jsonStringify } from './slowOperations.js'
 
+type TokenEstimationMessages = Parameters<
+  typeof roughTokenCountEstimationForMessages
+>[0]
+
 export function getTokenUsage(message: Message): Usage | undefined {
-  if (
-    message?.type === 'assistant' &&
-    'usage' in message.message &&
-    !(
-      message.message.content[0]?.type === 'text' &&
-      SYNTHETIC_MESSAGES.has(message.message.content[0].text)
-    ) &&
-    message.message.model !== SYNTHETIC_MODEL
-  ) {
-    return message.message.usage
+  if (message?.type !== 'assistant') {
+    return undefined
   }
-  return undefined
+
+  const firstBlock = getFirstMessageContentBlock(message.message.content)
+  const isSyntheticBlock =
+    firstBlock?.type === 'text' && SYNTHETIC_MESSAGES.has(firstBlock.text)
+
+  if (!('usage' in message.message)) {
+    return undefined
+  }
+
+  if (isSyntheticBlock || message.message.model === SYNTHETIC_MODEL) {
+    return undefined
+  }
+
+  return message.message.usage as Usage
 }
 
 /**
@@ -252,10 +265,14 @@ export function tokenCountWithEstimation(messages: readonly Message[]): number {
       }
       return (
         getTokenCountFromUsage(usage) +
-        roughTokenCountEstimationForMessages(messages.slice(i + 1))
+        roughTokenCountEstimationForMessages(
+          messages.slice(i + 1) as TokenEstimationMessages,
+        )
       )
     }
     i--
   }
-  return roughTokenCountEstimationForMessages(messages)
+  return roughTokenCountEstimationForMessages(
+    messages as TokenEstimationMessages,
+  )
 }

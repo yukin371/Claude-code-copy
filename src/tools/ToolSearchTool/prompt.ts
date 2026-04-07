@@ -1,5 +1,5 @@
 import { feature } from 'bun:bundle'
-import { isReplBridgeActive } from '../../bootstrap/state.js'
+import { getReplBridgeHandle } from '../../bridge/replBridgeHandle.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
 import type { Tool } from '../../Tool.js'
 import { AGENT_TOOL_NAME } from '../AgentTool/constants.js'
@@ -99,7 +99,7 @@ export function isDeferredTool(tool: Tool): boolean {
     feature('KAIROS') &&
     SEND_USER_FILE_TOOL_NAME &&
     tool.name === SEND_USER_FILE_TOOL_NAME &&
-    isReplBridgeActive()
+    getReplBridgeHandle() !== null
   ) {
     return false
   }

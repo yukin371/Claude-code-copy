@@ -50,6 +50,12 @@ type SlashCommandResult = ProcessUserInputBaseResult & {
   command: Command;
 };
 
+function isSlashCommandOutputMessage(
+  message: Message
+): message is UserMessage | AssistantMessage | AttachmentMessage | ProgressMessage<unknown> {
+  return message.type === 'user' || message.type === 'assistant' || message.type === 'attachment' || message.type === 'progress';
+}
+
 // Poll interval and deadline for MCP settle before launching a background
 // forked subagent. MCP servers typically connect within 1-3s of startup;
 // 10s headroom covers slow SSE handshakes.
@@ -244,14 +250,14 @@ async function executeForkedSlashCommand(command: CommandBase & PromptCommand, a
 
       // Add progress message for assistant messages (which contain tool uses)
       if (message.type === 'assistant') {
-        // Increment token count in spinner for assistant messages
-        const contentLength = getAssistantMessageContentLength(message);
-        if (contentLength > 0) {
-          context.setResponseLength(len => len + contentLength);
-        }
         const normalizedMsg = normalizedNew[0];
         if (normalizedMsg && normalizedMsg.type === 'assistant') {
-          progressMessages.push(createProgressMessage(message));
+          // Increment token count in spinner for assistant messages
+          const contentLength = getAssistantMessageContentLength(normalizedMsg);
+          if (contentLength > 0) {
+            context.setResponseLength(len => len + contentLength);
+          }
+          progressMessages.push(createProgressMessage(normalizedMsg));
           updateProgress();
         }
       }
@@ -273,7 +279,7 @@ async function executeForkedSlashCommand(command: CommandBase & PromptCommand, a
   logForDebugging(`Forked slash command /${command.name} completed with agent ${agentId}`);
 
   // Prepend debug log for ant users so it appears inside the command output
-  if ("external" === 'ant') {
+  if (process.env.USER_TYPE === 'ant') {
     resultText = `[ANT-ONLY] API calls: ${getDisplayPath(getDumpPromptsPath(agentId))}\n${resultText}`;
   }
 
@@ -427,7 +433,7 @@ export async function processSlashCommand(inputString: string, precedingInputBlo
     logEvent('tengu_input_command', {
       ...eventData,
       invocation_trigger: 'user-slash' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-      ...("external" === 'ant' && {
+      ...(process.env.USER_TYPE === 'ant' && {
         skill_name: commandName as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
         ...(returnedCommand.type === 'prompt' && {
           skill_source: returnedCommand.source as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
@@ -495,7 +501,7 @@ export async function processSlashCommand(inputString: string, precedingInputBlo
   logEvent('tengu_input_command', {
     ...eventData,
     invocation_trigger: 'user-slash' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-    ...("external" === 'ant' && {
+    ...(process.env.USER_TYPE === 'ant' && {
       skill_name: commandName as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
       ...(returnedCommand.type === 'prompt' && {
         skill_source: returnedCommand.source as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
@@ -698,7 +704,7 @@ async function getMessagesForSlashCommand(commandName: string, args: string, set
               // (UUIDs never repeat, so they're never looked up).
               resetMicrocompactState();
               return {
-                messages: buildPostCompactMessages(compactionResultWithSlashMessages),
+                messages: buildPostCompactMessages(compactionResultWithSlashMessages).filter(isSlashCommandOutputMessage),
                 shouldQuery: false,
                 command
               };
