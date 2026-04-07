@@ -16,6 +16,7 @@
     "analyze:text-hygiene": "bun run scripts/analyze-text-hygiene.ts",
     "check:docs": "powershell -ExecutionPolicy Bypass -File scripts/check-docs.ps1",
     "check:text-hygiene": "bun run scripts/check-text-hygiene.ts",
+    "install:local-launcher": "powershell -ExecutionPolicy Bypass -File scripts/install-local-launcher.ps1",
     "smoke:claude-config": "bun run scripts/claude-config-smoke.ts",
     "smoke:headless-print-liveness": "bun run scripts/headless-print-liveness-smoke.ts",
     "smoke:mcp-state": "bun run scripts/mcp-state-smoke.ts",

@@ -20,6 +20,15 @@
 - 已确认完成归档：
   - [neko-code-roadmap-confirmed-completed-2026-04-07.md](./archive/neko-code-roadmap-confirmed-completed-2026-04-07.md)
 
+## 阶段计划入口
+
+- 阶段交付计划：
+  - [2026-04-08-staged-delivery-plan.md](../plans/2026-04-08-staged-delivery-plan.md)
+- 当前默认执行规则：
+  - 以后默认按阶段计划推进
+  - 只有当前 active phase 的 Exit Conditions 满足后，才切到下一阶段
+  - 不属于当前阶段 in-scope 的事项，默认回收到 roadmap 或后续阶段，不临时插队
+
 ## 当前版本目标
 
 1. 多 API 与原 Anthropic API 并存，默认行为不冲突
@@ -27,6 +36,19 @@
 3. 保持工具协议兼容，不单独改协议层
 4. 明确“应用内路由 vs 外部网关”的边界，避免把运维型流量治理继续堆进应用
 5. 持续保持文档、验证脚本和实现状态一致，避免“做到一半但文档已宣告完成”
+6. 产出一个像 Claude Code 一样可直接从终端启动的本地可运行版本，而不要求用户手动执行 `bun src/entrypoints/cli.tsx`
+
+## 当前执行阶段
+
+- active phase：
+  - Phase 1. 终端直启最小闭环
+- 本阶段要解决的问题：
+  - 先让用户在当前机器上可以直接从终端调用 Neko Code
+  - 同时把 native build blocker 清单分类清楚，避免后续重复摸排
+- 本阶段完成前，不默认切去做：
+  - 真正单文件 native build
+  - 大范围状态型工作流补完
+  - 非关键低频功能恢复
 
 ## 当前进行中
 
@@ -62,6 +84,41 @@
   - 明确哪些本地 fallback 仍然保留为安全兜底
   - 补充“直连 provider”与“接外部网关”两种模式的回归验证
 
+### 4. 终端直启版本与本地分发收口
+
+- 目标：像 Claude Code 一样，用户安装后可直接在终端运行 `neko` / `neko-code`，而不是依赖仓库源码入口命令
+- 当前状态：
+  - 当前仓库已可通过 `bun src/entrypoints/cli.tsx` 直接运行
+  - 已补一个本地验证 launcher，可编译出仅面向当前仓库的 `dist/neko-code-local.exe`
+  - 该 launcher 已验证可跑 `--version`、`--help`、`-p --max-turns 1 "Reply with exactly OK"`
+  - 直接对主入口执行 `bun build --compile src/entrypoints/cli.tsx` 仍失败
+- 当前已知阻塞：
+  - 打包阶段会强制解析一批源码模式下未必立即执行、但 native build 需要完整存在的模块
+  - 当前缺失项同时包含两类：
+    - 仓库内尚未恢复的模块入口
+    - `package.json` 里尚未补齐的可选外部依赖
+  - 目前已观测到的阻塞包括：
+    - `src/utils/protectedNamespace.js`
+    - `src/tools/REPLTool/REPLTool.js`
+    - `src/tools/SuggestBackgroundPRTool/SuggestBackgroundPRTool.js`
+    - `src/tools/VerifyPlanExecutionTool/VerifyPlanExecutionTool.js`
+    - `src/commands/agents-platform/index.js`
+    - `../components/AntModelSwitchCallout.js`
+    - `../components/UndercoverAutoCallout.js`
+    - `@anthropic-ai/bedrock-sdk`
+    - `@anthropic-ai/foundry-sdk`
+    - `@anthropic-ai/vertex-sdk`
+    - `@azure/identity`
+    - `@aws-sdk/client-sts`
+    - `@aws-sdk/client-bedrock`
+    - `turndown`
+    - `sharp`
+    - `modifiers-napi`
+- 剩余收口：
+  - 先把“本地 launcher 可运行”推进到“终端命令可稳定调用”
+  - 再把 `bun build --compile` 的缺失模块与缺失依赖分批清零
+  - 最后补 shell integration / PATH / launcher install 流程验证
+
 ## 待完成
 
 ### P0
@@ -69,12 +126,15 @@
 1. 完成 provider/router 主链路收口
 2. 完成任务级模型/API 路由闭环
 3. 完成外部网关集成边界收口，并限制应用内 fallback 只保留最小安全能力
+4. 建立“终端直启版本”收口清单，并把 native build 阻塞按“缺失模块 / 缺失依赖 / 可裁剪 ant-only 功能”三类拆开清零
+5. 产出一个在当前机器可安装到 PATH 的本地 launcher/workflow，先满足“终端直接输入命令即可运行”的最低目标
 
 ### P1
 
 1. 更完整的品牌文案清理与旧路径兼容收尾
 2. 更上层的交互式配置入口
 3. 外部网关接入示例、运维约束与观测文档补强
+4. 继续推进真正可分发的单文件 native build，而不是仅限本仓库内可运行的 launcher
 
 ## 最近已验证推进
 
@@ -90,14 +150,27 @@
 - 已验证：修补了 `--print` headless 入口未等待 `runHeadless(...)` 的收口问题，避免非交互执行链提前退出
 - 已验证：源码模式下补齐 `MACRO` bootstrap 与关键热路径兜底，`--print` / headless 主链已不再因 `MACRO is not defined` 在启动阶段中断
 - 已验证：修补 OpenAI-compatible client 的流式 `.withResponse()` 兼容层，避免任务路由走外部 OpenAI-compatible 代理时在真实 API 请求前崩溃
-- 已验证：真实 `bun src/entrypoints/cli.tsx -p ...` 已推进到实际 API 连通性阶段，当前首个阻塞已下沉为外部网络 / 网关可达性错误，而非应用内执行链错误
+- 已验证：真实 `bun src/entrypoints/cli.tsx -p ...` 已可在迁移后的真实配置回放中返回 `OK`，当前基础 `--print` 主链已恢复
+- 已验证：补了本地验证 launcher，并已编译出 `dist/neko-code-local.exe`
+- 已验证：`dist/neko-code-local.exe` 已通过 `--version`、`--help` 与单轮 `-p` 回放验证
+- 已验证：新增 `bun run install:local-launcher` Windows 安装脚本，可把本地 launcher 编译到指定目录
+- 已验证：安装脚本产出的 `neko.exe` 已在临时安装目录通过 `--version`、`--help` 与单轮 `-p` 回放验证
+- 已确认未完成：直接 `bun build --compile src/entrypoints/cli.tsx` 仍被一批缺失模块和缺失依赖阻塞，尚不能视为“像 Claude 一样可直接安装运行”
 - 已验证：本轮入口收口后再次通过 `bun run typecheck`、`bun run smoke:claude-config`、`bun run test:routing`
 
 更多已确认完成项见归档文档，不再在主 roadmap 中重复展开。
 
 ## 下一步
 
-1. 继续推进 provider/router 与最小应用内回退的剩余收口
-2. 为真实 `--print` / headless session 增加“可达 API 层”的 smoke 或诊断断言，区分应用内错误与外部网关 / 网络错误
-3. 为任务级模型/API 路由与外部网关接入模式补更系统的回归验证
-4. 后续新增完成项时，直接迁入归档而不是继续膨胀主 roadmap
+### 当前阶段下一步
+
+1. 补一个“本地安装到 PATH”的最小工作流，让当前 launcher 先满足终端直启验证
+2. 在真实用户 PATH 上完成一次安装验证，确认新终端可直接执行 `neko`
+3. 把 native build blocker 拆成“缺失模块 / 缺失依赖 / 可裁剪功能”三类，并建立分批修复清单
+4. 优先处理最能直接解锁 `bun build --compile` 的缺失模块
+
+### 下一阶段入口
+
+1. Phase 1 完成后，切入 Phase 2 的 provider/router 闭环
+2. Phase 2 再补真实 `--print` / headless session 的更系统 smoke
+3. 后续新增完成项时，直接迁入归档而不是继续膨胀主 roadmap

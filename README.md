@@ -179,6 +179,24 @@ bun src/entrypoints/cli.tsx --version
 bun src/entrypoints/cli.tsx --help
 ```
 
+在 Windows 上安装本地终端 launcher：
+
+```powershell
+bun run install:local-launcher
+```
+
+该脚本会：
+
+- 使用 `scripts/local-compiled-launcher.ts` 编译本地 launcher
+- 默认安装到 `~/.local/bin/neko.exe`
+- 如有需要，把 `~/.local/bin` 加入用户 PATH
+
+注意：
+
+- 这是“本地终端直启”方案，不是完整 native release build
+- 当前 launcher 仍依赖本机已安装 Bun，且依赖当前仓库源码仍存在
+- PATH 更新后通常需要重新打开一个终端窗口
+
 使用现有 Claude 配置做隔离 smoke：
 
 ```bash
