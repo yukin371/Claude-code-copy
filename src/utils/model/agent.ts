@@ -52,7 +52,7 @@ export function getAgentModel(
       return parentModel
     }
     const model = parseUserSpecifiedModel(toolSpecifiedModel)
-    return applyParentRegionPrefix(model, toolSpecifiedModel)
+    return applyInheritedRegionPrefix(model, toolSpecifiedModel)
   }
 
   const route = resolveTaskRouteName({ agentType, taskPrompt })
@@ -78,10 +78,10 @@ export function getAgentModel(
   // region prefix (e.g., "eu.anthropic.…"), we preserve it instead of overwriting
   // with the parent's prefix. This prevents silent data-residency violations when
   // an agent config intentionally pins to a different region than the parent.
-  const applyParentRegionPrefix = (
+  function applyInheritedRegionPrefix(
     resolvedModel: string,
     originalSpec: string,
-  ): string => {
+  ): string {
     if (parentRegionPrefix && getAPIProvider() === 'bedrock') {
       if (getBedrockRegionPrefix(originalSpec)) return resolvedModel
       return applyBedrockRegionPrefix(resolvedModel, parentRegionPrefix)
@@ -105,7 +105,7 @@ export function getAgentModel(
     return parentModel
   }
   const model = parseUserSpecifiedModel(agentModelWithExp)
-  return applyParentRegionPrefix(model, agentModelWithExp)
+  return applyInheritedRegionPrefix(model, agentModelWithExp)
 }
 
 /**
