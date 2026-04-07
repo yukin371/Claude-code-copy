@@ -4,6 +4,7 @@ import type {
   ToolResultBlockParam,
   ToolUseBlock,
 } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { UUID } from 'crypto'
 import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
   logEvent,
@@ -77,6 +78,7 @@ import {
   createUserMessage,
   withMemoryCorrectionHint,
 } from '../../utils/messages.js'
+import { validateUuid } from '../../utils/uuid.js'
 import type {
   PermissionDecisionReason,
   PermissionResult,
@@ -252,7 +254,7 @@ function decisionReasonToOTelSource(
 function getNextImagePasteId(messages: Message[]): number {
   let maxId = 0
   for (const message of messages) {
-    if (message.type === 'user' && message.imagePasteIds) {
+    if (message.type === 'user' && Array.isArray(message.imagePasteIds)) {
       for (const id of message.imagePasteIds) {
         if (id > maxId) maxId = id
       }
@@ -355,7 +357,11 @@ export async function* runToolUse(
     }
   }
   const messageId = assistantMessage.message.id
-  const requestId = assistantMessage.requestId
+  const requestId =
+    typeof assistantMessage.requestId === 'string'
+      ? assistantMessage.requestId
+      : undefined
+  const sourceToolAssistantUUID = validateUuid(assistantMessage.uuid) ?? undefined
   const mcpServerType = getMcpServerType(
     toolName,
     toolUseContext.options.mcpClients,
@@ -404,7 +410,7 @@ export async function* runToolUse(
           },
         ],
         toolUseResult: `Error: No such tool available: ${toolName}`,
-        sourceToolAssistantUUID: assistantMessage.uuid,
+        sourceToolAssistantUUID,
       }),
     }
     return
@@ -446,7 +452,7 @@ export async function* runToolUse(
         message: createUserMessage({
           content: [content],
           toolUseResult: CANCEL_MESSAGE,
-          sourceToolAssistantUUID: assistantMessage.uuid,
+          sourceToolAssistantUUID,
         }),
       }
       return
@@ -483,7 +489,7 @@ export async function* runToolUse(
           },
         ],
         toolUseResult: detailedError,
-        sourceToolAssistantUUID: assistantMessage.uuid,
+        sourceToolAssistantUUID,
       }),
     }
   }
@@ -611,6 +617,8 @@ async function checkPermissionsAndCallTool(
     progress: ToolProgress<ToolProgressData> | ProgressMessage<HookProgress>,
   ) => void,
 ): Promise<MessageUpdateLazy[]> {
+  const sourceToolAssistantUUID = validateUuid(assistantMessage.uuid) ?? undefined
+
   // Validate input types with zod (surprisingly, the model is not great at generating valid input)
   const parsedInput = tool.inputSchema.safeParse(input)
   if (!parsedInput.success) {
@@ -673,7 +681,7 @@ async function checkPermissionsAndCallTool(
             },
           ],
           toolUseResult: `InputValidationError: ${parsedInput.error.message}`,
-          sourceToolAssistantUUID: assistantMessage.uuid,
+          sourceToolAssistantUUID,
         }),
       },
     ]
@@ -726,7 +734,7 @@ async function checkPermissionsAndCallTool(
             },
           ],
           toolUseResult: `Error: ${isValidCall.message}`,
-          sourceToolAssistantUUID: assistantMessage.uuid,
+          sourceToolAssistantUUID,
         }),
       },
     ]
@@ -822,8 +830,8 @@ async function checkPermissionsAndCallTool(
             att.durationMs !== undefined
           ) {
             preToolHookInfos.push({
-              command: att.command,
-              durationMs: att.durationMs,
+              command: String(att.command),
+              durationMs: Number(att.durationMs),
             })
           }
         }
@@ -854,7 +862,7 @@ async function checkPermissionsAndCallTool(
           message: createUserMessage({
             content: [createToolResultStopMessage(toolUseID)],
             toolUseResult: `Error: ${stopReason}`,
-            sourceToolAssistantUUID: assistantMessage.uuid,
+            sourceToolAssistantUUID,
           }),
         })
         return resultingMessages
@@ -1066,7 +1074,7 @@ async function checkPermissionsAndCallTool(
         content: messageContent,
         imagePasteIds: rejectImageIds,
         toolUseResult: `Error: ${errorMessage}`,
-        sourceToolAssistantUUID: assistantMessage.uuid,
+        sourceToolAssistantUUID,
       }),
     })
 
@@ -1462,7 +1470,7 @@ async function checkPermissionsAndCallTool(
               ? undefined
               : toolUseResult,
           mcpMeta: toolUseContext.agentId ? undefined : mcpMeta,
-          sourceToolAssistantUUID: assistantMessage.uuid,
+          sourceToolAssistantUUID,
         }),
         contextModifier: toolContextModifier
           ? {
@@ -1506,8 +1514,8 @@ async function checkPermissionsAndCallTool(
             att.durationMs !== undefined
           ) {
             postToolHookInfos.push({
-              command: att.command,
-              durationMs: att.durationMs,
+              command: String(att.command),
+              durationMs: Number(att.durationMs),
             })
           }
         }
@@ -1522,8 +1530,8 @@ async function checkPermissionsAndCallTool(
             att.durationMs !== undefined
           ) {
             postToolHookInfos.push({
-              command: att.command,
-              durationMs: att.durationMs,
+              command: String(att.command),
+              durationMs: Number(att.durationMs),
             })
           }
         }
@@ -1730,7 +1738,7 @@ async function checkPermissionsAndCallTool(
                 McpToolCallError_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
               ? error.mcpMeta
               : undefined,
-          sourceToolAssistantUUID: assistantMessage.uuid,
+          sourceToolAssistantUUID,
         }),
       },
       ...hookMessages,

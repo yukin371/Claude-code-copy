@@ -8,7 +8,11 @@
 
 import { formatAPIError } from '../services/api/errorUtils.js'
 import type { NonNullableUsage } from '../services/api/logging.js'
-import type { Message, SystemAPIErrorMessage } from '../types/message.js'
+import {
+  getMessageContentBlocks,
+  type Message,
+  type SystemAPIErrorMessage,
+} from '../types/message.js'
 import { type CacheSafeParams, runForkedAgent } from './forkedAgent.js'
 import { createUserMessage, extractTextContent } from './messages.js'
 
@@ -125,7 +129,7 @@ ${question}`
 function extractSideQuestionResponse(messages: Message[]): string | null {
   // Flatten all assistant content blocks across the per-block messages.
   const assistantBlocks = messages.flatMap(m =>
-    m.type === 'assistant' ? m.message.content : [],
+    m.type === 'assistant' ? getMessageContentBlocks(m.message?.content) : [],
   )
 
   if (assistantBlocks.length > 0) {
@@ -145,11 +149,17 @@ function extractSideQuestionResponse(messages: Message[]): string | null {
   // first system api_error message so the user sees what happened.
   const apiErr = messages.find(
     (m): m is SystemAPIErrorMessage =>
-      m.type === 'system' && 'subtype' in m && m.subtype === 'api_error',
+      m.type === 'system' && m.subtype === 'api_error',
   )
-  if (apiErr) {
+  if (apiErr && isFormattableAPIError(apiErr.error)) {
     return `(API error: ${formatAPIError(apiErr.error)})`
   }
 
   return null
+}
+
+type FormattableAPIError = Parameters<typeof formatAPIError>[0]
+
+function isFormattableAPIError(error: unknown): error is FormattableAPIError {
+  return typeof error === 'object' && error !== null
 }

@@ -9,6 +9,7 @@ import { findToolByName, type Tools, type ToolUseContext } from '../../Tool.js'
 import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
 import type { AssistantMessage, Message } from '../../types/message.js'
 import { createChildAbortController } from '../../utils/abortController.js'
+import { validateUuid } from '../../utils/uuid.js'
 import { runToolUse } from './toolExecution.js'
 
 type MessageUpdate = {
@@ -74,6 +75,7 @@ export class StreamingToolExecutor {
    * Add a tool to the execution queue. Will start executing immediately if conditions allow.
    */
   addTool(block: ToolUseBlock, assistantMessage: AssistantMessage): void {
+    const sourceToolAssistantUUID = validateUuid(assistantMessage.uuid)
     const toolDefinition = findToolByName(this.toolDefinitions, block.name)
     if (!toolDefinition) {
       this.tools.push({
@@ -94,7 +96,7 @@ export class StreamingToolExecutor {
               },
             ],
             toolUseResult: `Error: No such tool available: ${block.name}`,
-            sourceToolAssistantUUID: assistantMessage.uuid,
+            sourceToolAssistantUUID,
           }),
         ],
       })
@@ -155,6 +157,7 @@ export class StreamingToolExecutor {
     reason: 'sibling_error' | 'user_interrupted' | 'streaming_fallback',
     assistantMessage: AssistantMessage,
   ): Message {
+    const sourceToolAssistantUUID = validateUuid(assistantMessage.uuid)
     // For user interruptions (ESC to reject), use REJECT_MESSAGE so the UI shows
     // "User rejected edit" instead of "Error editing file"
     if (reason === 'user_interrupted') {
@@ -168,7 +171,7 @@ export class StreamingToolExecutor {
           },
         ],
         toolUseResult: 'User rejected tool use',
-        sourceToolAssistantUUID: assistantMessage.uuid,
+        sourceToolAssistantUUID,
       })
     }
     if (reason === 'streaming_fallback') {
@@ -183,7 +186,7 @@ export class StreamingToolExecutor {
           },
         ],
         toolUseResult: 'Streaming fallback - tool execution discarded',
-        sourceToolAssistantUUID: assistantMessage.uuid,
+        sourceToolAssistantUUID,
       })
     }
     const desc = this.erroredToolDescription
@@ -200,7 +203,7 @@ export class StreamingToolExecutor {
         },
       ],
       toolUseResult: msg,
-      sourceToolAssistantUUID: assistantMessage.uuid,
+      sourceToolAssistantUUID,
     })
   }
 

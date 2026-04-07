@@ -10,6 +10,7 @@
 
 import type { UUID } from 'crypto'
 import { randomUUID } from 'crypto'
+import type { BetaMessageDeltaUsage } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import type { PromptCommand } from '../commands.js'
 import type { QuerySource } from '../constants/querySource.js'
 import type { CanUseToolFn } from '../hooks/useCanUseTool.js'
@@ -117,6 +118,32 @@ export type ForkedAgentResult = {
   messages: Message[]
   /** Accumulated usage across all API calls in the loop */
   totalUsage: NonNullableUsage
+}
+
+function tryAsUuid(value: string | undefined): UUID | null {
+  if (typeof value !== 'string') {
+    return null
+  }
+  const uuidLike = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+  return uuidLike.test(value) ? (value as UUID) : null
+}
+
+function getMessageDeltaUsage(message: unknown): BetaMessageDeltaUsage | undefined {
+  if (!message || typeof message !== 'object') {
+    return undefined
+  }
+  const maybeType = (message as { type?: unknown }).type
+  if (maybeType !== 'stream_event') {
+    return undefined
+  }
+  const maybeEvent = (message as { event?: unknown }).event
+  if (!maybeEvent || typeof maybeEvent !== 'object') {
+    return undefined
+  }
+  if ((maybeEvent as { type?: unknown }).type !== 'message_delta') {
+    return undefined
+  }
+  return (maybeEvent as { usage?: BetaMessageDeltaUsage }).usage
 }
 
 /**
@@ -536,7 +563,7 @@ export async function runForkedAgent({
     // Track the last recorded message UUID for parent chain continuity
     lastRecordedUuid =
       initialMessages.length > 0
-        ? initialMessages[initialMessages.length - 1]!.uuid
+        ? tryAsUuid(initialMessages[initialMessages.length - 1]!.uuid)
         : null
   }
 
@@ -555,13 +582,10 @@ export async function runForkedAgent({
       skipCacheWrite,
     })) {
       // Extract real usage from message_delta stream events (final usage per API call)
+      const deltaUsage = getMessageDeltaUsage(message)
       if (message.type === 'stream_event') {
-        if (
-          'event' in message &&
-          message.event?.type === 'message_delta' &&
-          message.event.usage
-        ) {
-          const turnUsage = updateUsage({ ...EMPTY_USAGE }, message.event.usage)
+        if (deltaUsage) {
+          const turnUsage = updateUsage({ ...EMPTY_USAGE }, deltaUsage)
           totalUsage = accumulateUsage(totalUsage, turnUsage)
         }
         continue
@@ -592,7 +616,7 @@ export async function runForkedAgent({
             ),
         )
         if (msg.type !== 'progress') {
-          lastRecordedUuid = msg.uuid
+          lastRecordedUuid = tryAsUuid(msg.uuid)
         }
       }
     }

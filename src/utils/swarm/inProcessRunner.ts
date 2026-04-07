@@ -55,7 +55,7 @@ import { TASK_LIST_TOOL_NAME } from '../../tools/TaskListTool/constants.js'
 import { TASK_UPDATE_TOOL_NAME } from '../../tools/TaskUpdateTool/constants.js'
 import { TEAM_CREATE_TOOL_NAME } from '../../tools/TeamCreateTool/constants.js'
 import { TEAM_DELETE_TOOL_NAME } from '../../tools/TeamDeleteTool/constants.js'
-import type { Message } from '../../types/message.js'
+import type { Message, MessageContentBlock } from '../../types/message.js'
 import type { PermissionDecision } from '../../types/permissions.js'
 import {
   createAssistantAPIErrorMessage,
@@ -112,6 +112,17 @@ import { TEAMMATE_SYSTEM_PROMPT_ADDENDUM } from './teammatePromptAddendum.js'
 type SetAppStateFn = (updater: (prev: AppState) => AppState) => void
 
 const PERMISSION_POLL_INTERVAL_MS = 500
+
+function isToolUseBlockWithId(
+  block: string | MessageContentBlock,
+): block is MessageContentBlock & { type: 'tool_use'; id: string } {
+  return (
+    typeof block === 'object' &&
+    block !== null &&
+    block.type === 'tool_use' &&
+    typeof (block as { id?: unknown }).id === 'string'
+  )
+}
 
 /**
  * Creates a canUseTool function for in-process teammates that properly resolves
@@ -1236,7 +1247,7 @@ export async function runInProcessTeammate(
                 let inProgressToolUseIDs = task.inProgressToolUseIDs
                 if (message.type === 'assistant') {
                   for (const block of message.message.content) {
-                    if (block.type === 'tool_use') {
+                    if (isToolUseBlockWithId(block)) {
                       inProgressToolUseIDs = new Set([
                         ...(inProgressToolUseIDs ?? []),
                         block.id,

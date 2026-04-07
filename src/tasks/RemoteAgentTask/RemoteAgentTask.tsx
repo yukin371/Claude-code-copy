@@ -57,6 +57,17 @@ export type RemoteAgentTaskState = TaskStateBase & {
    */
   ultraplanPhase?: Exclude<UltraplanPhase, 'running'>;
 };
+
+function getSdkContentBlocks(content: unknown): Array<{ type: string; [key: string]: unknown }> {
+  return Array.isArray(content)
+    ? (content as Array<{ type: string; [key: string]: unknown }>)
+    : [];
+}
+
+function getSdkStdout(message: SDKMessage): string {
+  return typeof message.stdout === 'string' ? message.stdout : '';
+}
+
 const REMOTE_TASK_TYPES = ['remote-agent', 'ultraplan', 'ultrareview', 'autofix-pr', 'background-pr'] as const;
 export type RemoteTaskType = (typeof REMOTE_TASK_TYPES)[number];
 function isRemoteTaskType(v: string | undefined): v is RemoteTaskType {
@@ -210,7 +221,10 @@ export function extractPlanFromLog(log: SDKMessage[]): string | null {
   for (let i = log.length - 1; i >= 0; i--) {
     const msg = log[i];
     if (msg?.type !== 'assistant') continue;
-    const fullText = extractTextContent(msg.message.content, '\n');
+    const fullText = extractTextContent(
+      getSdkContentBlocks(msg.message.content),
+      '\n',
+    );
     const plan = extractTag(fullText, ULTRAPLAN_TAG);
     if (plan?.trim()) return plan.trim();
   }
@@ -258,14 +272,17 @@ function extractReviewFromLog(log: SDKMessage[]): string | null {
     // hook_progress or the terminal hook_response depending on buffering;
     // both have flat stdout.
     if (msg?.type === 'system' && (msg.subtype === 'hook_progress' || msg.subtype === 'hook_response')) {
-      const tagged = extractTag(msg.stdout, REMOTE_REVIEW_TAG);
+      const tagged = extractTag(getSdkStdout(msg), REMOTE_REVIEW_TAG);
       if (tagged?.trim()) return tagged.trim();
     }
   }
   for (let i = log.length - 1; i >= 0; i--) {
     const msg = log[i];
     if (msg?.type !== 'assistant') continue;
-    const fullText = extractTextContent(msg.message.content, '\n');
+    const fullText = extractTextContent(
+      getSdkContentBlocks(msg.message.content),
+      '\n',
+    );
     const tagged = extractTag(fullText, REMOTE_REVIEW_TAG);
     if (tagged?.trim()) return tagged.trim();
   }
@@ -273,12 +290,23 @@ function extractReviewFromLog(log: SDKMessage[]): string | null {
   // Hook-stdout concat fallback: a single echo should land in one event, but
   // large JSON payloads can flush across two if the pipe buffer fills
   // mid-write. Per-message scan above misses a tag split across events.
-  const hookStdout = log.filter(msg => msg.type === 'system' && (msg.subtype === 'hook_progress' || msg.subtype === 'hook_response')).map(msg => msg.stdout).join('');
+  const hookStdout = log
+    .filter(
+      msg =>
+        msg.type === 'system' &&
+        (msg.subtype === 'hook_progress' || msg.subtype === 'hook_response'),
+    )
+    .map(msg => getSdkStdout(msg))
+    .join('');
   const hookTagged = extractTag(hookStdout, REMOTE_REVIEW_TAG);
   if (hookTagged?.trim()) return hookTagged.trim();
 
   // Fallback: concatenate all assistant text in chronological order.
-  const allText = log.filter((msg): msg is SDKAssistantMessage => msg.type === 'assistant').map(msg => extractTextContent(msg.message.content, '\n')).join('\n').trim();
+  const allText = log
+    .filter((msg): msg is SDKAssistantMessage => msg.type === 'assistant')
+    .map(msg => extractTextContent(getSdkContentBlocks(msg.message.content), '\n'))
+    .join('\n')
+    .trim();
   return allText || null;
 }
 
@@ -297,7 +325,7 @@ function extractReviewTagFromLog(log: SDKMessage[]): string | null {
   for (let i = log.length - 1; i >= 0; i--) {
     const msg = log[i];
     if (msg?.type === 'system' && (msg.subtype === 'hook_progress' || msg.subtype === 'hook_response')) {
-      const tagged = extractTag(msg.stdout, REMOTE_REVIEW_TAG);
+      const tagged = extractTag(getSdkStdout(msg), REMOTE_REVIEW_TAG);
       if (tagged?.trim()) return tagged.trim();
     }
   }
@@ -306,13 +334,23 @@ function extractReviewTagFromLog(log: SDKMessage[]): string | null {
   for (let i = log.length - 1; i >= 0; i--) {
     const msg = log[i];
     if (msg?.type !== 'assistant') continue;
-    const fullText = extractTextContent(msg.message.content, '\n');
+    const fullText = extractTextContent(
+      getSdkContentBlocks(msg.message.content),
+      '\n',
+    );
     const tagged = extractTag(fullText, REMOTE_REVIEW_TAG);
     if (tagged?.trim()) return tagged.trim();
   }
 
   // Hook-stdout concat fallback for split tags
-  const hookStdout = log.filter(msg => msg.type === 'system' && (msg.subtype === 'hook_progress' || msg.subtype === 'hook_response')).map(msg => msg.stdout).join('');
+  const hookStdout = log
+    .filter(
+      msg =>
+        msg.type === 'system' &&
+        (msg.subtype === 'hook_progress' || msg.subtype === 'hook_response'),
+    )
+    .map(msg => getSdkStdout(msg))
+    .join('');
   const hookTagged = extractTag(hookStdout, REMOTE_REVIEW_TAG);
   if (hookTagged?.trim()) return hookTagged.trim();
   return null;
@@ -363,15 +401,25 @@ Remote review did not produce output (${reason}). Tell the user to retry /ultrar
  * Extract todo list from SDK messages (finds last TodoWrite tool use).
  */
 function extractTodoListFromLog(log: SDKMessage[]): TodoList {
-  const todoListMessage = log.findLast((msg): msg is SDKAssistantMessage => msg.type === 'assistant' && msg.message.content.some(block => block.type === 'tool_use' && block.name === TodoWriteTool.name));
+  const todoListMessage = log.findLast(
+    (msg): msg is SDKAssistantMessage =>
+      msg.type === 'assistant' &&
+      getSdkContentBlocks(msg.message.content).some(
+        block => block.type === 'tool_use' && block.name === TodoWriteTool.name,
+      ),
+  );
   if (!todoListMessage) {
     return [];
   }
-  const input = todoListMessage.message.content.find((block): block is ToolUseBlock => block.type === 'tool_use' && block.name === TodoWriteTool.name)?.input;
-  if (!input) {
+  const input = getSdkContentBlocks(todoListMessage.message.content).find(
+    block =>
+      block.type === 'tool_use' && block.name === TodoWriteTool.name,
+  ) as unknown as ToolUseBlock | undefined;
+  const todoInput = input?.input;
+  if (!todoInput) {
     return [];
   }
-  const parsedInput = TodoWriteTool.inputSchema.safeParse(input);
+  const parsedInput = TodoWriteTool.inputSchema.safeParse(todoInput);
   if (!parsedInput.success) {
     return [];
   }
@@ -566,12 +614,17 @@ function startRemoteSessionPolling(taskId: string, context: TaskContext): () => 
       const logGrew = response.newEvents.length > 0;
       if (logGrew) {
         accumulatedLog = [...accumulatedLog, ...response.newEvents];
-        const deltaText = response.newEvents.map(msg => {
-          if (msg.type === 'assistant') {
-            return msg.message.content.filter(block => block.type === 'text').map(block => 'text' in block ? block.text : '').join('\n');
-          }
-          return jsonStringify(msg);
-        }).join('\n');
+        const deltaText = response.newEvents
+          .map(msg => {
+            if (msg.type === 'assistant') {
+              return getSdkContentBlocks(msg.message.content)
+                .filter(block => block.type === 'text')
+                .map(block => ('text' in block ? String(block.text ?? '') : ''))
+                .join('\n');
+            }
+            return jsonStringify(msg);
+          })
+          .join('\n');
         if (deltaText) {
           appendTaskOutput(taskId, deltaText + '\n');
         }
@@ -630,7 +683,7 @@ function startRemoteSessionPolling(taskId: string, context: TaskContext): () => 
         const close = `</${REMOTE_REVIEW_PROGRESS_TAG}>`;
         for (const ev of response.newEvents) {
           if (ev.type === 'system' && (ev.subtype === 'hook_progress' || ev.subtype === 'hook_response')) {
-            const s = ev.stdout;
+            const s = getSdkStdout(ev);
             const closeAt = s.lastIndexOf(close);
             const openAt = closeAt === -1 ? -1 : s.lastIndexOf(open, closeAt);
             if (openAt !== -1 && closeAt > openAt) {

@@ -69,11 +69,22 @@ export function updateProgressFromMessage(tracker: ProgressTracker, message: Mes
   if (message.type !== 'assistant') {
     return;
   }
-  const usage = message.message.usage;
+  const usage = ((typeof message.message.usage === 'object' &&
+    message.message.usage !== null
+      ? message.message.usage
+      : {}) as {
+    input_tokens?: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+    output_tokens?: number;
+  });
+  const contentBlocks = Array.isArray(message.message.content)
+    ? message.message.content
+    : [];
   // Keep latest input (it's cumulative in the API), sum outputs
-  tracker.latestInputTokens = usage.input_tokens + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0);
-  tracker.cumulativeOutputTokens += usage.output_tokens;
-  for (const content of message.message.content) {
+  tracker.latestInputTokens = (usage.input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0);
+  tracker.cumulativeOutputTokens += usage.output_tokens ?? 0;
+  for (const content of contentBlocks) {
     if (content.type === 'tool_use') {
       tracker.toolUseCount++;
       // Omit StructuredOutput from preview - it's an internal tool

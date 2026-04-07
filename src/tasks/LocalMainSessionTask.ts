@@ -49,6 +49,7 @@ import {
   initTaskOutputAsSymlink,
 } from '../utils/task/diskOutput.js'
 import { registerTask, updateTaskState } from '../utils/task/framework.js'
+import { validateUuid } from '../utils/uuid.js'
 import type { LocalAgentTaskState } from './LocalAgentTask/LocalAgentTask.js'
 
 // Main session tasks use LocalAgentTaskState with agentType='main-session'
@@ -378,7 +379,7 @@ export function startBackgroundSession({
       const recentActivities: ToolActivity[] = []
       let toolCount = 0
       let tokenCount = 0
-      let lastRecordedUuid: UUID | null = messages.at(-1)?.uuid ?? null
+      let lastRecordedUuid: UUID | null = validateUuid(messages.at(-1)?.uuid)
 
       for await (const event of query({
         messages: bgMessages,
@@ -416,10 +417,13 @@ export function startBackgroundSession({
         void recordSidechainTranscript([event], taskId, lastRecordedUuid).catch(
           err => logForDebugging(`bg-session transcript write failed: ${err}`),
         )
-        lastRecordedUuid = event.uuid
+        lastRecordedUuid = validateUuid(event.uuid)
 
         if (event.type === 'assistant') {
-          for (const block of event.message.content) {
+          const contentBlocks = Array.isArray(event.message.content)
+            ? event.message.content
+            : []
+          for (const block of contentBlocks) {
             if (block.type === 'text') {
               tokenCount += roughTokenCountEstimation(block.text)
             } else if (block.type === 'tool_use') {
