@@ -16,6 +16,14 @@ const compatibilityNotes = await Bun.file(
   'docs/analysis/multi-api-provider-compatibility-dev-notes.md',
 ).exists()
 
+function formatDebugJson(value: unknown): string {
+  return JSON.stringify(
+    value,
+    (_key, item) => (item === undefined ? null : item),
+    2,
+  )
+}
+
 switch (command) {
   case 'doctor':
     console.log(`Bun version: ${Bun.version}`)
@@ -121,6 +129,30 @@ switch (command) {
     process.exit(0)
     break
   }
+  case 'routes': {
+    const { getTaskRoutingDebugSnapshot, TASK_ROUTE_QUERY_SOURCE_EXAMPLES } =
+      await import('../src/utils/model/taskRouting.ts')
+    const snapshot = getTaskRoutingDebugSnapshot({
+      querySources: TASK_ROUTE_QUERY_SOURCE_EXAMPLES,
+      includeSecrets: false,
+    })
+    console.log(formatDebugJson(snapshot))
+    process.exit(0)
+    break
+  }
+  case 'route': {
+    const { getTaskRouteDebugSnapshotFromQuerySource } = await import(
+      '../src/utils/model/taskRouting.ts'
+    )
+    const querySource =
+      process.argv.length > 3 ? process.argv.slice(3).join(' ') : undefined
+    const snapshot = getTaskRouteDebugSnapshotFromQuerySource(querySource, {
+      includeSecrets: false,
+    })
+    console.log(formatDebugJson(snapshot))
+    process.exit(0)
+    break
+  }
   default:
     console.log('Bun tools')
     console.log('')
@@ -130,6 +162,8 @@ switch (command) {
     console.log('  bun run scripts/bun-tools.ts env')
     console.log('  bun run scripts/bun-tools.ts providers')
     console.log('  bun run scripts/bun-tools.ts health [provider]')
+    console.log('  bun run scripts/bun-tools.ts routes')
+    console.log('  bun run scripts/bun-tools.ts route [querySource]')
     console.log('')
     console.log('Notes:')
     console.log('  - Use Bun as the project runtime.')
