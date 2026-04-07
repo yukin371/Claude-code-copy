@@ -16,8 +16,16 @@ const ENV_KEYS = [
   'NEKO_CODE_GEMINI_API_KEY',
   'NEKO_CODE_CODEX_API_KEY',
   'NEKO_CODE_GLM_API_KEY',
+  'NEKO_CODE_OPENAI_COMPATIBLE_BASE_URL',
+  'NEKO_CODE_OPENAI_COMPATIBLE_API_KEY',
   'NEKO_CODE_OPENAI_PROVIDER_STRATEGY',
   'NEKO_CODE_OPENAI_PROVIDER_WEIGHTS',
+  'NEKO_CODE_MAIN_PROVIDER',
+  'NEKO_CODE_MAIN_API_STYLE',
+  'NEKO_CODE_MAIN_BASE_URL',
+  'NEKO_CODE_REVIEW_PROVIDER',
+  'NEKO_CODE_REVIEW_API_STYLE',
+  'NEKO_CODE_REVIEW_BASE_URL',
 ] as const
 
 const TEST_MACRO = {
@@ -632,5 +640,121 @@ function createJsonResponse(body: unknown, status = 200): Response {
       'Bearer gemini-key',
       'Bearer codex-key',
     ])
+  })
+
+  test('getAnthropicClientForTaskRoute uses the configured main route gateway', async () => {
+    const { getAnthropicClientForTaskRoute } = await import('./client.js')
+    process.env.NEKO_CODE_MAIN_PROVIDER = 'gemini'
+    process.env.NEKO_CODE_MAIN_API_STYLE = 'openai-compatible'
+    process.env.NEKO_CODE_MAIN_BASE_URL = 'https://main-gateway.example.com/v1'
+    process.env.NEKO_CODE_OPENAI_COMPATIBLE_API_KEY = 'shared-gateway-key'
+
+    const calls: FetchCall[] = []
+    const client = await getAnthropicClientForTaskRoute({
+      route: 'main',
+      maxRetries: 0,
+      model: 'gemini-2.5-pro',
+      source: 'route_helper_test',
+      fetchOverride: (async (input, init) => {
+        const url = input instanceof Request ? input.url : String(input)
+        const headers = new Headers(init?.headers)
+        calls.push({
+          url,
+          authorization: headers.get('authorization'),
+          googleClient: headers.get('x-goog-api-client'),
+        })
+
+        return createJsonResponse({
+          id: 'msg_main_route',
+          model: 'gemini-2.5-pro',
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: 'assistant',
+                content: 'ok',
+              },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: {
+            prompt_tokens: 2,
+            completion_tokens: 1,
+          },
+        })
+      }) as typeof fetch,
+    })
+
+    await client.beta.messages.create({
+      model: 'gemini-2.5-pro',
+      max_tokens: 32,
+      messages: [{ role: 'user', content: 'ping main route' }],
+      stream: false,
+    } as any)
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toEqual({
+      url: 'https://main-gateway.example.com/v1/chat/completions',
+      authorization: 'Bearer shared-gateway-key',
+      googleClient: 'neko-code',
+    })
+  })
+
+  test('getTaskRouteAnthropicClient resolves review route from querySource hints', async () => {
+    const { getTaskRouteAnthropicClient } = await import('./client.js')
+    process.env.NEKO_CODE_REVIEW_PROVIDER = 'gemini'
+    process.env.NEKO_CODE_REVIEW_API_STYLE = 'openai-compatible'
+    process.env.NEKO_CODE_REVIEW_BASE_URL = 'https://review-gateway.example.com/v1'
+    process.env.NEKO_CODE_OPENAI_COMPATIBLE_API_KEY = 'review-gateway-key'
+
+    const calls: FetchCall[] = []
+    const client = await getTaskRouteAnthropicClient({
+      maxRetries: 0,
+      model: 'gemini-2.5-pro',
+      source: 'route_helper_test',
+      querySource: 'agent:builtin:general-purpose:route:review',
+      fetchOverride: (async (input, init) => {
+        const url = input instanceof Request ? input.url : String(input)
+        const headers = new Headers(init?.headers)
+        calls.push({
+          url,
+          authorization: headers.get('authorization'),
+          googleClient: headers.get('x-goog-api-client'),
+        })
+
+        return createJsonResponse({
+          id: 'msg_review_route',
+          model: 'gemini-2.5-pro',
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: 'assistant',
+                content: 'reviewed',
+              },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: {
+            prompt_tokens: 2,
+            completion_tokens: 1,
+          },
+        })
+      }) as typeof fetch,
+    })
+
+    await client.beta.messages.create({
+      model: 'gemini-2.5-pro',
+      max_tokens: 32,
+      messages: [{ role: 'user', content: 'ping review route' }],
+      stream: false,
+    } as any)
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toEqual({
+      url: 'https://review-gateway.example.com/v1/chat/completions',
+      authorization: 'Bearer review-gateway-key',
+      googleClient: 'neko-code',
+    })
   })
 })
