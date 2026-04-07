@@ -5,8 +5,8 @@ import { useMainLoopModel } from '../../hooks/useMainLoopModel.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { stringWidth } from '../../ink/stringWidth.js';
 import { Box, Text } from '../../ink.js';
-import { useAppState } from '../../state/AppState.js';
-import { getEffortSuffix } from '../../utils/effort.js';
+import { type AppState, useAppState } from '../../state/AppState.js';
+import { type EffortValue, getEffortSuffix } from '../../utils/effort.js';
 import { truncate } from '../../utils/format.js';
 import { isFullscreenEnvEnabled } from '../../utils/fullscreen.js';
 import { formatModelAndBilling, getLogoDisplayData, truncatePath } from '../../utils/logoV2Utils.js';
@@ -21,8 +21,8 @@ export function CondensedLogo() {
   const {
     columns
   } = useTerminalSize();
-  const agent = useAppState(_temp);
-  const effortValue = useAppState(_temp2);
+  const agent = useAppState(_temp) as AppState['agent'];
+  const effortValue = useAppState(_temp2) as EffortValue | undefined;
   const model = useMainLoopModel();
   const modelDisplayName = renderModelSetting(model);
   const {

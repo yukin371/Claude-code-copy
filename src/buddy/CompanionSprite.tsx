@@ -174,7 +174,7 @@ export function companionReservedColumns(terminalColumns: number, speaking: bool
   return spriteColWidth(nameWidth) + SPRITE_PADDING_X + bubble;
 }
 export function CompanionSprite(): React.ReactNode {
-  const reaction = useAppState(s => s.companionReaction);
+  const reaction = useAppState(s => s.companionReaction) as string | undefined;
   const petAt = useAppState(s => s.companionPetAt);
   const focused = useAppState(s => s.footerSelection === 'companion');
   const setAppState = useSetAppState();
@@ -295,7 +295,7 @@ export function CompanionSprite(): React.ReactNode {
 // just reads companionReaction and renders the fade.
 export function CompanionFloatingBubble() {
   const $ = _c(8);
-  const reaction = useAppState(_temp);
+  const reaction = useAppState(_temp) as string | undefined;
   let t0;
   if ($[0] !== reaction) {
     t0 = {
