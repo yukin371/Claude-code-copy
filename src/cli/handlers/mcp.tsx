@@ -177,7 +177,10 @@ export async function mcpListHandler(): Promise<void> {
       } else if (server.type === 'claudeai-proxy') {
         // biome-ignore lint/suspicious/noConsole:: intentional console output
         console.log(`${name}: ${server.url} - ${status}`);
-      } else if (!server.type || server.type === 'stdio') {
+      } else if (
+        (!server.type || server.type === 'stdio') &&
+        'command' in server
+      ) {
         const args = Array.isArray(server.args) ? server.args : [];
         // biome-ignore lint/suspicious/noConsole:: intentional console output
         console.log(`${name}: ${server.command} ${args.join(' ')} - ${status}`);

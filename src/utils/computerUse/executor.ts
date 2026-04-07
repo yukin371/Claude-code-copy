@@ -88,6 +88,34 @@ async function writeClipboardViaPbcopy(text: string): Promise<void> {
 }
 
 type Input = ReturnType<typeof requireComputerUseInput>
+type InputWithMoveMouse = Input & {
+  moveMouse: (x: number, y: number, animate: boolean) => Promise<void>
+}
+type AppPointInfo = {
+  bundleId?: string
+  appName?: string
+} | null
+type ZoomScreenshotResult = {
+  base64: string
+  width: number
+  height: number
+}
+
+function hasMoveMouse(input: Input): input is InputWithMoveMouse {
+  return typeof (input as { moveMouse?: unknown }).moveMouse === 'function'
+}
+
+async function moveMouse(
+  input: Input,
+  x: number,
+  y: number,
+  animate: boolean,
+): Promise<void> {
+  if (!hasMoveMouse(input)) {
+    throw new Error('@ant/computer-use-input missing moveMouse')
+  }
+  await input.moveMouse(x, y, animate)
+}
 
 /**
  * Single-element key sequence matching "escape" or "esc" (case-insensitive).
@@ -115,7 +143,7 @@ async function moveAndSettle(
   x: number,
   y: number,
 ): Promise<void> {
-  await input.moveMouse(x, y, false)
+  await moveMouse(input, x, y, false)
   await sleep(MOVE_SETTLE_MS)
 }
 
@@ -240,7 +268,8 @@ async function animatedMove(
   for (let frame = 1; frame <= totalFrames; frame++) {
     const t = frame / totalFrames
     const eased = 1 - Math.pow(1 - t, 3)
-    await input.moveMouse(
+    await moveMouse(
+      input,
       Math.round(start.x + deltaX * eased),
       Math.round(start.y + deltaY * eased),
       false,
@@ -439,7 +468,7 @@ export function createCliExecutor(opts: {
           outH,
           SCREENSHOT_JPEG_QUALITY,
           displayId,
-        ),
+        ) as Promise<ZoomScreenshotResult>,
       )
     },
 
@@ -620,7 +649,12 @@ export function createCliExecutor(opts: {
       x: number,
       y: number,
     ): Promise<{ bundleId: string; displayName: string } | null> {
-      return cu.apps.appUnderPoint(x, y)
+      const info = (await cu.apps.appUnderPoint(x, y)) as AppPointInfo
+      if (!info?.bundleId) return null
+      return {
+        bundleId: info.bundleId,
+        displayName: info.appName ?? info.bundleId,
+      }
     },
 
     async listInstalledApps(): Promise<InstalledApp[]> {

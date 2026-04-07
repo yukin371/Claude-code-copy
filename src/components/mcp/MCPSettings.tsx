@@ -5,6 +5,7 @@ import { ClaudeAuthProvider } from '../../services/mcp/auth.js';
 import type { McpClaudeAIProxyServerConfig, McpHTTPServerConfig, McpSSEServerConfig, McpStdioServerConfig } from '../../services/mcp/types.js';
 import { extractAgentMcpServers, filterToolsByServer } from '../../services/mcp/utils.js';
 import { useAppState } from '../../state/AppState.js';
+import type { AppState } from '../../state/AppStateStore.js';
 import { getSessionIngressAuthToken } from '../../utils/sessionIngressAuth.js';
 import { MCPAgentServerMenu } from './MCPAgentServerMenu.js';
 import { MCPListPanel } from './MCPListPanel.js';
@@ -13,6 +14,7 @@ import { MCPStdioServerMenu } from './MCPStdioServerMenu.js';
 import { MCPToolDetailView } from './MCPToolDetailView.js';
 import { MCPToolListView } from './MCPToolListView.js';
 import type { AgentMcpServerInfo, MCPViewState, ServerInfo } from './types.js';
+import type { AgentDefinitionsResult } from '../../tools/AgentTool/loadAgentsDir.js';
 type Props = {
   onComplete: (result?: string, options?: {
     display?: CommandResultDisplay;
@@ -23,8 +25,8 @@ export function MCPSettings(t0) {
   const {
     onComplete
   } = t0;
-  const mcp = useAppState(_temp);
-  const agentDefinitions = useAppState(_temp2);
+  const mcp = useAppState(_temp) as AppState['mcp'];
+  const agentDefinitions = useAppState(_temp2) as AgentDefinitionsResult;
   const mcpClients = mcp.clients;
   let t1;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {

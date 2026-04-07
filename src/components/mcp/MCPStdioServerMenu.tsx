@@ -17,6 +17,7 @@ import { Spinner } from '../Spinner.js';
 import { CapabilitiesSection } from './CapabilitiesSection.js';
 import type { StdioServerInfo } from './types.js';
 import { handleReconnectError, handleReconnectResult } from './utils/reconnectHelpers.js';
+import type { AppState } from '../../state/AppStateStore.js';
 type Props = {
   server: StdioServerInfo;
   serverToolsCount: number;
@@ -37,7 +38,7 @@ export function MCPStdioServerMenu({
 }: Props): React.ReactNode {
   const [theme] = useTheme();
   const exitState = useExitOnCtrlCDWithKeybindings();
-  const mcp = useAppState(s => s.mcp);
+  const mcp = useAppState(s => s.mcp) as AppState['mcp'];
   const reconnectMcpServer = useMcpReconnect();
   const toggleMcpServer = useMcpToggleEnabled();
   const [isReconnecting, setIsReconnecting] = useState(false);

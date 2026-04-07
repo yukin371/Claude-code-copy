@@ -24,7 +24,7 @@ export function MCPToolListView(t0) {
     onSelectTool,
     onBack
   } = t0;
-  const mcpTools = useAppState(_temp);
+  const mcpTools = useAppState(_temp) as Tool[];
   let t1;
   bb0: {
     if (server.client.type !== "connected") {

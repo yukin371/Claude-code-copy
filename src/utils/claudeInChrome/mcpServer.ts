@@ -1,6 +1,5 @@
 import {
   type ClaudeForChromeContext,
-  createClaudeForChromeMcpServer,
   type Logger,
   type PermissionMode,
 } from '@ant/claude-for-chrome-mcp'
@@ -38,6 +37,32 @@ const PERMISSION_MODES: readonly PermissionMode[] = [
 
 function isPermissionMode(raw: string): raw is PermissionMode {
   return PERMISSION_MODES.some(m => m === raw)
+}
+
+function getCreateClaudeForChromeMcpServer(): (
+  context: ClaudeForChromeContext,
+) => {
+  connect: (transport: unknown) => Promise<void>
+  close?: () => Promise<void>
+} {
+  try {
+    /* eslint-disable @typescript-eslint/no-require-imports */
+    return (
+      require('@ant/claude-for-chrome-mcp') as {
+        createClaudeForChromeMcpServer: (
+          context: ClaudeForChromeContext,
+        ) => {
+          connect: (transport: unknown) => Promise<void>
+          close?: () => Promise<void>
+        }
+      }
+    ).createClaudeForChromeMcpServer
+    /* eslint-enable @typescript-eslint/no-require-imports */
+  } catch (error) {
+    throw new Error(
+      `Claude in Chrome MCP server is unavailable because @ant/claude-for-chrome-mcp is not installed: ${String(error)}`,
+    )
+  }
 }
 
 /**
@@ -246,7 +271,7 @@ export async function runClaudeInChromeMcpServer(): Promise<void> {
   enableConfigs()
   const context = createChromeContext()
 
-  const server = createClaudeForChromeMcpServer(context)
+  const server = getCreateClaudeForChromeMcpServer()(context)
   const transport = new StdioServerTransport()
 
   // Exit when parent process dies (stdin pipe closes).

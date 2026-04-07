@@ -17,7 +17,18 @@ import { requireComputerUseSwift } from './swiftLoader.js'
 let pump: ReturnType<typeof setInterval> | undefined
 let pending = 0
 
+type ComputerUseRunLoopAPI = ReturnType<typeof requireComputerUseSwift> & {
+  _drainMainRunLoop: () => void
+}
+
+function hasRunLoopDrain(
+  cu: ReturnType<typeof requireComputerUseSwift>,
+): cu is ComputerUseRunLoopAPI {
+  return typeof (cu as { _drainMainRunLoop?: unknown })._drainMainRunLoop === 'function'
+}
+
 function drainTick(cu: ReturnType<typeof requireComputerUseSwift>): void {
+  if (!hasRunLoopDrain(cu)) return
   cu._drainMainRunLoop()
 }
 

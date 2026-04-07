@@ -38,6 +38,14 @@ const MAX_JSON_PARSE_CHARS = 200_000;
 // A string value is "dominant text payload" if it has newlines or is
 // long enough that inline display would be worse than unwrapping.
 const UNWRAP_MIN_STRING_LEN = 200;
+
+function toFiniteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function toOptionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
 export function renderToolUseMessage(input: z.infer<ReturnType<typeof inputSchema>>, {
   verbose
 }: {
@@ -61,11 +69,9 @@ export function renderToolUseProgressMessage(progressMessagesForMessage: Progres
         <Text dimColor>Running…</Text>
       </MessageResponse>;
   }
-  const {
-    progress,
-    total,
-    progressMessage
-  } = lastProgress.data;
+  const progress = toFiniteNumber(lastProgress.data.progress);
+  const total = toFiniteNumber(lastProgress.data.total);
+  const progressMessage = toOptionalString(lastProgress.data.progressMessage);
   if (progress === undefined) {
     return <MessageResponse height={1}>
         <Text dimColor>Running…</Text>

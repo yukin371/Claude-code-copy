@@ -1,4 +1,3 @@
-import { BROWSER_TOOLS } from '@ant/claude-for-chrome-mcp'
 import { chmod, mkdir, readFile, writeFile } from 'fs/promises'
 import { homedir } from 'os'
 import { join } from 'path'
@@ -35,6 +34,36 @@ const CHROME_EXTENSION_RECONNECT_URL = 'https://clau.de/chrome/reconnect'
 
 const NATIVE_HOST_IDENTIFIER = 'com.anthropic.claude_code_browser_extension'
 const NATIVE_HOST_MANIFEST_NAME = `${NATIVE_HOST_IDENTIFIER}.json`
+type ChromeBrowserTool = {
+  name: string
+}
+
+let cachedBrowserTools: ChromeBrowserTool[] | null = null
+let browserToolsResolved = false
+
+export function getClaudeInChromeBrowserTools(): ChromeBrowserTool[] {
+  if (browserToolsResolved) {
+    return cachedBrowserTools ?? []
+  }
+  browserToolsResolved = true
+  try {
+    /* eslint-disable @typescript-eslint/no-require-imports */
+    cachedBrowserTools =
+      (
+        require('@ant/claude-for-chrome-mcp') as {
+          BROWSER_TOOLS?: ChromeBrowserTool[]
+        }
+      ).BROWSER_TOOLS ?? []
+    /* eslint-enable @typescript-eslint/no-require-imports */
+  } catch {
+    cachedBrowserTools = []
+  }
+  return cachedBrowserTools
+}
+
+export function hasClaudeInChromeSupport(): boolean {
+  return getClaudeInChromeBrowserTools().length > 0
+}
 
 export function shouldEnableClaudeInChrome(chromeFlag?: boolean): boolean {
   // Disable by default in non-interactive sessions (e.g., SDK, CI)
@@ -75,6 +104,7 @@ export function shouldAutoEnableClaudeInChrome(): boolean {
   }
 
   shouldAutoEnable =
+    hasClaudeInChromeSupport() &&
     getIsInteractive() &&
     isChromeExtensionInstalled_CACHED_MAY_BE_STALE() &&
     (process.env.USER_TYPE === 'ant' ||
@@ -94,7 +124,13 @@ export function setupClaudeInChrome(): {
   systemPrompt: string
 } {
   const isNativeBuild = isInBundledMode()
-  const allowedTools = BROWSER_TOOLS.map(
+  const browserTools = getClaudeInChromeBrowserTools()
+  if (browserTools.length === 0) {
+    throw new Error(
+      'Claude in Chrome support is unavailable because @ant/claude-for-chrome-mcp is not installed.',
+    )
+  }
+  const allowedTools = browserTools.map(
     tool => `mcp__claude-in-chrome__${tool.name}`,
   )
 

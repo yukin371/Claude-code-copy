@@ -31,7 +31,10 @@ function ClaudeInChromeMenu(t0) {
     isClaudeAISubscriber,
     isWSL
   } = t0;
-  const mcpClients = useAppState(_temp);
+  const mcpClients = useAppState(_temp) as Array<{
+    name?: string;
+    type?: string;
+  }>;
   const [selectKey, setSelectKey] = useState(0);
   const [enabledByDefault, setEnabledByDefault] = useState(configEnabled ?? false);
   const [showInstallHint, setShowInstallHint] = useState(false);
