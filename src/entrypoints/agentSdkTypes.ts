@@ -40,6 +40,7 @@ import type {
   SDKSessionInfo,
   SDKUserMessage,
 } from './sdk/coreTypes.js'
+import type { PermissionUpdate } from '../utils/permissions/PermissionUpdateSchema.js'
 // Import types needed for function signatures
 import type {
   AnyZodRawShape,
@@ -69,6 +70,63 @@ export type {
   ForkSessionResult,
   SDKSessionInfo,
 }
+
+export type ModelInfo = {
+  id?: string
+  model?: string
+  display_name?: string
+  provider?: string
+  [key: string]: unknown
+}
+
+export type SDKUserMessageReplay = SDKUserMessage & {
+  isReplay?: boolean
+  parent_tool_use_id?: string
+  message?: {
+    content?: unknown
+  }
+}
+
+export type McpServerConfigForProcessTransport = {
+  type?: 'stdio' | 'sse' | 'sse-ide' | string
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+  url?: string
+  ideName?: string
+  ideRunningInWindows?: boolean
+  [key: string]: unknown
+}
+
+export type McpServerStatus = {
+  name?: string
+  status?: string
+  error?: string
+  config?: McpServerConfigForProcessTransport
+  [key: string]: unknown
+}
+
+export type RewindFilesResult = {
+  rewound?: string[]
+  [key: string]: unknown
+}
+
+export type HookInput = Record<string, unknown>
+
+export type AsyncHookJSONOutput = {
+  async: true
+  asyncTimeout?: number
+  [key: string]: unknown
+}
+
+export type SyncHookJSONOutput = {
+  async?: false
+  [key: string]: unknown
+}
+
+export type HookJSONOutput = AsyncHookJSONOutput | SyncHookJSONOutput
+
+export type { PermissionUpdate }
 
 export function tool<Schema extends AnyZodRawShape>(
   _name: string,

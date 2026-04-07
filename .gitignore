@@ -1,0 +1,11 @@
+.gitnexus
+.claude/
+CLAUDE.md
+AGENTS.md
+.serena/
+.env.test
+.env
+node_modules
+*.log
+*.exe
+*.txt
