@@ -17,6 +17,7 @@
     "check:docs": "powershell -ExecutionPolicy Bypass -File scripts/check-docs.ps1",
     "check:text-hygiene": "bun run scripts/check-text-hygiene.ts",
     "smoke:claude-config": "bun run scripts/claude-config-smoke.ts",
+    "smoke:headless-print-liveness": "bun run scripts/headless-print-liveness-smoke.ts",
     "smoke:mcp-state": "bun run scripts/mcp-state-smoke.ts",
     "smoke:plugin-install": "bun run scripts/plugin-install-smoke.ts",
     "smoke:plugin-state": "bun run scripts/plugin-state-smoke.ts",

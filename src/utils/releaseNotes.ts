@@ -30,6 +30,16 @@ export const CHANGELOG_URL =
 const RAW_CHANGELOG_URL =
   'https://raw.githubusercontent.com/anthropics/claude-code/refs/heads/main/CHANGELOG.md'
 
+function getMacroVersion(): string {
+  return typeof MACRO !== 'undefined' && MACRO.VERSION ? MACRO.VERSION : 'dev'
+}
+
+function getMacroVersionChangelog(): string {
+  return typeof MACRO !== 'undefined' && MACRO.VERSION_CHANGELOG
+    ? MACRO.VERSION_CHANGELOG
+    : ''
+}
+
 /**
  * Get the path for the cached changelog file.
  * The changelog is stored at ~/.claude/cache/changelog.md
@@ -286,11 +296,11 @@ export function getAllReleaseNotes(
  */
 export async function checkForReleaseNotes(
   lastSeenVersion: string | null | undefined,
-  currentVersion: string = MACRO.VERSION,
+  currentVersion: string = getMacroVersion(),
 ): Promise<{ hasReleaseNotes: boolean; releaseNotes: string[] }> {
   // For Ant builds, use VERSION_CHANGELOG bundled at build time
   if (process.env.USER_TYPE === 'ant') {
-    const changelog = MACRO.VERSION_CHANGELOG
+    const changelog = getMacroVersionChangelog()
     if (changelog) {
       const commits = changelog.trim().split('\n').filter(Boolean)
       return {
@@ -334,11 +344,11 @@ export async function checkForReleaseNotes(
  */
 export function checkForReleaseNotesSync(
   lastSeenVersion: string | null | undefined,
-  currentVersion: string = MACRO.VERSION,
+  currentVersion: string = getMacroVersion(),
 ): { hasReleaseNotes: boolean; releaseNotes: string[] } {
   // For Ant builds, use VERSION_CHANGELOG bundled at build time
   if (process.env.USER_TYPE === 'ant') {
-    const changelog = MACRO.VERSION_CHANGELOG
+    const changelog = getMacroVersionChangelog()
     if (changelog) {
       const commits = changelog.trim().split('\n').filter(Boolean)
       return {
