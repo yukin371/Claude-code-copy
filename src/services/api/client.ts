@@ -111,9 +111,9 @@ export async function getAnthropicClient({
       apiKey,
       maxRetries,
       model,
-      fetchOverride,
+      fetchOverride: fetchOverride as typeof fetch | undefined,
       source,
-    })
+    }) as Promise<Anthropic>
   }
 
   const containerId = process.env.CLAUDE_CODE_CONTAINER_ID
@@ -169,7 +169,11 @@ export async function getAnthropicClient({
     }),
   }
   if (isEnvTruthy(process.env.CLAUDE_CODE_USE_BEDROCK)) {
-    const { AnthropicBedrock } = await import('@anthropic-ai/bedrock-sdk')
+    const {
+      AnthropicBedrock,
+    } = require('@anthropic-ai/bedrock-sdk') as {
+      AnthropicBedrock: new (args: Record<string, unknown>) => unknown
+    }
     // Use region override for small fast model if specified
     const awsRegion =
       model === getSmallFastModel() &&
@@ -177,7 +181,7 @@ export async function getAnthropicClient({
         ? process.env.ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION
         : getAWSRegion()
 
-    const bedrockArgs: ConstructorParameters<typeof AnthropicBedrock>[0] = {
+    const bedrockArgs: Record<string, unknown> = {
       ...ARGS,
       awsRegion,
       ...(isEnvTruthy(process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH) && {
@@ -191,7 +195,8 @@ export async function getAnthropicClient({
       bedrockArgs.skipAuth = true
       // Add the Bearer token for Bedrock API key authentication
       bedrockArgs.defaultHeaders = {
-        ...bedrockArgs.defaultHeaders,
+        ...((bedrockArgs.defaultHeaders as Record<string, string> | undefined) ??
+          {}),
         Authorization: `Bearer ${process.env.AWS_BEARER_TOKEN_BEDROCK}`,
       }
     } else if (!isEnvTruthy(process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH)) {
@@ -204,10 +209,14 @@ export async function getAnthropicClient({
       }
     }
     // we have always been lying about the return type - this doesn't support batching or models
-    return new AnthropicBedrock(bedrockArgs) as unknown as Anthropic
+    return new AnthropicBedrock(bedrockArgs) as Anthropic
   }
   if (isEnvTruthy(process.env.CLAUDE_CODE_USE_FOUNDRY)) {
-    const { AnthropicFoundry } = await import('@anthropic-ai/foundry-sdk')
+    const {
+      AnthropicFoundry,
+    } = require('@anthropic-ai/foundry-sdk') as {
+      AnthropicFoundry: new (args: Record<string, unknown>) => unknown
+    }
     // Determine Azure AD token provider based on configuration
     // SDK reads ANTHROPIC_FOUNDRY_API_KEY by default
     let azureADTokenProvider: (() => Promise<string>) | undefined
@@ -220,7 +229,13 @@ export async function getAnthropicClient({
         const {
           DefaultAzureCredential: AzureCredential,
           getBearerTokenProvider,
-        } = await import('@azure/identity')
+        } = require('@azure/identity') as {
+          DefaultAzureCredential: new () => unknown
+          getBearerTokenProvider: (
+            credential: unknown,
+            scope: string,
+          ) => () => Promise<string>
+        }
         azureADTokenProvider = getBearerTokenProvider(
           new AzureCredential(),
           'https://cognitiveservices.azure.com/.default',
@@ -228,13 +243,13 @@ export async function getAnthropicClient({
       }
     }
 
-    const foundryArgs: ConstructorParameters<typeof AnthropicFoundry>[0] = {
+    const foundryArgs: Record<string, unknown> = {
       ...ARGS,
       ...(azureADTokenProvider && { azureADTokenProvider }),
       ...(isDebugToStdErr() && { logger: createStderrLogger() }),
     }
     // we have always been lying about the return type - this doesn't support batching or models
-    return new AnthropicFoundry(foundryArgs) as unknown as Anthropic
+    return new AnthropicFoundry(foundryArgs) as Anthropic
   }
   if (isEnvTruthy(process.env.CLAUDE_CODE_USE_VERTEX)) {
     // Refresh GCP credentials if gcpAuthRefresh is configured and credentials are expired
@@ -243,10 +258,14 @@ export async function getAnthropicClient({
       await refreshGcpCredentialsIfNeeded()
     }
 
-    const [{ AnthropicVertex }, { GoogleAuth }] = await Promise.all([
-      import('@anthropic-ai/vertex-sdk'),
-      import('google-auth-library'),
-    ])
+    const {
+      AnthropicVertex,
+    } = require('@anthropic-ai/vertex-sdk') as {
+      AnthropicVertex: new (args: Record<string, unknown>) => unknown
+    }
+    const { GoogleAuth } = require('google-auth-library') as {
+      GoogleAuth: new (args: Record<string, unknown>) => unknown
+    }
     // TODO: Cache either GoogleAuth instance or AuthClient to improve performance
     // Currently we create a new GoogleAuth instance for every getAnthropicClient() call
     // This could cause repeated authentication flows and metadata server checks
@@ -305,14 +324,14 @@ export async function getAnthropicClient({
               }),
         })
 
-    const vertexArgs: ConstructorParameters<typeof AnthropicVertex>[0] = {
+    const vertexArgs: Record<string, unknown> = {
       ...ARGS,
       region: getVertexRegionForModel(model),
       googleAuth,
       ...(isDebugToStdErr() && { logger: createStderrLogger() }),
     }
     // we have always been lying about the return type - this doesn't support batching or models
-    return new AnthropicVertex(vertexArgs) as unknown as Anthropic
+    return new AnthropicVertex(vertexArgs) as Anthropic
   }
 
   // Determine authentication method based on available tokens

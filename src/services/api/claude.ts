@@ -100,7 +100,7 @@ import {
   extractQuotaStatusFromHeaders,
 } from '../claudeAiLimits.js'
 import { getAPIContextManagement } from '../compact/apiMicrocompact.js'
-import { getTaskRouteAnthropicClient } from './client.js'
+import { getAnthropicClient, getTaskRouteAnthropicClient } from './client.js'
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
@@ -932,7 +932,7 @@ function getPreviousRequestIdFromMessages(
 ): string | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i]!
-    if (msg.type === 'assistant' && msg.requestId) {
+    if (msg.type === 'assistant' && typeof msg.requestId === 'string') {
       return msg.requestId
     }
   }
@@ -965,7 +965,7 @@ export function stripExcessMediaItems(
     for (const block of msg.message.content) {
       if (isMedia(block)) toRemove++
       if (isToolResult(block) && Array.isArray(block.content)) {
-        for (const nested of block.content) {
+        for (const nested of block.content as BetaContentBlockParam[]) {
           if (isMedia(nested)) toRemove++
         }
       }
@@ -988,24 +988,28 @@ export function stripExcessMediaItems(
           !Array.isArray(block.content)
         )
           return block
-        const filtered = block.content.filter(n => {
+        const nestedContent = block.content as BetaContentBlockParam[]
+        const filtered = nestedContent.filter(n => {
           if (toRemove > 0 && isMedia(n)) {
             toRemove--
             return false
           }
           return true
         })
-        return filtered.length === block.content.length
+        return filtered.length === nestedContent.length
           ? block
           : { ...block, content: filtered }
       })
       .filter(block => {
-        if (toRemove > 0 && isMedia(block)) {
+        if (
+          toRemove > 0 &&
+          (block.type === 'image' || block.type === 'document')
+        ) {
           toRemove--
           return false
         }
         return true
-      })
+      }) as typeof content
 
     return before === toRemove
       ? msg
@@ -2132,7 +2136,11 @@ async function* queryModel(
                     feature('CONNECTOR_TEXT') &&
                     contentBlock.type === 'connector_text'
                   ) {
-                    contentBlock.signature = delta.signature
+                    ;(
+                      contentBlock as typeof contentBlock & {
+                        signature?: unknown
+                      }
+                    ).signature = delta.signature
                     break
                   }
                   if (contentBlock.type !== 'thinking') {
@@ -2196,10 +2204,10 @@ async function* queryModel(
               message: {
                 ...partialMessage,
                 content: normalizeContentFromAPI(
-                  [contentBlock] as BetaContentBlock[],
+                  [contentBlock] as unknown as BetaContentBlock[],
                   tools,
                   options.agentId,
-                ),
+                ) as AssistantMessage['message']['content'],
               },
               requestId: streamRequestId ?? undefined,
               type: 'assistant',
@@ -2275,7 +2283,6 @@ async function* queryModel(
                   maxOutputTokens
                 } output token maximum. To configure this behavior, set the CLAUDE_CODE_MAX_OUTPUT_TOKENS environment variable.`,
                 apiError: 'max_output_tokens',
-                error: 'max_output_tokens',
               })
             }
 
@@ -2290,7 +2297,6 @@ async function* queryModel(
               yield createAssistantAPIErrorMessage({
                 content: `${API_ERROR_MESSAGE_PREFIX}: The model has reached its context window limit.`,
                 apiError: 'max_output_tokens',
-                error: 'max_output_tokens',
               })
             }
             break
@@ -2575,10 +2581,10 @@ async function* queryModel(
         message: {
           ...result,
           content: normalizeContentFromAPI(
-            result.content,
+            result.content as unknown as BetaContentBlock[],
             tools,
             options.agentId,
-          ),
+          ) as AssistantMessage['message']['content'],
         },
         requestId: streamRequestId ?? undefined,
         type: 'assistant',
@@ -2672,10 +2678,10 @@ async function* queryModel(
           message: {
             ...result,
             content: normalizeContentFromAPI(
-              result.content,
+              result.content as unknown as BetaContentBlock[],
               tools,
               options.agentId,
-            ),
+            ) as AssistantMessage['message']['content'],
           },
           requestId: streamRequestId ?? undefined,
           type: 'assistant',
@@ -2821,9 +2827,9 @@ async function* queryModel(
     // message_delta handler before any yield. Fallback pushes to newMessages
     // then yields, so tracking must be here to survive .return() at the yield.
     if (fallbackMessage) {
-      const fallbackUsage = fallbackMessage.message.usage
+      const fallbackUsage = fallbackMessage.message.usage as typeof usage
       usage = updateUsage(EMPTY_USAGE, fallbackUsage)
-      stopReason = fallbackMessage.message.stop_reason
+      stopReason = fallbackMessage.message.stop_reason as typeof stopReason
       const fallbackCost = calculateUSDCost(resolvedModel, fallbackUsage)
       costUSD += addToTotalSessionCost(
         fallbackCost,
@@ -2860,7 +2866,9 @@ async function* queryModel(
   void options.getToolPermissionContext().then(permissionContext => {
     logAPISuccessAndDuration({
       model:
-        newMessages[0]?.message.model ?? partialMessage?.model ?? options.model,
+        (newMessages[0]?.message.model as string | undefined) ??
+        (partialMessage?.model as string | undefined) ??
+        options.model,
       preNormalizedModel: options.model,
       usage,
       start,

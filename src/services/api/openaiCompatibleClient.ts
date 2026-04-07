@@ -10,7 +10,6 @@ import type {
   BetaMessageStreamParams,
   BetaToolUnion,
   BetaUsage,
-  MessageParam,
 } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import type { Stream } from '@anthropic-ai/sdk/streaming.mjs'
 import { randomUUID } from 'crypto'
@@ -27,6 +26,8 @@ import {
   markProviderEndpointSuccess,
   selectProviderEndpointCandidates,
 } from 'src/utils/model/providerBalancer.js'
+
+type MessageParam = BetaMessageStreamParams['messages'][number]
 
 type OpenAIChatMessage = {
   role: 'system' | 'user' | 'assistant' | 'tool'
@@ -142,7 +143,7 @@ export async function createOpenAICompatibleAnthropicClient({
     if (params.stream) {
       return {
         withResponse: async () => {
-          const request = await executeOpenAICompatibleRequest({
+          const request = (await executeOpenAICompatibleRequest({
             transport,
             apiKey,
             maxRetries,
@@ -151,7 +152,7 @@ export async function createOpenAICompatibleAnthropicClient({
             source,
             params,
             requestOptions,
-          })
+          })) as OpenAIRequestResult
           return {
             data: request.data,
             response: request.response,
@@ -380,7 +381,7 @@ function createOpenAICompatibleStream({
         cleanup()
       }
     },
-  } as OpenAICompatibleStream
+  } as unknown as OpenAICompatibleStream
 
   return stream
 }
@@ -623,11 +624,15 @@ function buildOpenAIRequestBody(
     ...(params.tool_choice && { tool_choice: convertToolChoice(params.tool_choice) }),
     ...(params.tools && params.tools.length > 0 && { tools: convertTools(params.tools) }),
     ...(params.metadata && { metadata: params.metadata }),
-    ...(params.system && params.system.length > 0
-      ? { system: params.system.map(block => block.text).join('\n\n') }
+    ...(Array.isArray(params.system) && params.system.length > 0
+      ? {
+          system: params.system
+            .map(block => ('text' in block ? block.text : ''))
+            .join('\n\n'),
+        }
       : {}),
     ...(params.output_config && typeof params.output_config === 'object'
-      ? convertOutputConfig(params.output_config)
+      ? convertOutputConfig(params.output_config as Record<string, unknown>)
       : {}),
     ...(params.thinking && { reasoning: params.thinking }),
     ...(params.speed && { reasoning_effort: params.speed }),
@@ -678,12 +683,13 @@ function convertTools(tools: BetaToolUnion[]): Array<Record<string, unknown>> {
 function convertMessagesToOpenAI(messages: MessageParam[]): OpenAIChatMessage[] {
   const out: OpenAIChatMessage[] = []
   for (const message of messages) {
-    if (message.role === 'system') {
+    const role = (message as { role: string }).role
+    if (role === 'system') {
       out.push({ role: 'system', content: convertAnthropicContentToString(message.content) })
       continue
     }
 
-    if (message.role === 'assistant') {
+    if (role === 'assistant') {
       out.push(convertAssistantMessage(message))
       continue
     }
@@ -754,6 +760,9 @@ function convertAssistantMessage(message: MessageParam): OpenAIChatMessage {
     }
     if (block.type === 'thinking' || block.type === 'redacted_thinking') {
       reasoningParts.push(block.type === 'thinking' ? block.thinking : '')
+      continue
+    }
+    if (block.type === 'tool_result') {
       continue
     }
     const part = convertContentBlockToOpenAI(block)
@@ -964,7 +973,7 @@ function mapUsage(usage: OpenAIUsage | undefined): BetaUsage {
     inference_geo: undefined,
     iterations: 0,
     speed: undefined,
-  }
+  } as unknown as BetaUsage
 }
 
 function zeroUsage(): BetaUsage {
