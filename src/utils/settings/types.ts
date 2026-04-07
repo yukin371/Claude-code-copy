@@ -413,7 +413,7 @@ export const SettingsSchema = lazySchema(() =>
         .enum(['fallback', 'round-robin', 'weighted'])
         .optional()
         .describe(
-          'Balancing strategy for OpenAI-compatible providers. Environment variable NEKO_CODE_OPENAI_PROVIDER_STRATEGY takes precedence when set.',
+          'Balancing strategy for direct OpenAI-compatible provider fallback. This only applies when a route is not pinned to a single explicit base URL/API key or external gateway. Environment variable NEKO_CODE_OPENAI_PROVIDER_STRATEGY takes precedence when set.',
         ),
       openAIProviderWeights: z
         .object({
@@ -427,7 +427,7 @@ export const SettingsSchema = lazySchema(() =>
         .partial()
         .optional()
         .describe(
-          'Optional weight overrides for OpenAI-compatible provider balancing. Only positive integers are accepted.',
+          'Optional weight overrides for direct OpenAI-compatible provider balancing. This only applies when a route is not pinned to a single explicit base URL/API key or external gateway. Only positive integers are accepted.',
         ),
       // Enterprise allowlist of models
       availableModels: z
