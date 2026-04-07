@@ -649,7 +649,7 @@ export function LogSelector(t0) {
     }
     t29 = t30;
   }
-  const treeNodes = t29;
+  const treeNodes = t29 as LogTreeNode[];
   let t30;
   bb3: {
     if (isResumeWithRenameEnabled) {

@@ -14,7 +14,7 @@ import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import type { HookEvent } from 'src/entrypoints/agentSdkTypes.js';
-import { useAppState, useAppStateStore } from 'src/state/AppState.js';
+import { type AppState, useAppState, useAppStateStore } from 'src/state/AppState.js';
 import type { CommandResultDisplay } from '../../commands.js';
 import { useSettingsChange } from '../../hooks/useSettingsChange.js';
 import { Box, Text } from '../../ink.js';
@@ -84,7 +84,7 @@ export function HooksConfigMenu(t0) {
   const mode = modeState.mode;
   const selectedEvent = "event" in modeState ? modeState.event : "PreToolUse";
   const selectedMatcher = "matcher" in modeState ? modeState.matcher : null;
-  const mcp = useAppState(_temp3);
+  const mcp = useAppState(_temp3) as AppState['mcp'];
   const appStateStore = useAppStateStore();
   let t3;
   if ($[2] !== mcp.tools || $[3] !== toolNames) {

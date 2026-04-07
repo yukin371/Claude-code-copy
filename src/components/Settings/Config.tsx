@@ -81,7 +81,38 @@ type Setting = (SettingBase & {
   onChange(value: string): void;
   type: 'managedEnum';
 });
-type SubMenu = 'Theme' | 'Model' | 'TeammateModel' | 'ExternalIncludes' | 'OutputStyle' | 'ChannelDowngrade' | 'Language' | 'EnableAutoUpdates';
+type SubMenu = 'Theme' | 'Model' | 'TeammateModel' | 'ExternalIncludes' | 'OutputStyle' | 'TaskRouteMain' | 'ChannelDowngrade' | 'Language' | 'EnableAutoUpdates';
+const TASK_ROUTE_MAIN_PROVIDER_OPTIONS = ['anthropic', 'codex', 'gemini', 'glm', 'minimax', 'openai-compatible'] as const;
+const TASK_ROUTE_MAIN_API_STYLE_OPTIONS = ['anthropic', 'openai-compatible'] as const;
+const TASK_ROUTE_MAIN_UNSET = '__unset__' as const;
+type TaskRouteMainProvider = (typeof TASK_ROUTE_MAIN_PROVIDER_OPTIONS)[number];
+type TaskRouteMainApiStyle = (typeof TASK_ROUTE_MAIN_API_STYLE_OPTIONS)[number];
+type TaskRouteMainSettings = {
+  provider?: TaskRouteMainProvider;
+  apiStyle?: TaskRouteMainApiStyle;
+  model?: string;
+  baseUrl?: string;
+};
+function normalizeTaskRouteMainText(value: string): string | undefined {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+function getTaskRouteMainSettings(settings: unknown): TaskRouteMainSettings {
+  const taskRoutes = (settings as {
+    taskRoutes?: Record<string, TaskRouteMainSettings | undefined>;
+  } | undefined)?.taskRoutes;
+  const main = taskRoutes?.main;
+  return main ? {
+    ...main
+  } : {};
+}
+function formatTaskRouteMainSettingsValue(settings: TaskRouteMainSettings): string {
+  const provider = settings.provider ?? '[default]';
+  const apiStyle = settings.apiStyle ?? '[default]';
+  const model = settings.model?.trim() ? settings.model.trim() : '[default]';
+  const baseUrl = settings.baseUrl?.trim() ? settings.baseUrl.trim() : '[default]';
+  return `provider=${provider}, apiStyle=${apiStyle}, model=${model}, baseUrl=${baseUrl}`;
+}
 export function Config({
   onClose,
   context,
@@ -175,6 +206,8 @@ export function Config({
   const isDirty = React.useRef(false);
   const [showThinkingWarning, setShowThinkingWarning] = useState(false);
   const [showSubmenu, setShowSubmenu] = useState<SubMenu | null>(null);
+  const [taskRouteMainModelInput, setTaskRouteMainModelInput] = useState(() => getTaskRouteMainSettings(settingsData).model ?? '');
+  const [taskRouteMainBaseUrlInput, setTaskRouteMainBaseUrlInput] = useState(() => getTaskRouteMainSettings(settingsData).baseUrl ?? '');
   const {
     query: searchQuery,
     setQuery: setSearchQuery,
@@ -259,6 +292,28 @@ export function Config({
       };
     });
   }
+  function onChangeTaskRouteMainConfig(patch: TaskRouteMainSettings, changeKey: string, changeValue: string): void {
+    const result = updateSettingsForSource('localSettings', {
+      taskRoutes: {
+        main: patch
+      }
+    });
+    if (result.error) {
+      logError(result.error);
+      return;
+    }
+    isDirty.current = true;
+    const updatedSettings = getInitialSettings();
+    setSettingsData(updatedSettings);
+    const updatedTaskRouteMain = getTaskRouteMainSettings(updatedSettings);
+    setTaskRouteMainModelInput(updatedTaskRouteMain.model ?? '');
+    setTaskRouteMainBaseUrlInput(updatedTaskRouteMain.baseUrl ?? '');
+    setChanges(prev_3 => ({
+      ...prev_3,
+      [changeKey]: changeValue
+    }));
+  }
+  const taskRouteMainSettings = getTaskRouteMainSettings(settingsData);
 
   // TODO: Add MCP servers
   const settingsItems: Setting[] = [
@@ -291,8 +346,8 @@ export function Config({
         spinnerTipsEnabled
       });
       // Update local state to reflect the change immediately
-      setSettingsData(prev_3 => ({
-        ...prev_3,
+      setSettingsData(prev_5 => ({
+        ...prev_5,
         spinnerTipsEnabled
       }));
       logEvent('tengu_tips_setting_changed', {
@@ -308,15 +363,15 @@ export function Config({
       updateSettingsForSource('localSettings', {
         prefersReducedMotion
       });
-      setSettingsData(prev_4 => ({
-        ...prev_4,
+      setSettingsData(prev_6 => ({
+        ...prev_6,
         prefersReducedMotion
       }));
       // Sync to AppState so components react immediately
-      setAppState(prev_5 => ({
-        ...prev_5,
+      setAppState(prev_7 => ({
+        ...prev_7,
         settings: {
-          ...prev_5.settings,
+          ...prev_7.settings,
           prefersReducedMotion
         }
       }));
@@ -392,7 +447,7 @@ export function Config({
     }
   }] : []),
   // Speculation toggle (ant-only)
-  ...("external" === 'ant' ? [{
+  ...(process.env.USER_TYPE === 'ant' ? [{
     id: 'speculationEnabled',
     label: 'Speculative execution',
     value: globalConfig.speculationEnabled ?? true,
@@ -813,6 +868,12 @@ export function Config({
     value: mainLoopModel === null ? 'Default (recommended)' : mainLoopModel,
     type: 'managedEnum' as const,
     onChange: onChangeMainModelConfig
+  }, {
+    id: 'taskRouteMain',
+    label: 'Main task route',
+    value: formatTaskRouteMainSettingsValue(taskRouteMainSettings),
+    type: 'managedEnum' as const,
+    onChange() {}
   }, ...(isConnectedToIde ? [{
     id: 'diffTool',
     label: 'Diff tool',
@@ -1194,7 +1255,8 @@ export function Config({
       spinnerTipsEnabled: il?.spinnerTipsEnabled,
       prefersReducedMotion: il?.prefersReducedMotion,
       defaultView: il?.defaultView,
-      outputStyle: il?.outputStyle
+      outputStyle: il?.outputStyle,
+      taskRoutes: il?.taskRoutes
     });
     const iu = initialUserSettings;
     updateSettingsForSource('userSettings', {
@@ -1297,7 +1359,7 @@ export function Config({
       }
       return;
     }
-    if (setting_0.id === 'theme' || setting_0.id === 'model' || setting_0.id === 'teammateDefaultModel' || setting_0.id === 'showExternalIncludesDialog' || setting_0.id === 'outputStyle' || setting_0.id === 'language') {
+    if (setting_0.id === 'theme' || setting_0.id === 'model' || setting_0.id === 'teammateDefaultModel' || setting_0.id === 'showExternalIncludesDialog' || setting_0.id === 'outputStyle' || setting_0.id === 'language' || setting_0.id === 'taskRouteMain') {
       // managedEnum items open a submenu — isDirty is set by the submenu's
       // completion callback, not here (submenu may be cancelled).
       switch (setting_0.id) {
@@ -1323,6 +1385,12 @@ export function Config({
           return;
         case 'language':
           setShowSubmenu('Language');
+          setTabsHidden(true);
+          return;
+        case 'taskRouteMain':
+          setTaskRouteMainModelInput(taskRouteMainSettings.model ?? '');
+          setTaskRouteMainBaseUrlInput(taskRouteMainSettings.baseUrl ?? '');
+          setShowSubmenu('TaskRouteMain');
           setTabsHidden(true);
           return;
       }
@@ -1364,7 +1432,7 @@ export function Config({
       setting_0.onChange(setting_0.options[nextIndex]!);
       return;
     }
-  }, [autoUpdaterDisabledReason, filteredSettingsItems, selectedIndex, settingsData?.autoUpdatesChannel, setTabsHidden]);
+  }, [autoUpdaterDisabledReason, filteredSettingsItems, selectedIndex, settingsData?.autoUpdatesChannel, setTabsHidden, taskRouteMainSettings.baseUrl, taskRouteMainSettings.model]);
   const moveSelection = (delta: -1 | 1): void => {
     setShowThinkingWarning(false);
     const newIndex_1 = Math.max(0, Math.min(filteredSettingsItems.length - 1, selectedIndex + delta));
@@ -1580,7 +1648,85 @@ export function Config({
               <ConfigurableShortcutHint action="confirm:no" context="Settings" fallback="Esc" description="cancel" />
             </Byline>
           </Text>
-        </> : showSubmenu === 'EnableAutoUpdates' ? <Dialog title="Enable Auto-Updates" onCancel={() => {
+        </> : showSubmenu === 'TaskRouteMain' ? <Dialog title="Main task route" subtitle="Editing local settings: taskRoutes.main" onCancel={() => {
+      setShowSubmenu(null);
+      setTabsHidden(false);
+    }}>
+          <Select options={[{
+        label: 'Provider: [default]',
+        value: `provider:${TASK_ROUTE_MAIN_UNSET}`
+      }, ...TASK_ROUTE_MAIN_PROVIDER_OPTIONS.map(provider => ({
+        label: `Provider: ${provider}`,
+        value: `provider:${provider}`
+      })), {
+        label: 'API style: [default]',
+        value: `apiStyle:${TASK_ROUTE_MAIN_UNSET}`
+      }, ...TASK_ROUTE_MAIN_API_STYLE_OPTIONS.map(apiStyle => ({
+        label: `API style: ${apiStyle}`,
+        value: `apiStyle:${apiStyle}`
+      })), {
+        type: 'input' as const,
+        label: 'Model',
+        value: 'model',
+        initialValue: taskRouteMainModelInput,
+        placeholder: 'Leave empty to use default model',
+        allowEmptySubmitToCancel: true,
+        labelValueSeparator: ': ',
+        onChange: setTaskRouteMainModelInput
+      }, {
+        type: 'input' as const,
+        label: 'Base URL',
+        value: 'baseUrl',
+        initialValue: taskRouteMainBaseUrlInput,
+        placeholder: 'Leave empty to use default base URL',
+        allowEmptySubmitToCancel: true,
+        labelValueSeparator: ': ',
+        onChange: setTaskRouteMainBaseUrlInput
+      }, {
+        label: 'Done',
+        value: 'done'
+      }]} onChange={(action: string) => {
+        if (action === 'done') {
+          setShowSubmenu(null);
+          setTabsHidden(false);
+          return;
+        }
+        if (action.startsWith('provider:')) {
+          const rawProvider = action.slice('provider:'.length);
+          const provider = rawProvider === TASK_ROUTE_MAIN_UNSET ? undefined : rawProvider as TaskRouteMainProvider;
+          onChangeTaskRouteMainConfig({
+            provider
+          }, 'taskRoutes.main.provider', provider ?? '[default]');
+          return;
+        }
+        if (action.startsWith('apiStyle:')) {
+          const rawApiStyle = action.slice('apiStyle:'.length);
+          const apiStyle = rawApiStyle === TASK_ROUTE_MAIN_UNSET ? undefined : rawApiStyle as TaskRouteMainApiStyle;
+          onChangeTaskRouteMainConfig({
+            apiStyle
+          }, 'taskRoutes.main.apiStyle', apiStyle ?? '[default]');
+          return;
+        }
+        if (action === 'model') {
+          const model = normalizeTaskRouteMainText(taskRouteMainModelInput);
+          setTaskRouteMainModelInput(model ?? '');
+          onChangeTaskRouteMainConfig({
+            model
+          }, 'taskRoutes.main.model', model ?? '[default]');
+          return;
+        }
+        if (action === 'baseUrl') {
+          const baseUrl = normalizeTaskRouteMainText(taskRouteMainBaseUrlInput);
+          setTaskRouteMainBaseUrlInput(baseUrl ?? '');
+          onChangeTaskRouteMainConfig({
+            baseUrl
+          }, 'taskRoutes.main.baseUrl', baseUrl ?? '[default]');
+        }
+      }} onCancel={() => {
+        setShowSubmenu(null);
+        setTabsHidden(false);
+      }} layout="compact-vertical" visibleOptionCount={9} />
+        </Dialog> : showSubmenu === 'EnableAutoUpdates' ? <Dialog title="Enable Auto-Updates" onCancel={() => {
       setShowSubmenu(null);
       setTabsHidden(false);
     }} hideBorder hideInputGuide>

@@ -107,7 +107,7 @@ export type TreeSelectProps<T> = {
  * It handles expand/collapse state, keyboard navigation, and renders the tree as a flat list
  * using the Select component.
  */
-export function TreeSelect(t0) {
+export function TreeSelect<T>(t0: TreeSelectProps<T>) {
   const $ = _c(48);
   const {
     nodes,
@@ -157,7 +157,11 @@ export function TreeSelect(t0) {
   let result;
   if ($[4] !== isExpanded || $[5] !== nodes) {
     result = [];
-    function traverse(node, depth, parentId) {
+    function traverse(
+      node: TreeNode<T>,
+      depth: number,
+      parentId?: string | number,
+    ) {
       const hasChildren = !!node.children && node.children.length > 0;
       const nodeIsExpanded = isExpanded(node.id);
       result.push({

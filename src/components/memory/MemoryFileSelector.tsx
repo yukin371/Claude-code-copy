@@ -24,6 +24,7 @@ import { projectIsInGitRepo } from '../../utils/memory/versions.js';
 import { updateSettingsForSource } from '../../utils/settings/settings.js';
 import { Select } from '../CustomSelect/index.js';
 import { ListItem } from '../design-system/ListItem.js';
+import type { AgentDefinitionsResult } from '../../tools/AgentTool/loadAgentsDir.js';
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 const teamMemPaths = feature('TEAMMEM') ? require('../../memdir/teamMemPaths.js') as typeof import('../../memdir/teamMemPaths.js') : null;
@@ -110,7 +111,7 @@ export function MemoryFileSelector(t0) {
     };
   });
   const folderOptions = [];
-  const agentDefinitions = useAppState(_temp3);
+  const agentDefinitions = useAppState(_temp3) as AgentDefinitionsResult;
   if (isAutoMemoryEnabled()) {
     let t1;
     if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
@@ -162,7 +163,7 @@ export function MemoryFileSelector(t0) {
   const [autoMemoryOn, setAutoMemoryOn] = useState(isAutoMemoryEnabled);
   const [autoDreamOn, setAutoDreamOn] = useState(isAutoDreamEnabled);
   const [showDreamRow] = useState(isAutoMemoryEnabled);
-  const isDreamRunning = useAppState(_temp6);
+  const isDreamRunning = useAppState(_temp6) as boolean;
   const [lastDreamAt, setLastDreamAt] = useState(null);
   let t2;
   if ($[4] !== showDreamRow) {
