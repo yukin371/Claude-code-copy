@@ -31,7 +31,7 @@ import { createUserMessage } from '../utils/messages.js'
 function convertAssistantMessage(msg: SDKAssistantMessage): AssistantMessage {
   return {
     type: 'assistant',
-    message: msg.message,
+    message: msg.message as AssistantMessage['message'],
     uuid: msg.uuid,
     requestId: undefined,
     timestamp: new Date().toISOString(),
@@ -189,7 +189,7 @@ export function convertSDKMessage(
             content,
             toolUseResult: msg.tool_use_result,
             uuid: msg.uuid,
-            timestamp: msg.timestamp,
+            timestamp: String(msg.timestamp),
           }),
         }
       }
@@ -204,7 +204,7 @@ export function convertSDKMessage(
               content,
               toolUseResult: msg.tool_use_result,
               uuid: msg.uuid,
-              timestamp: msg.timestamp,
+              timestamp: String(msg.timestamp),
             }),
           }
         }
@@ -230,7 +230,7 @@ export function convertSDKMessage(
         return { type: 'message', message: convertInitMessage(msg) }
       }
       if (msg.subtype === 'status') {
-        const statusMsg = convertStatusMessage(msg)
+        const statusMsg = convertStatusMessage(msg as SDKStatusMessage)
         return statusMsg
           ? { type: 'message', message: statusMsg }
           : { type: 'ignored' }
@@ -238,7 +238,9 @@ export function convertSDKMessage(
       if (msg.subtype === 'compact_boundary') {
         return {
           type: 'message',
-          message: convertCompactBoundaryMessage(msg),
+          message: convertCompactBoundaryMessage(
+            msg as SDKCompactBoundaryMessage,
+          ),
         }
       }
       // hook_response and other subtypes

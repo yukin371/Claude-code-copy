@@ -20,6 +20,10 @@ export function getAssistantSystemPromptAddendum(): string {
   return 'Assistant compatibility mode is enabled, but advanced Kairos features are unavailable in this snapshot.'
 }
 
+export function getAssistantActivationPath(): string | undefined {
+  return '.claude/agents/assistant.md'
+}
+
 const placeholderAssistant = {
   name: 'assistant',
   description: 'Kairos assistant placeholder',

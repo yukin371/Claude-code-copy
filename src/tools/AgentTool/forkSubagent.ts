@@ -121,8 +121,8 @@ export function buildForkedMessages(
 
   // Collect all tool_use blocks from the assistant message
   const toolUseBlocks = assistantMessage.message.content.filter(
-    (block): block is BetaToolUseBlock => block.type === 'tool_use',
-  )
+    block => block.type === 'tool_use',
+  ) as unknown as BetaToolUseBlock[]
 
   if (toolUseBlocks.length === 0) {
     logForDebugging(
@@ -162,7 +162,7 @@ export function buildForkedMessages(
         type: 'text' as const,
         text: buildChildMessage(directive),
       },
-    ],
+    ] as Parameters<typeof createUserMessage>[0]['content'],
   })
 
   return [fullAssistantMessage, toolResultMessage]
