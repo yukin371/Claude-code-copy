@@ -24,6 +24,43 @@ function formatDebugJson(value: unknown): string {
   )
 }
 
+function formatTaskRouteLine(snapshot: {
+  route: string
+  executionTarget: { provider: string; apiStyle: string; model?: string }
+  fields: {
+    provider: { source: string }
+    apiStyle: { source: string }
+    model: { source: string }
+    baseUrl: { source: string }
+    apiKey: { source: string }
+  }
+  transport: { baseUrl?: string; apiKey?: string }
+}): string {
+  const model = snapshot.executionTarget.model ?? '[default]'
+  const baseUrl = snapshot.transport.baseUrl ?? '[default]'
+  const apiKey = snapshot.transport.apiKey ?? 'unset'
+  return `${snapshot.route}: provider=${snapshot.executionTarget.provider} (${snapshot.fields.provider.source}), apiStyle=${snapshot.executionTarget.apiStyle} (${snapshot.fields.apiStyle.source}), model=${model} (${snapshot.fields.model.source}), baseUrl=${baseUrl} (${snapshot.fields.baseUrl.source}), apiKey=${apiKey} (${snapshot.fields.apiKey.source})`
+}
+
+function formatQuerySourceRouteLine(snapshot: {
+  querySource?: string
+  routeSnapshot: {
+    route: string
+    executionTarget: { provider: string; apiStyle: string; model?: string }
+    fields: {
+      provider: { source: string }
+      apiStyle: { source: string }
+      model: { source: string }
+      baseUrl: { source: string }
+    }
+    transport: { baseUrl?: string }
+  }
+}): string {
+  const model = snapshot.routeSnapshot.executionTarget.model ?? '[default]'
+  const baseUrl = snapshot.routeSnapshot.transport.baseUrl ?? '[default]'
+  return `${snapshot.querySource ?? '[undefined]'} -> ${snapshot.routeSnapshot.route}: provider=${snapshot.routeSnapshot.executionTarget.provider} (${snapshot.routeSnapshot.fields.provider.source}), apiStyle=${snapshot.routeSnapshot.executionTarget.apiStyle} (${snapshot.routeSnapshot.fields.apiStyle.source}), model=${model} (${snapshot.routeSnapshot.fields.model.source}), baseUrl=${baseUrl} (${snapshot.routeSnapshot.fields.baseUrl.source})`
+}
+
 switch (command) {
   case 'doctor':
     console.log(`Bun version: ${Bun.version}`)
@@ -136,7 +173,19 @@ switch (command) {
       querySources: TASK_ROUTE_QUERY_SOURCE_EXAMPLES,
       includeSecrets: false,
     })
-    console.log(formatDebugJson(snapshot))
+    if (process.argv.includes('--json')) {
+      console.log(formatDebugJson(snapshot))
+      process.exit(0)
+    }
+    console.log('Routes')
+    for (const routeSnapshot of snapshot.routes) {
+      console.log(`  ${formatTaskRouteLine(routeSnapshot)}`)
+    }
+    console.log('')
+    console.log('QuerySource examples')
+    for (const querySourceSnapshot of snapshot.querySourceRoutes) {
+      console.log(`  ${formatQuerySourceRouteLine(querySourceSnapshot)}`)
+    }
     process.exit(0)
     break
   }
@@ -162,7 +211,7 @@ switch (command) {
     console.log('  bun run scripts/bun-tools.ts env')
     console.log('  bun run scripts/bun-tools.ts providers')
     console.log('  bun run scripts/bun-tools.ts health [provider]')
-    console.log('  bun run scripts/bun-tools.ts routes')
+    console.log('  bun run scripts/bun-tools.ts routes [--json]')
     console.log('  bun run scripts/bun-tools.ts route [querySource]')
     console.log('')
     console.log('Notes:')

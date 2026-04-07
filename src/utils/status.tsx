@@ -15,7 +15,7 @@ import { getClaudeAiUserDefaultModelDescription, getMainLoopModel, modelDisplayS
 import { formatProviderTargetLabel, getMainLoopProviderState } from './model/mainProvider.js';
 import { getProviderLoadBalanceConfigSnapshot } from './model/providerMetadata.js';
 import { getAPIProvider } from './model/providers.js';
-import { getTaskRouteDebugSnapshot, TASK_ROUTE_NAMES, type TaskRouteName } from './model/taskRouting.js';
+import { getTaskRouteDebugSnapshot, getTaskRouteDebugSnapshotFromQuerySource, TASK_ROUTE_NAMES, type TaskRouteName } from './model/taskRouting.js';
 import { getMTLSConfig } from './mtls.js';
 import { checkInstall } from './nativeInstaller/index.js';
 import { getProxyUrl } from './proxy.js';
@@ -216,11 +216,22 @@ function formatSecondaryTaskRouteLine(route: TaskRouteName): string {
   }
   return `${route}: ${parts.join(' / ')}`;
 }
+function formatQuerySourceRouteLine(querySource: string): string {
+  const snapshot = getTaskRouteDebugSnapshotFromQuerySource(querySource);
+  const parts = [snapshot.routeSnapshot.executionTarget.provider, snapshot.routeSnapshot.executionTarget.apiStyle, snapshot.routeSnapshot.executionTarget.model ?? '[default]'];
+  if (snapshot.routeSnapshot.transport.baseUrl) {
+    parts.push(snapshot.routeSnapshot.transport.baseUrl);
+  }
+  return `${querySource} -> ${snapshot.routeSnapshot.route}: ${parts.join(' / ')}`;
+}
 function buildAdditionalTaskRouteProperties(): Property[] {
   const routes = TASK_ROUTE_NAMES.filter(route => route !== 'main');
   return [{
     label: 'Task route matrix',
     value: routes.map(route => formatSecondaryTaskRouteLine(route))
+  }, {
+    label: 'Task route hints',
+    value: ['repl_main_thread', 'agent:custom', 'agent:custom:route:frontend', 'agent:builtin:general-purpose:route:review', 'agent:builtin:plan', 'agent:builtin:statusline-setup'].map(querySource => formatQuerySourceRouteLine(querySource))
   }];
 }
 export async function buildInstallationHealthDiagnostics(): Promise<Diagnostic[]> {

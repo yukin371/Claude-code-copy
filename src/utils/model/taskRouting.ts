@@ -117,6 +117,7 @@ export type TaskRouteFromQuerySourceDebugSnapshot = TaskRouteQuerySourceSnapshot
 export type TaskRoutingDebugSnapshot = {
   routes: TaskRouteDebugSnapshot[]
   querySources: TaskRouteQuerySourceSnapshot[]
+  querySourceRoutes: TaskRouteFromQuerySourceDebugSnapshot[]
 }
 
 export type TaskRouteDebugSnapshotOptions = {
@@ -150,6 +151,8 @@ export const TASK_ROUTE_QUERY_SOURCE_EXAMPLES = [
   'agent:builtin:statusline-setup',
   'agent:builtin:verification',
   'agent:custom',
+  'agent:custom:route:frontend',
+  'agent:builtin:general-purpose:route:review',
   'sdk',
 ] as const
 
@@ -952,15 +955,26 @@ export function getTaskRoutingDebugSnapshot(
     includeSecrets?: boolean
   } = {},
 ): TaskRoutingDebugSnapshot {
+  const querySourceRoutes = (options.querySources ?? []).map(querySource =>
+    getTaskRouteDebugSnapshotFromQuerySource(querySource, {
+      includeSecrets: options.includeSecrets,
+    }),
+  )
+
   return {
     routes: TASK_ROUTE_NAMES.map(route =>
       getTaskRouteDebugSnapshot(route, {
         includeSecrets: options.includeSecrets,
       }),
     ),
-    querySources: (options.querySources ?? []).map(querySource =>
-      getTaskRouteQuerySourceSnapshot(querySource),
+    querySources: querySourceRoutes.map(
+      ({ querySource, normalizedQuerySource, route }) => ({
+        querySource,
+        normalizedQuerySource,
+        route,
+      }),
     ),
+    querySourceRoutes,
   }
 }
 

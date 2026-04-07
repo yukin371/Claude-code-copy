@@ -204,6 +204,27 @@ describe('taskRouting transport compatibility', () => {
         route: 'main',
       },
     ])
+    expect(snapshot.querySourceRoutes.map(entry => entry.routeSnapshot.route)).toEqual([
+      'main',
+      'review',
+      'plan',
+      'statusline',
+      'subagent',
+      'frontend',
+      'review',
+      'main',
+    ])
+    expect(
+      snapshot.querySourceRoutes.find(
+        entry => entry.querySource === 'agent:custom:route:frontend',
+      )?.routeSnapshot.executionTarget.provider,
+    ).toBe('gemini')
+    expect(
+      snapshot.querySourceRoutes.find(
+        entry =>
+          entry.querySource === 'agent:builtin:general-purpose:route:review',
+      )?.routeSnapshot.executionTarget.provider,
+    ).toBe('codex')
   })
 
   test('debug snapshot marks provider env override and global transport fallback', async () => {
