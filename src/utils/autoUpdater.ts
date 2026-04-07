@@ -30,6 +30,26 @@ import { jsonParse } from './slowOperations.js'
 const GCS_BUCKET_URL =
   'https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases'
 
+const MACRO_CONTEXT =
+  typeof MACRO !== 'undefined' ? MACRO : null
+
+const MACRO_FALLBACK_VERSION = '0.0.0'
+
+function getMacroVersion(): string {
+  return MACRO_CONTEXT?.VERSION ?? MACRO_FALLBACK_VERSION
+}
+
+function getMacroPackageUrl(): string | undefined {
+  return MACRO_CONTEXT?.PACKAGE_URL
+}
+
+function getMacroNativePackageUrl(): string | undefined {
+  if (!MACRO_CONTEXT) {
+    return undefined
+  }
+  return MACRO_CONTEXT.NATIVE_PACKAGE_URL ?? MACRO_CONTEXT.PACKAGE_URL
+}
+
 class AutoUpdaterError extends ClaudeError {}
 
 export type InstallStatus =
@@ -73,17 +93,18 @@ export async function assertMinVersion(): Promise<void> {
   }
 
   try {
+    const currentVersion = getMacroVersion()
     const versionConfig = await getDynamicConfig_BLOCKS_ON_INIT<{
       minVersion: string
     }>('tengu_version_config', { minVersion: '0.0.0' })
 
     if (
       versionConfig.minVersion &&
-      lt(MACRO.VERSION, versionConfig.minVersion)
+      lt(currentVersion, versionConfig.minVersion)
     ) {
       // biome-ignore lint/suspicious/noConsole:: intentional console output
       console.error(`
-It looks like your version of Claude Code (${MACRO.VERSION}) needs an update.
+It looks like your version of Claude Code (${currentVersion}) needs an update.
 A newer version (${versionConfig.minVersion} or higher) is required to continue.
 
 To update, please run:
@@ -320,12 +341,17 @@ export async function getLatestVersion(
   channel: ReleaseChannel,
 ): Promise<string | null> {
   const npmTag = channel === 'stable' ? 'stable' : 'latest'
+  const packageUrl = getMacroPackageUrl()
+  if (!packageUrl) {
+    logForDebugging('Auto-updater package URL unavailable; skipping latest version check.')
+    return null
+  }
 
   // Run from home directory to avoid reading project-level .npmrc
   // which could be maliciously crafted to redirect to an attacker's registry
   const result = await execFileNoThrowWithCwd(
     'npm',
-    ['view', `${MACRO.PACKAGE_URL}@${npmTag}`, 'version', '--prefer-online'],
+    ['view', `${packageUrl}@${npmTag}`, 'version', '--prefer-online'],
     { abortSignal: AbortSignal.timeout(5000), cwd: homedir() },
   )
   if (result.code !== 0) {
@@ -353,10 +379,15 @@ export type NpmDistTags = {
  * This is used by the doctor command to show users what versions are available.
  */
 export async function getNpmDistTags(): Promise<NpmDistTags> {
+  const packageUrl = getMacroPackageUrl()
+  if (!packageUrl) {
+    logForDebugging('Auto-updater package URL unavailable; skipping dist-tags fetch.')
+    return { latest: null, stable: null }
+  }
   // Run from home directory to avoid reading project-level .npmrc
   const result = await execFileNoThrowWithCwd(
     'npm',
-    ['view', MACRO.PACKAGE_URL, 'dist-tags', '--json', '--prefer-online'],
+    ['view', packageUrl, 'dist-tags', '--json', '--prefer-online'],
     { abortSignal: AbortSignal.timeout(5000), cwd: homedir() },
   )
 
@@ -425,7 +456,13 @@ export async function getVersionHistory(limit: number): Promise<string[]> {
 
   // Use native package URL when available to ensure we only show versions
   // that have native binaries (not all JS package versions have native builds)
-  const packageUrl = MACRO.NATIVE_PACKAGE_URL ?? MACRO.PACKAGE_URL
+  const packageUrl = getMacroNativePackageUrl()
+  if (!packageUrl) {
+    logForDebugging(
+      'Auto-updater package URL unavailable; skipping version history fetch.',
+    )
+    return []
+  }
 
   // Run from home directory to avoid reading project-level .npmrc
   const result = await execFileNoThrowWithCwd(
@@ -456,6 +493,8 @@ export async function getVersionHistory(limit: number): Promise<string[]> {
 export async function installGlobalPackage(
   specificVersion?: string | null,
 ): Promise<InstallStatus> {
+  const currentVersion = getMacroVersion()
+
   if (!(await acquireLock())) {
     logError(
       new AutoUpdaterError('Another process is currently installing an update'),
@@ -464,7 +503,7 @@ export async function installGlobalPackage(
     logEvent('tengu_auto_updater_lock_contention', {
       pid: process.pid,
       currentVersion:
-        MACRO.VERSION as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+        currentVersion as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
     })
     return 'in_progress'
   }
@@ -476,7 +515,7 @@ export async function installGlobalPackage(
       logError(new Error('Windows NPM detected in WSL environment'))
       logEvent('tengu_auto_updater_windows_npm_in_wsl', {
         currentVersion:
-          MACRO.VERSION as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+          currentVersion as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
       })
       // biome-ignore lint/suspicious/noConsole:: intentional console output
       console.error(`
@@ -498,10 +537,19 @@ To fix this issue:
       return 'no_permissions'
     }
 
+    const packageUrl = getMacroPackageUrl()
+    if (!packageUrl) {
+      const error = new AutoUpdaterError(
+        'Auto-updater package URL is unavailable; cannot install.',
+      )
+      logError(error)
+      return 'install_failed'
+    }
+
     // Use specific version if provided, otherwise use latest
     const packageSpec = specificVersion
-      ? `${MACRO.PACKAGE_URL}@${specificVersion}`
-      : MACRO.PACKAGE_URL
+      ? `${packageUrl}@${specificVersion}`
+      : packageUrl
 
     // Run from home directory to avoid reading project-level .npmrc/.bunfig.toml
     // which could be maliciously crafted to redirect to an attacker's registry

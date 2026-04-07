@@ -1,4 +1,5 @@
 import * as React from 'react';
+import type { Notification } from '../context/notifications.js';
 import { Text } from '../ink.js';
 import { isClaudeAISubscriber } from '../utils/auth.js';
 import { isChromeExtensionInstalled, shouldEnableClaudeInChrome } from '../utils/claudeInChrome/setup.js';
@@ -16,7 +17,7 @@ function getChromeFlag(): boolean | undefined {
 export function useChromeExtensionNotification() {
   useStartupNotification(_temp);
 }
-async function _temp() {
+async function _temp(): Promise<Notification | null> {
   const chromeFlag = getChromeFlag();
   if (!shouldEnableClaudeInChrome(chromeFlag)) {
     return null;
