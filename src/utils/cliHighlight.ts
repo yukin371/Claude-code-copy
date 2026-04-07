@@ -50,5 +50,6 @@ export async function getLanguageName(file_path: string): Promise<string> {
   await getCliHighlightPromise()
   const ext = extname(file_path).slice(1)
   if (!ext) return 'unknown'
-  return loadedGetLanguage?.(ext)?.name ?? 'unknown'
+  const language = loadedGetLanguage?.(ext) as { name?: unknown } | undefined
+  return typeof language?.name === 'string' ? language.name : 'unknown'
 }

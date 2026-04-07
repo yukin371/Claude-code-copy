@@ -10,7 +10,7 @@ import {
   handleOAuth401Error,
   isClaudeAISubscriber,
 } from './auth.js'
-import { getClaudeCodeUserAgent } from './userAgent.js'
+import { getClaudeCodeUserAgent, getSafeMacroVersion } from './userAgent.js'
 import { getWorkload } from './workloadContext.js'
 
 // WARNING: We rely on `claude-cli` in the user agent for log filtering.
@@ -31,7 +31,7 @@ export function getUserAgent(): string {
   // so the read picks up the same setWorkload() value as getAttributionHeader.
   const workload = getWorkload()
   const workloadSuffix = workload ? `, workload/${workload}` : ''
-  return `claude-cli/${MACRO.VERSION} (${process.env.USER_TYPE}, ${process.env.CLAUDE_CODE_ENTRYPOINT ?? 'cli'}${agentSdkVersion}${clientApp}${workloadSuffix})`
+  return `claude-cli/${getSafeMacroVersion()} (${process.env.USER_TYPE}, ${process.env.CLAUDE_CODE_ENTRYPOINT ?? 'cli'}${agentSdkVersion}${clientApp}${workloadSuffix})`
 }
 
 export function getMCPUserAgent(): string {
@@ -46,7 +46,7 @@ export function getMCPUserAgent(): string {
     parts.push(`client-app/${process.env.CLAUDE_AGENT_SDK_CLIENT_APP}`)
   }
   const suffix = parts.length > 0 ? ` (${parts.join(', ')})` : ''
-  return `claude-code/${MACRO.VERSION}${suffix}`
+  return `claude-code/${getSafeMacroVersion()}${suffix}`
 }
 
 // User-Agent for WebFetch requests to arbitrary sites. `Claude-User` is

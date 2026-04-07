@@ -6,5 +6,12 @@
  */
 
 export function getClaudeCodeUserAgent(): string {
-  return `claude-code/${MACRO.VERSION}`
+  return `claude-code/${getSafeMacroVersion()}`
+}
+
+export function getSafeMacroVersion(): string {
+  if (typeof MACRO !== 'undefined' && MACRO.VERSION) {
+    return MACRO.VERSION
+  }
+  return 'unknown'
 }

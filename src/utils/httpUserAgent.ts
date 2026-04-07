@@ -1,3 +1,4 @@
+import { getSafeMacroVersion } from './userAgent.js'
 import { getWorkload } from './workloadContext.js'
 
 export function getHttpUserAgent(): string {
@@ -9,5 +10,5 @@ export function getHttpUserAgent(): string {
     : ''
   const workload = getWorkload()
   const workloadSuffix = workload ? `, workload/${workload}` : ''
-  return `claude-cli/${MACRO.VERSION} (${process.env.USER_TYPE}, ${process.env.CLAUDE_CODE_ENTRYPOINT ?? 'cli'}${agentSdkVersion}${clientApp}${workloadSuffix})`
+  return `claude-cli/${getSafeMacroVersion()} (${process.env.USER_TYPE}, ${process.env.CLAUDE_CODE_ENTRYPOINT ?? 'cli'}${agentSdkVersion}${clientApp}${workloadSuffix})`
 }
