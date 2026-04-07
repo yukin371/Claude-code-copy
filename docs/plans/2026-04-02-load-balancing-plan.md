@@ -2,6 +2,35 @@
 
 日期：2026-04-02
 
+## Status
+
+- superseded on `2026-04-07`
+- superseded by [ADR-2026-04-07-provider-routing-and-gateway-boundary.md](../decisions/ADR-2026-04-07-provider-routing-and-gateway-boundary.md)
+
+## Superseded Reason
+
+- 该计划最初假设应用内需要长期承接多 provider / 多 endpoint / 多 key 的均衡切换能力。
+- 当前长期边界已调整为：应用内保留任务级 provider/model/api 路由，权重均衡、健康检查、熔断、key 池和聚合转发下沉到外部网关。
+- 因此，本计划不再作为长期实施目标继续推进。
+
+## 仍保留的历史价值
+
+- 文档记录了过渡期兼容层为什么出现，以及当前代码里已有的 provider/endpoint 回退骨架。
+- `providerBalancer` 等现有实现可以继续作为直连模式下的临时兼容层维护，但不应再扩张为应用核心调度系统。
+
+## 不再继续推进的内容
+
+- 应用内权重均衡
+- 应用内健康检查平台化
+- 应用内熔断/恢复策略平台化
+- 应用内多 key 池治理
+
+## 后续入口
+
+- 长期边界：`docs/decisions/ADR-2026-04-07-provider-routing-and-gateway-boundary.md`
+- 当前接入指南：`docs/analysis/neko-code-provider-integration-guide.md`
+- 当前活动项：`docs/analysis/neko-code-roadmap.md`
+
 ## 目标
 
 在现有 OpenAI-compatible 兼容层之上，增加多 provider / 多 endpoint / 多 key 的均衡切换能力。

@@ -10,7 +10,7 @@
 - `src/services/api/openaiCompatibleClient.ts` 负责 OpenAI-compatible 运输层。
 - `src/utils/model/providerMetadata.ts` 负责 provider 默认 base URL 和 key 环境变量元数据。
 - `src/utils/model/model.ts` 和 `src/utils/model/agent.ts` 已开始消费 route 结果。
-- `src/utils/model/providerBalancer.ts` 负责 provider / endpoint 的健康轮换和 fallback 顺序。
+- `src/utils/model/providerBalancer.ts` 当前仍承接 provider / endpoint 的兼容性回退骨架，但长期 owner 已转向外部网关。
 
 ## 已完成
 
@@ -25,7 +25,7 @@
 - 共享元数据已经落到 `providerMetadata.ts`，后续应优先扩这里而不是再复制常量。
 - 统一主线程、subagent、frontend、review 的路由 model 解析入口。
 - 为多 provider 增加更明确的兼容测试。
-- 后续再做熔断、权重分配，以及更细粒度的兼容测试。
+- 应用内不再把熔断、权重分配做成长期主能力，后续重点改为外部网关集成与直连模式验证。
 
 ## 开发顺序
 
@@ -41,7 +41,8 @@
 
 ## 实施计划
 
-- [多 API 均衡切换计划](/E:/Github/claude-code/docs/plans/2026-04-02-load-balancing-plan.md)
+- [多 API 均衡切换计划](/E:/Github/claude-code/docs/plans/2026-04-02-load-balancing-plan.md)（已 superseded，保留为历史背景）
+- [Provider Routing And Gateway Boundary ADR](/E:/Github/claude-code/docs/decisions/ADR-2026-04-07-provider-routing-and-gateway-boundary.md)
 
 ## 约束
 

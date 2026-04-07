@@ -37,4 +37,5 @@ This module is the source of truth for task-level model and provider routing.
 
 - Main, subagent, frontend, and review routes should be configurable per user or project.
 - The router should choose the right provider and model, while the API layer handles transport translation.
-- Fallback and load balancing belong to a later layer, not to the per-call model resolver.
+- Long-term load balancing, circuit breaking, key pools, and aggregation belong to an external gateway or operational layer, not to the per-call model resolver.
+- Any in-app fallback should stay minimal, explicit, and safety-oriented.
