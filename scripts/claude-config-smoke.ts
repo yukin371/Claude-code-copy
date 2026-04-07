@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
@@ -43,6 +43,11 @@ type CapabilitySnapshot = {
   userAgentNames: string[]
   userSkillNames: string[]
   userCommandPaths: string[]
+  enabledPluginSources: string[]
+  pluginCommandNames: string[]
+  pluginSkillNames: string[]
+  pluginAgentNames: string[]
+  pluginMcpServerNames: string[]
 }
 
 type SmokeOptions = {
@@ -275,14 +280,64 @@ function getTargetGlobalConfigPath(configDir: string): string {
 function writeMergedGlobalConfig(
   targetGlobalConfigPath: string,
   legacyConfig: Record<string, unknown>,
-): void {
+): boolean {
   const { migrationVersion: _ignoredMigrationVersion, ...rest } = legacyConfig
+  const currentConfig =
+    existsSync(targetGlobalConfigPath)
+      ? (JSON.parse(readFileSync(targetGlobalConfigPath, 'utf8')) as Record<
+          string,
+          unknown
+        >)
+      : {}
+  const mergedConfig: Record<string, unknown> = { ...currentConfig }
+  let changed = false
+
+  for (const [key, value] of Object.entries(rest)) {
+    if (key === 'mcpServers' && value && typeof value === 'object' && !Array.isArray(value)) {
+      const currentServers =
+        currentConfig.mcpServers &&
+        typeof currentConfig.mcpServers === 'object' &&
+        !Array.isArray(currentConfig.mcpServers)
+          ? (currentConfig.mcpServers as Record<string, unknown>)
+          : undefined
+      const legacyServers = value as Record<string, unknown>
+
+      if (!currentServers) {
+        mergedConfig.mcpServers = { ...legacyServers }
+        changed = true
+        continue
+      }
+
+      const missingEntries = Object.entries(legacyServers).filter(
+        ([serverName]) => currentServers[serverName] === undefined,
+      )
+      if (missingEntries.length > 0) {
+        mergedConfig.mcpServers = {
+          ...legacyServers,
+          ...currentServers,
+        }
+        changed = true
+      }
+      continue
+    }
+
+    if (mergedConfig[key] === undefined) {
+      mergedConfig[key] = value
+      changed = true
+    }
+  }
+
+  if (!changed) {
+    return false
+  }
+
   mkdirSync(dirname(targetGlobalConfigPath), { recursive: true })
   writeFileSync(
     targetGlobalConfigPath,
-    `${JSON.stringify(rest, null, 2)}\n`,
+    `${JSON.stringify(mergedConfig, null, 2)}\n`,
     'utf8',
   )
+  return true
 }
 
 async function inspectMigratedCapabilities(
@@ -302,17 +357,37 @@ async function inspectMigratedCapabilities(
       { getAgentDefinitionsWithOverrides },
       { getSkillDirCommands },
       { loadMarkdownFilesForSubdir },
+      { loadAllPluginsCacheOnly },
+      { getPluginCommands, getPluginSkills },
+      { loadPluginAgents },
     ] = await Promise.all([
       import('../src/tools/AgentTool/loadAgentsDir.js'),
       import('../src/skills/loadSkillsDir.js'),
       import('../src/utils/markdownConfigLoader.js'),
+      import('../src/utils/plugins/pluginLoader.js'),
+      import('../src/utils/plugins/loadPluginCommands.js'),
+      import('../src/utils/plugins/loadPluginAgents.js'),
     ])
 
-    const [agentsResult, skills, commands] = await Promise.all([
+    const [agentsResult, skills, commands, plugins, pluginCommands, pluginSkills, pluginAgents] = await Promise.all([
       getAgentDefinitionsWithOverrides(environment.workspaceDir),
       getSkillDirCommands(environment.workspaceDir),
       loadMarkdownFilesForSubdir('commands', environment.workspaceDir),
+      loadAllPluginsCacheOnly(),
+      getPluginCommands(),
+      getPluginSkills(),
+      loadPluginAgents(),
     ])
+
+    const pluginMcpServerNames = new Set<string>()
+    for (const plugin of plugins.enabled) {
+      if (!plugin.mcpServers) {
+        continue
+      }
+      for (const serverName of Object.keys(plugin.mcpServers)) {
+        pluginMcpServerNames.add(serverName)
+      }
+    }
 
     return {
       userAgentNames: agentsResult.allAgents
@@ -327,6 +402,21 @@ async function inspectMigratedCapabilities(
         .filter(file => file.source === 'userSettings')
         .map(file => relative(environment.configDir, file.filePath))
         .sort((left, right) => left.localeCompare(right)),
+      enabledPluginSources: plugins.enabled
+        .map(plugin => plugin.source || plugin.name)
+        .sort((left, right) => left.localeCompare(right)),
+      pluginCommandNames: pluginCommands
+        .map(command => command.name)
+        .sort((left, right) => left.localeCompare(right)),
+      pluginSkillNames: pluginSkills
+        .map(command => command.name)
+        .sort((left, right) => left.localeCompare(right)),
+      pluginAgentNames: pluginAgents
+        .map(agent => agent.agentType)
+        .sort((left, right) => left.localeCompare(right)),
+      pluginMcpServerNames: [...pluginMcpServerNames].sort((left, right) =>
+        left.localeCompare(right),
+      ),
     }
   } finally {
     for (const key of trackedEnvVars) {
@@ -474,7 +564,7 @@ try {
     targetPluginsDir: environment.pluginCacheDir,
     targetGlobalConfigPath,
     mergeGlobalConfig: legacyConfig => {
-      writeMergedGlobalConfig(targetGlobalConfigPath, legacyConfig)
+      return writeMergedGlobalConfig(targetGlobalConfigPath, legacyConfig)
     },
   })
 
@@ -511,6 +601,21 @@ try {
   )
   console.log(
     `Loaded user commands: ${capabilitySnapshot.userCommandPaths.length} (${formatListPreview(capabilitySnapshot.userCommandPaths)})`,
+  )
+  console.log(
+    `Enabled plugins: ${capabilitySnapshot.enabledPluginSources.length} (${formatListPreview(capabilitySnapshot.enabledPluginSources)})`,
+  )
+  console.log(
+    `Loaded plugin commands: ${capabilitySnapshot.pluginCommandNames.length} (${formatListPreview(capabilitySnapshot.pluginCommandNames)})`,
+  )
+  console.log(
+    `Loaded plugin skills: ${capabilitySnapshot.pluginSkillNames.length} (${formatListPreview(capabilitySnapshot.pluginSkillNames)})`,
+  )
+  console.log(
+    `Loaded plugin agents: ${capabilitySnapshot.pluginAgentNames.length} (${formatListPreview(capabilitySnapshot.pluginAgentNames)})`,
+  )
+  console.log(
+    `Loaded plugin MCP servers: ${capabilitySnapshot.pluginMcpServerNames.length} (${formatListPreview(capabilitySnapshot.pluginMcpServerNames)})`,
   )
   console.log('')
 

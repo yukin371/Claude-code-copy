@@ -31,7 +31,7 @@ type ClaudeConfigMigrationOptions = {
   targetDir: string
   targetPluginsDir?: string
   targetGlobalConfigPath: string
-  mergeGlobalConfig?: (legacyConfig: LegacyGlobalConfig) => void
+  mergeGlobalConfig?: (legacyConfig: LegacyGlobalConfig) => boolean
 }
 
 const LEGACY_CONFIG_FILENAMES = [
@@ -86,10 +86,16 @@ export function migrateClaudeConfigToNekoHome(): void {
       targetGlobalConfigPath: getGlobalClaudeFile(),
       mergeGlobalConfig: legacyConfig => {
         const { migrationVersion: _, ...legacyConfigWithoutMigration } = legacyConfig
-        saveGlobalConfig(current => ({
-          ...current,
-          ...legacyConfigWithoutMigration,
-        }))
+        let didMerge = false
+        saveGlobalConfig(current => {
+          const { mergedConfig, changed } = mergeLegacyGlobalConfigRecords(
+            current as Record<string, unknown>,
+            legacyConfigWithoutMigration,
+          )
+          didMerge = changed
+          return changed ? (mergedConfig as typeof current) : current
+        })
+        return didMerge
       },
     })
 
@@ -129,14 +135,10 @@ export function migrateClaudeConfigDirectory({
     return result
   }
 
-  if (
-    !fs.existsSync(targetGlobalConfigPath) &&
-    typeof mergeGlobalConfig === 'function'
-  ) {
+  if (typeof mergeGlobalConfig === 'function') {
     const legacyGlobalConfig = readLegacyGlobalConfig(fs, sourceDir)
     if (legacyGlobalConfig) {
-      mergeGlobalConfig(legacyGlobalConfig)
-      result.mergedGlobalConfig = true
+      result.mergedGlobalConfig = mergeGlobalConfig(legacyGlobalConfig)
     }
   }
 
@@ -225,10 +227,11 @@ function migrateLegacyPluginState(
       'installed_plugins.json',
     )
     if (
-      writeJsonFileIfMissing(
+      writeOrMergePluginStateFile(
         fs,
         installedPluginsTargetPath,
         installedPluginsMigration.file,
+        mergeInstalledPluginsFiles,
       )
     ) {
       copiedFiles.push(pluginResultPath('installed_plugins.json'))
@@ -253,10 +256,11 @@ function migrateLegacyPluginState(
       'known_marketplaces.json',
     )
     if (
-      writeJsonFileIfMissing(
+      writeOrMergePluginStateFile(
         fs,
         knownMarketplacesTargetPath,
         knownMarketplacesMigration.file,
+        mergeKnownMarketplaceFiles,
       )
     ) {
       copiedFiles.push(pluginResultPath('known_marketplaces.json'))
@@ -414,6 +418,56 @@ function rewriteInstalledPluginEntry(
   }
 }
 
+function mergeLegacyGlobalConfigRecords(
+  currentConfig: Record<string, unknown>,
+  legacyConfig: LegacyGlobalConfig,
+): { mergedConfig: Record<string, unknown>; changed: boolean } {
+  let changed = false
+  const mergedConfig: Record<string, unknown> = { ...currentConfig }
+
+  for (const [key, value] of Object.entries(legacyConfig)) {
+    if (key === 'migrationVersion') {
+      continue
+    }
+
+    if (key === 'mcpServers') {
+      const legacyServers = asRecord(value)
+      if (!legacyServers) {
+        continue
+      }
+
+      const currentServers = asRecord(mergedConfig.mcpServers)
+      if (!currentServers) {
+        mergedConfig.mcpServers = { ...legacyServers }
+        changed = true
+        continue
+      }
+
+      const missingServerEntries = Object.entries(legacyServers).filter(
+        ([serverName]) => currentServers[serverName] === undefined,
+      )
+      if (missingServerEntries.length > 0) {
+        mergedConfig.mcpServers = {
+          ...legacyServers,
+          ...currentServers,
+        }
+        changed = true
+      }
+      continue
+    }
+
+    if (mergedConfig[key] === undefined) {
+      mergedConfig[key] = value
+      changed = true
+    }
+  }
+
+  return {
+    mergedConfig: changed ? mergedConfig : currentConfig,
+    changed,
+  }
+}
+
 function readLegacyKnownMarketplacesMigration(
   fs: FsOperations,
   sourcePluginsDir: string,
@@ -534,17 +588,33 @@ function resolveLegacyPluginPath(sourcePluginsDir: string, legacyPath: string): 
   return isAbsolute(legacyPath) ? legacyPath : join(sourcePluginsDir, legacyPath)
 }
 
-function writeJsonFileIfMissing(
+function writeOrMergePluginStateFile(
   fs: FsOperations,
   targetPath: string,
   value: Record<string, unknown>,
+  mergeRecords: (
+    currentValue: Record<string, unknown>,
+    legacyValue: Record<string, unknown>,
+  ) => { mergedValue: Record<string, unknown>; changed: boolean },
 ): boolean {
-  if (fs.existsSync(targetPath)) {
+  if (!fs.existsSync(targetPath)) {
+    fs.mkdirSync(dirname(targetPath))
+    writeFileSync(targetPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
+    return true
+  }
+
+  const currentValue = readJsonObject(fs, targetPath)
+  if (!currentValue) {
+    return false
+  }
+
+  const { mergedValue, changed } = mergeRecords(currentValue, value)
+  if (!changed) {
     return false
   }
 
   fs.mkdirSync(dirname(targetPath))
-  writeFileSync(targetPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
+  writeFileSync(targetPath, `${JSON.stringify(mergedValue, null, 2)}\n`, 'utf8')
   return true
 }
 
@@ -571,6 +641,93 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
     return value as Record<string, unknown>
   }
   return undefined
+}
+
+function mergeInstalledPluginsFiles(
+  currentValue: Record<string, unknown>,
+  legacyValue: Record<string, unknown>,
+): { mergedValue: Record<string, unknown>; changed: boolean } {
+  const currentPlugins = asRecord(currentValue.plugins)
+  const legacyPlugins = asRecord(legacyValue.plugins)
+  if (!currentPlugins || !legacyPlugins) {
+    return { mergedValue: currentValue, changed: false }
+  }
+
+  let changed = false
+  const mergedPlugins: Record<string, unknown> = { ...currentPlugins }
+
+  for (const [pluginId, legacyInstallations] of Object.entries(legacyPlugins)) {
+    const currentInstallations = mergedPlugins[pluginId]
+    if (currentInstallations === undefined) {
+      mergedPlugins[pluginId] = legacyInstallations
+      changed = true
+      continue
+    }
+
+    if (!Array.isArray(currentInstallations) || !Array.isArray(legacyInstallations)) {
+      continue
+    }
+
+    const existingKeys = new Set(
+      currentInstallations.map(installation =>
+        getPluginInstallationKey(asRecord(installation)),
+      ),
+    )
+    const missingInstallations = legacyInstallations.filter(installation => {
+      const key = getPluginInstallationKey(asRecord(installation))
+      return key !== undefined && !existingKeys.has(key)
+    })
+
+    if (missingInstallations.length > 0) {
+      mergedPlugins[pluginId] = [...currentInstallations, ...missingInstallations]
+      changed = true
+    }
+  }
+
+  return {
+    mergedValue: changed
+      ? {
+          ...currentValue,
+          plugins: mergedPlugins,
+        }
+      : currentValue,
+    changed,
+  }
+}
+
+function mergeKnownMarketplaceFiles(
+  currentValue: Record<string, unknown>,
+  legacyValue: Record<string, unknown>,
+): { mergedValue: Record<string, unknown>; changed: boolean } {
+  let changed = false
+  const mergedValue: Record<string, unknown> = { ...currentValue }
+
+  for (const [name, legacyEntry] of Object.entries(legacyValue)) {
+    if (mergedValue[name] === undefined) {
+      mergedValue[name] = legacyEntry
+      changed = true
+    }
+  }
+
+  return {
+    mergedValue: changed ? mergedValue : currentValue,
+    changed,
+  }
+}
+
+function getPluginInstallationKey(
+  installation: Record<string, unknown> | undefined,
+): string | undefined {
+  if (!installation) {
+    return undefined
+  }
+
+  return JSON.stringify({
+    scope: installation.scope,
+    projectPath: installation.projectPath,
+    installPath: installation.installPath,
+    version: installation.version,
+  })
 }
 
 function dedupePathMappings(paths: LegacyPathMapping[]): LegacyPathMapping[] {

@@ -67,6 +67,7 @@ describe('migrateClaudeConfigDirectory', () => {
       targetGlobalConfigPath: join(targetDir, '.neko-code.json'),
       mergeGlobalConfig: legacyConfig => {
         mergedConfigs.push(legacyConfig)
+        return true
       },
     })
 
@@ -120,7 +121,6 @@ describe('migrateClaudeConfigDirectory', () => {
     const sourceDir = createTempDir('claude-legacy-')
     const targetDir = createTempDir('neko-home-')
     const targetPluginsDir = join(targetDir, 'plugin-cache')
-    let mergeCalls = 0
 
     writeJson(join(sourceDir, '.config.json'), {
       theme: 'light',
@@ -210,12 +210,11 @@ describe('migrateClaudeConfigDirectory', () => {
       targetPluginsDir,
       targetGlobalConfigPath: join(targetDir, '.neko-code.json'),
       mergeGlobalConfig: () => {
-        mergeCalls += 1
+        return false
       },
     })
 
     expect(result.mergedGlobalConfig).toBe(false)
-    expect(mergeCalls).toBe(0)
     expect(readFileSync(join(targetDir, 'settings.json'), 'utf-8')).toContain(
       'current-key',
     )
@@ -234,19 +233,20 @@ describe('migrateClaudeConfigDirectory', () => {
     expect(readFileSync(join(targetDir, 'rules', 'new.md'), 'utf-8')).toBe(
       'new rule',
     )
+    const mergedInstalledPlugins = JSON.parse(
+      readFileSync(join(targetPluginsDir, 'installed_plugins.json'), 'utf-8'),
+    )
     expect(
-      JSON.parse(
-        readFileSync(join(targetPluginsDir, 'installed_plugins.json'), 'utf-8'),
-      ).plugins['playwright@claude-plugins-official'][0].version,
-    ).toBe('9.9.9')
+      mergedInstalledPlugins.plugins['playwright@claude-plugins-official'].map(
+        (entry: { version: string }) => entry.version,
+      ),
+    ).toEqual(['9.9.9', '1.48.0'])
     expect(
       JSON.parse(
         readFileSync(join(targetPluginsDir, 'known_marketplaces.json'), 'utf-8'),
       )['claude-plugins-official'].installLocation,
     ).toBe(join(targetPluginsDir, 'marketplaces', 'current-marketplace.json'))
-    expect(result.copiedFiles).not.toContain(
-      join('plugins', 'installed_plugins.json'),
-    )
+    expect(result.copiedFiles).toContain(join('plugins', 'installed_plugins.json'))
     expect(result.copiedFiles).not.toContain(
       join('plugins', 'known_marketplaces.json'),
     )
@@ -346,6 +346,7 @@ describe('migrateClaudeConfigDirectory', () => {
       targetGlobalConfigPath: join(targetDir, '.neko-code.json'),
       mergeGlobalConfig: legacyConfig => {
         mergedConfigs.push(legacyConfig)
+        return true
       },
     })
 
@@ -409,6 +410,191 @@ describe('migrateClaudeConfigDirectory', () => {
     expect(readFileSync(join(targetPluginsDir, 'blocklist.json'), 'utf-8')).toBe(
       '{"blocked":[]}',
     )
+    expect(result.copiedFiles).toContain(join('plugins', 'installed_plugins.json'))
+    expect(result.copiedFiles).toContain(join('plugins', 'known_marketplaces.json'))
+  })
+
+  test('backfills missing mcp servers and plugin entries into existing Neko state', async () => {
+    const { migrateClaudeConfigDirectory } = await import(
+      './migrateClaudeConfigToNekoHome.js'
+    )
+    const sourceDir = createTempDir('claude-legacy-')
+    const targetDir = createTempDir('neko-home-')
+    const targetPluginsDir = join(targetDir, 'plugin-cache')
+
+    let currentGlobalConfig: Record<string, unknown> = {
+      theme: 'dark',
+    }
+
+    writeJson(join(sourceDir, '.config.json'), {
+      theme: 'light',
+    })
+    writeJson(join(sourceDir, 'mcp_config.json'), {
+      servers: {
+        serena: {
+          command: 'uv',
+          args: ['run', '--directory', 'C:\\Users\\yukin\\serena', 'serena-mcp-server'],
+          env: {},
+        },
+      },
+    })
+    writeJson(join(sourceDir, 'plugins', 'installed_plugins.json'), {
+      version: 2,
+      plugins: {
+        'superpowers@superpowers-marketplace': [
+          {
+            scope: 'user',
+            version: '4.0.3',
+            installPath: join(
+              sourceDir,
+              'plugins',
+              'cache',
+              'superpowers-marketplace',
+              'superpowers',
+              '4.0.3',
+            ),
+          },
+        ],
+      },
+    })
+    writeJson(join(sourceDir, 'plugins', 'known_marketplaces.json'), {
+      'superpowers-marketplace': {
+        source: { source: 'github', repo: 'siteboon/claude-superpowers' },
+        installLocation: join(
+          sourceDir,
+          'plugins',
+          'marketplaces',
+          'superpowers-marketplace',
+        ),
+        lastUpdated: '2026-04-08T00:00:00.000Z',
+      },
+    })
+    writeText(
+      join(
+        sourceDir,
+        'plugins',
+        'cache',
+        'superpowers-marketplace',
+        'superpowers',
+        '4.0.3',
+        '.claude-plugin',
+        'plugin.json',
+      ),
+      '{"name":"superpowers"}',
+    )
+    writeText(
+      join(
+        sourceDir,
+        'plugins',
+        'marketplaces',
+        'superpowers-marketplace',
+        '.claude-plugin',
+        'marketplace.json',
+      ),
+      '{"plugins":[]}',
+    )
+
+    writeJson(join(targetDir, '.neko-code.json'), currentGlobalConfig)
+    writeJson(join(targetPluginsDir, 'installed_plugins.json'), {
+      version: 2,
+      plugins: {
+        'playwright@claude-plugins-official': [
+          {
+            scope: 'user',
+            version: '1.48.0',
+            installPath: join(
+              targetPluginsDir,
+              'cache',
+              'claude-plugins-official',
+              'playwright',
+              '1.48.0',
+            ),
+          },
+        ],
+      },
+    })
+    writeJson(join(targetPluginsDir, 'known_marketplaces.json'), {
+      'claude-plugins-official': {
+        source: { source: 'github', repo: 'anthropic/claude-plugins' },
+        installLocation: join(
+          targetPluginsDir,
+          'marketplaces',
+          'claude-plugins-official',
+        ),
+        lastUpdated: '2026-04-08T00:00:00.000Z',
+      },
+    })
+
+    const result = migrateClaudeConfigDirectory({
+      sourceDir,
+      targetDir,
+      targetPluginsDir,
+      targetGlobalConfigPath: join(targetDir, '.neko-code.json'),
+      mergeGlobalConfig: legacyConfig => {
+        const mergedConfig = { ...currentGlobalConfig }
+        let changed = false
+
+        if (mergedConfig.mcpServers === undefined && legacyConfig.mcpServers) {
+          mergedConfig.mcpServers = legacyConfig.mcpServers
+          changed = true
+        }
+
+        currentGlobalConfig = changed ? mergedConfig : currentGlobalConfig
+        return changed
+      },
+    })
+
+    expect(result.mergedGlobalConfig).toBe(true)
+    expect(currentGlobalConfig.theme).toBe('dark')
+    expect(
+      (currentGlobalConfig.mcpServers as Record<string, { command: string }>).serena
+        .command,
+    ).toBe('uv')
+
+    const installedPlugins = JSON.parse(
+      readFileSync(join(targetPluginsDir, 'installed_plugins.json'), 'utf-8'),
+    )
+    expect(Object.keys(installedPlugins.plugins).sort()).toEqual([
+      'playwright@claude-plugins-official',
+      'superpowers@superpowers-marketplace',
+    ])
+    expect(
+      installedPlugins.plugins['superpowers@superpowers-marketplace'][0]
+        .installPath,
+    ).toBe(
+      join(
+        targetPluginsDir,
+        'cache',
+        'superpowers-marketplace',
+        'superpowers',
+        '4.0.3',
+      ),
+    )
+
+    const knownMarketplaces = JSON.parse(
+      readFileSync(join(targetPluginsDir, 'known_marketplaces.json'), 'utf-8'),
+    )
+    expect(Object.keys(knownMarketplaces).sort()).toEqual([
+      'claude-plugins-official',
+      'superpowers-marketplace',
+    ])
+    expect(
+      knownMarketplaces['superpowers-marketplace'].installLocation,
+    ).toBe(join(targetPluginsDir, 'marketplaces', 'superpowers-marketplace'))
+    expect(
+      readFileSync(
+        join(
+          targetPluginsDir,
+          'cache',
+          'superpowers-marketplace',
+          'superpowers',
+          '4.0.3',
+          '.claude-plugin',
+          'plugin.json',
+        ),
+        'utf-8',
+      ),
+    ).toContain('superpowers')
     expect(result.copiedFiles).toContain(join('plugins', 'installed_plugins.json'))
     expect(result.copiedFiles).toContain(join('plugins', 'known_marketplaces.json'))
   })
