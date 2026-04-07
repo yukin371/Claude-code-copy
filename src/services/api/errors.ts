@@ -104,7 +104,10 @@ export function parsePromptTooLongTokenCounts(rawMessage: string): {
 export function getPromptTooLongTokenGap(
   msg: AssistantMessage,
 ): number | undefined {
-  if (!isPromptTooLongMessage(msg) || !msg.errorDetails) {
+  if (
+    !isPromptTooLongMessage(msg) ||
+    typeof msg.errorDetails !== 'string'
+  ) {
     return undefined
   }
   const { actualTokens, limitTokens } = parsePromptTooLongTokenCounts(
@@ -147,7 +150,7 @@ export function isMediaSizeError(raw: string): boolean {
 export function isMediaSizeErrorMessage(msg: AssistantMessage): boolean {
   return (
     msg.isApiErrorMessage === true &&
-    msg.errorDetails !== undefined &&
+    typeof msg.errorDetails === 'string' &&
     isMediaSizeError(msg.errorDetails)
   )
 }
@@ -1167,18 +1170,18 @@ export function categorizeRetryableAPIError(
     error.status === 529 ||
     error.message?.includes('"type":"overloaded_error"')
   ) {
-    return 'rate_limit'
+    return { type: 'rate_limit' }
   }
   if (error.status === 429) {
-    return 'rate_limit'
+    return { type: 'rate_limit' }
   }
   if (error.status === 401 || error.status === 403) {
-    return 'authentication_failed'
+    return { type: 'authentication_failed' }
   }
   if (error.status !== undefined && error.status >= 408) {
-    return 'server_error'
+    return { type: 'server_error' }
   }
-  return 'unknown'
+  return { type: 'unknown' }
 }
 
 export function getErrorMessageIfRefusal(
