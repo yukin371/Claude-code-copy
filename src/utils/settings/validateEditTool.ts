@@ -2,6 +2,17 @@ import type { ValidationResult } from 'src/Tool.js'
 import { isClaudeSettingsPath } from '../permissions/filesystem.js'
 import { validateSettingsFileContent } from './validation.js'
 
+type InvalidSettingsValidation = Extract<
+  ReturnType<typeof validateSettingsFileContent>,
+  { isValid: false }
+>
+
+function isInvalidSettingsValidation(
+  result: ReturnType<typeof validateSettingsFileContent>,
+): result is InvalidSettingsValidation {
+  return result.isValid === false
+}
+
 /**
  * Validates settings file edits to ensure the result conforms to SettingsSchema.
  * This is used by FileEditTool to avoid code duplication.
@@ -33,7 +44,7 @@ export function validateInputForSettingsFileEdit(
   const updatedContent = getUpdatedContent()
   const afterValidation = validateSettingsFileContent(updatedContent)
 
-  if (!afterValidation.isValid) {
+  if (isInvalidSettingsValidation(afterValidation)) {
     return {
       result: false,
       message: `Claude Code settings.json validation failed after edit:\n${afterValidation.error}\n\nFull schema:\n${afterValidation.fullSchema}\nIMPORTANT: Do not update the env unless explicitly instructed to do so.`,

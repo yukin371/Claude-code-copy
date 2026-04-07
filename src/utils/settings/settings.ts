@@ -56,6 +56,8 @@ import {
   resolveProjectSettingsFilePath,
 } from './settingsPathResolution.js'
 
+export { getRelativeSettingsFilePathForSource } from './settingsPathResolution.js'
+
 /**
  * Get the path to the managed settings file based on the current platform
  */
