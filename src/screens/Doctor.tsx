@@ -54,7 +54,36 @@ type VersionLockInfo = {
   locksDir: string;
   staleLocksCleaned: number;
 };
-function DistTagsDisplay(t0) {
+type RouteDebugFieldSummary = {
+  value?: unknown;
+  source?: unknown;
+};
+function formatRouteDebugFieldSummary(fieldName: string, field: RouteDebugFieldSummary, options?: {
+  maskValue?: boolean;
+}) {
+  const source = typeof field.source === "string" ? field.source : "unknown";
+  const {
+    maskValue = false
+  } = options || {};
+  let value = "unset";
+  if (maskValue) {
+    value = field.value ? "[masked]" : "unset";
+  } else if (typeof field.value === "string") {
+    value = field.value.length > 0 ? field.value : "unset";
+  } else if (field.value !== undefined && field.value !== null) {
+    value = String(field.value);
+  }
+  return `${fieldName}=${value} (${source})`;
+}
+function getMainRouteSummary(snapshot: DiagnosticInfo["currentTaskRouteSnapshot"] | null | undefined): string | null {
+  if (!snapshot) {
+    return null;
+  }
+  return [`route=${snapshot.route}`, formatRouteDebugFieldSummary("provider", snapshot.fields.provider), formatRouteDebugFieldSummary("apiStyle", snapshot.fields.apiStyle), formatRouteDebugFieldSummary("model", snapshot.fields.model), formatRouteDebugFieldSummary("baseUrl", snapshot.fields.baseUrl), formatRouteDebugFieldSummary("apiKey", snapshot.fields.apiKey, {
+    maskValue: true
+  })].join(" | ");
+}
+function DistTagsDisplay(t0: { promise: Promise<NpmDistTags> }) {
   const $ = _c(8);
   const {
     promise
@@ -322,6 +351,7 @@ export function Doctor(t0) {
   } else {
     t18 = $[31];
   }
+  const t18a = getMainRouteSummary(diagnostic.currentTaskRouteSnapshot);
   let t19;
   if ($[32] !== diagnostic.recommendation) {
     t19 = diagnostic.recommendation && <><Text /><Text color="warning">Recommendation: {diagnostic.recommendation.split("\n")[0]}</Text><Text dimColor={true}>{diagnostic.recommendation.split("\n")[1]}</Text></>;
@@ -356,7 +386,7 @@ export function Doctor(t0) {
   }
   let t23;
   if ($[40] !== t11 || $[41] !== t12 || $[42] !== t13 || $[43] !== t14 || $[44] !== t15 || $[45] !== t18 || $[46] !== t19 || $[47] !== t20 || $[48] !== t21 || $[49] !== t22) {
-    t23 = <Box flexDirection="column">{t10}{t11}{t12}{t13}{t14}{t15}{t18}{t19}{t20}{t21}{t22}</Box>;
+    t23 = <Box flexDirection="column">{t10}{t11}{t12}{t13}{t14}{t15}{t18}{t18a && <Text>└ Main route: {t18a}</Text>}{t19}{t20}{t21}{t22}</Box>;
     $[40] = t11;
     $[41] = t12;
     $[42] = t13;

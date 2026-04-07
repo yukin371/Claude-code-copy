@@ -101,16 +101,37 @@ const useVoiceIntegration: typeof import('../hooks/useVoiceIntegration.js').useV
   resetAnchor: () => {}
 });
 const VoiceKeybindingHandler: typeof import('../hooks/useVoiceIntegration.js').VoiceKeybindingHandler = feature('VOICE_MODE') ? require('../hooks/useVoiceIntegration.js').VoiceKeybindingHandler : () => null;
+type FrustrationDetectionState = {
+  state: 'closed' | 'open' | 'thanks' | 'transcript_prompt' | 'submitting' | 'submitted';
+  handleTranscriptSelect: (selected: string) => void;
+};
+type UseFrustrationDetection = (...args: readonly unknown[]) => FrustrationDetectionState;
+type UseAntOrgWarningNotification = () => void;
 // Frustration detection is ant-only (dogfooding). Conditional require so external
 // builds eliminate the module entirely (including its two O(n) useMemos that run
 // on every messages change, plus the GrowthBook fetch).
-const useFrustrationDetection: typeof import('../components/FeedbackSurvey/useFrustrationDetection.js').useFrustrationDetection = "external" === 'ant' ? require('../components/FeedbackSurvey/useFrustrationDetection.js').useFrustrationDetection : () => ({
+const useFrustrationDetection: UseFrustrationDetection = process.env.USER_TYPE === 'ant' ? (() => {
+  try {
+    return require('../components/FeedbackSurvey/useFrustrationDetection.js').useFrustrationDetection as UseFrustrationDetection;
+  } catch {
+    return () => ({
+      state: 'closed',
+      handleTranscriptSelect: () => {}
+    });
+  }
+})() : () => ({
   state: 'closed',
   handleTranscriptSelect: () => {}
 });
 // Ant-only org warning. Conditional require so the org UUID list is
 // eliminated from external builds (one UUID is on excluded-strings).
-const useAntOrgWarningNotification: typeof import('../hooks/notifs/useAntOrgWarningNotification.js').useAntOrgWarningNotification = "external" === 'ant' ? require('../hooks/notifs/useAntOrgWarningNotification.js').useAntOrgWarningNotification : () => {};
+const useAntOrgWarningNotification: UseAntOrgWarningNotification = process.env.USER_TYPE === 'ant' ? (() => {
+  try {
+    return require('../hooks/notifs/useAntOrgWarningNotification.js').useAntOrgWarningNotification as UseAntOrgWarningNotification;
+  } catch {
+    return () => {};
+  }
+})() : () => {};
 // Dead code elimination: conditional import for coordinator mode
 const getCoordinatorUserContext: (mcpClients: ReadonlyArray<{
   name: string;
@@ -218,9 +239,9 @@ import { EffortCallout, shouldShowEffortCallout } from '../components/EffortCall
 import type { EffortValue } from '../utils/effort.js';
 import { RemoteCallout } from '../components/RemoteCallout.js';
 /* eslint-disable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
-const AntModelSwitchCallout = "external" === 'ant' ? require('../components/AntModelSwitchCallout.js').AntModelSwitchCallout : null;
-const shouldShowAntModelSwitch = "external" === 'ant' ? require('../components/AntModelSwitchCallout.js').shouldShowModelSwitchCallout : (): boolean => false;
-const UndercoverAutoCallout = "external" === 'ant' ? require('../components/UndercoverAutoCallout.js').UndercoverAutoCallout : null;
+const AntModelSwitchCallout = process.env.USER_TYPE === 'ant' ? require('../components/AntModelSwitchCallout.js').AntModelSwitchCallout : null;
+const shouldShowAntModelSwitch = process.env.USER_TYPE === 'ant' ? require('../components/AntModelSwitchCallout.js').shouldShowModelSwitchCallout : (): boolean => false;
+const UndercoverAutoCallout = process.env.USER_TYPE === 'ant' ? require('../components/UndercoverAutoCallout.js').UndercoverAutoCallout : null;
 /* eslint-enable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
 import { activityManager } from '../utils/activityManager.js';
 import { createAbortController } from '../utils/abortController.js';
@@ -268,7 +289,7 @@ import { useFastModeNotification } from 'src/hooks/notifs/useFastModeNotificatio
 import { AutoRunIssueNotification, shouldAutoRunIssue, getAutoRunIssueReasonText, getAutoRunCommand, type AutoRunIssueReason } from '../utils/autoRunIssue.js';
 import type { HookProgress } from '../types/hooks.js';
 /* eslint-disable @typescript-eslint/no-require-imports */
-const TungstenLiveMonitor: typeof import('../tools/TungstenTool/TungstenLiveMonitor.js').TungstenLiveMonitor = "external" === 'ant' ? (() => {
+const TungstenLiveMonitor: typeof import('../tools/TungstenTool/TungstenLiveMonitor.js').TungstenLiveMonitor = process.env.USER_TYPE === 'ant' ? (() => {
   try {
     return require('../tools/TungstenTool/TungstenLiveMonitor.js').TungstenLiveMonitor;
   } catch {
@@ -277,7 +298,18 @@ const TungstenLiveMonitor: typeof import('../tools/TungstenTool/TungstenLiveMoni
 })() : () => null;
 /* eslint-enable @typescript-eslint/no-require-imports */
 /* eslint-disable @typescript-eslint/no-require-imports */
-const WebBrowserPanelModule = feature('WEB_BROWSER_TOOL') ? require('../tools/WebBrowserTool/WebBrowserPanel.js') as typeof import('../tools/WebBrowserTool/WebBrowserPanel.js') : null;
+type WebBrowserPanelModuleShape = {
+  WebBrowserPanel: () => null;
+};
+const WebBrowserPanelModule: WebBrowserPanelModuleShape | null = feature('WEB_BROWSER_TOOL') ? (() => {
+  try {
+    return require('../tools/WebBrowserTool/WebBrowserPanel.js') as WebBrowserPanelModuleShape;
+  } catch {
+    return {
+      WebBrowserPanel: () => null
+    };
+  }
+})() : null;
 /* eslint-enable @typescript-eslint/no-require-imports */
 import { IssueFlagBanner } from '../components/PromptInput/IssueFlagBanner.js';
 import { useIssueFlagBanner } from '../hooks/useIssueFlagBanner.js';
@@ -295,10 +327,29 @@ import { useMessageActions, MessageActionsKeybindings, MessageActionsBar, type M
 import { setClipboard } from '../ink/termio/osc.js';
 import type { ScrollBoxHandle } from '../ink/components/ScrollBox.js';
 import { createAttachmentMessage, getQueuedCommandAttachments } from '../utils/attachments.js';
+import { launchUltraplan } from '../commands/ultraplan.js';
 
 // Stable empty array for hooks that accept MCPServerConnection[] — avoids
 // creating a new [] literal on every render in remote mode, which would
 // cause useEffect dependency changes and infinite re-render loops.
+const fireCompanionObserver = async (_messages: readonly MessageType[], _setReaction: (reaction: string | undefined) => void): Promise<void> => {};
+type UltraplanChoiceDialogProps = {
+  plan: string;
+  sessionId: string;
+  taskId: string;
+  setMessages: React.Dispatch<React.SetStateAction<MessageType[]>>;
+  readFileState: unknown;
+  getAppState: () => unknown;
+  setConversationId: React.Dispatch<React.SetStateAction<string>>;
+};
+const UltraplanChoiceDialog = (_props: UltraplanChoiceDialogProps): null => null;
+type UltraplanLaunchDialogProps = {
+  onChoice: (choice: string, opts?: {
+    disconnectedBridge?: boolean;
+  }) => void;
+};
+const UltraplanLaunchDialog = (_props: UltraplanLaunchDialogProps): null => null;
+
 const EMPTY_MCP_CLIENTS: MCPServerConnection[] = [];
 
 // Stable stub for useAssistantHistory's non-KAIROS branch — avoids a new
@@ -609,7 +660,7 @@ export function REPL({
   // Env-var gates hoisted to mount-time — isEnvTruthy does toLowerCase+trim+
   // includes, and these were on the render path (hot during PageUp spam).
   const titleDisabled = useMemo(() => isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE), []);
-  const moreRightEnabled = useMemo(() => "external" === 'ant' && isEnvTruthy(process.env.CLAUDE_MORERIGHT), []);
+  const moreRightEnabled = useMemo(() => process.env.USER_TYPE === 'ant' && isEnvTruthy(process.env.CLAUDE_MORERIGHT), []);
   const disableVirtualScroll = useMemo(() => isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_VIRTUAL_SCROLL), []);
   const disableMessageActions = feature('MESSAGE_ACTIONS') ?
   // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
@@ -741,7 +792,7 @@ export function REPL({
   const [showIdeOnboarding, setShowIdeOnboarding] = useState(false);
   // Dead code elimination: model switch callout state (ant-only)
   const [showModelSwitchCallout, setShowModelSwitchCallout] = useState(() => {
-    if ("external" === 'ant') {
+    if (process.env.USER_TYPE === 'ant') {
       return shouldShowAntModelSwitch();
     }
     return false;
@@ -1020,7 +1071,7 @@ export function REPL({
   }, []);
   const [showUndercoverCallout, setShowUndercoverCallout] = useState(false);
   useEffect(() => {
-    if ("external" === 'ant') {
+    if (process.env.USER_TYPE === 'ant') {
       void (async () => {
         // Wait for repo classification to settle (memoized, no-op if primed).
         const {
@@ -1663,7 +1714,9 @@ export function REPL({
   const onlySleepToolActive = useMemo(() => {
     const lastAssistant = messages.findLast(m => m.type === 'assistant');
     if (lastAssistant?.type !== 'assistant') return false;
-    const inProgressToolUses = lastAssistant.message.content.filter(b => b.type === 'tool_use' && inProgressToolUseIDs.has(b.id));
+    const assistantContent = lastAssistant.message.content;
+    if (!Array.isArray(assistantContent)) return false;
+    const inProgressToolUses = assistantContent.filter(b => b.type === 'tool_use' && inProgressToolUseIDs.has(b.id));
     return inProgressToolUses.length > 0 && inProgressToolUses.every(b => b.type === 'tool_use' && b.name === SLEEP_TOOL_NAME);
   }, [messages, inProgressToolUseIDs]);
   const {
@@ -2049,10 +2102,10 @@ export function REPL({
     if (allowDialogsWithAnimation && showIdeOnboarding) return 'ide-onboarding';
 
     // Model switch callout (ant-only, eliminated from external builds)
-    if ("external" === 'ant' && allowDialogsWithAnimation && showModelSwitchCallout) return 'model-switch';
+    if (process.env.USER_TYPE === 'ant' && allowDialogsWithAnimation && showModelSwitchCallout) return 'model-switch';
 
     // Undercover auto-enable explainer (ant-only, eliminated from external builds)
-    if ("external" === 'ant' && allowDialogsWithAnimation && showUndercoverCallout) return 'undercover-callout';
+    if (process.env.USER_TYPE === 'ant' && allowDialogsWithAnimation && showUndercoverCallout) return 'undercover-callout';
 
     // Effort callout (shown once for Opus 4.6 users when effort is enabled)
     if (allowDialogsWithAnimation && showEffortCallout) return 'effort-callout';
@@ -2490,7 +2543,7 @@ export function REPL({
       dynamicSkillDirTriggers: new Set<string>(),
       discoveredSkillNames: discoveredSkillNamesRef.current,
       setResponseLength,
-      pushApiMetricsEntry: "external" === 'ant' ? (ttftMs: number) => {
+      pushApiMetricsEntry: process.env.USER_TYPE === 'ant' ? (ttftMs: number) => {
         const now = Date.now();
         const baseline = responseLengthRef.current;
         apiMetricsRef.current.push({
@@ -2613,26 +2666,36 @@ export function REPL({
         if (feature('PROACTIVE') || feature('KAIROS')) {
           proactiveModule?.setContextBlocked(false);
         }
-      } else if (newMessage.type === 'progress' && isEphemeralToolProgress(newMessage.data.type)) {
-        // Replace the previous ephemeral progress tick for the same tool
-        // call instead of appending. Sleep/Bash emit a tick per second and
-        // only the last one is rendered; appending blows up the messages
-        // array (13k+ observed) and the transcript (120MB of sleep_progress
-        // lines). useLogMessages tracks length, so same-length replacement
-        // also skips the transcript write.
-        // agent_progress / hook_progress / skill_progress are NOT ephemeral
-        // — each carries distinct state the UI needs (e.g. subagent tool
-        // history). Replacing those leaves the AgentTool UI stuck at
-        // "Initializing…" because it renders the full progress trail.
-        setMessages(oldMessages => {
-          const last = oldMessages.at(-1);
-          if (last?.type === 'progress' && last.parentToolUseID === newMessage.parentToolUseID && last.data.type === newMessage.data.type) {
-            const copy = oldMessages.slice();
-            copy[copy.length - 1] = newMessage;
-            return copy;
-          }
-          return [...oldMessages, newMessage];
-        });
+      } else if (newMessage.type === 'progress') {
+        const newProgressData = newMessage.data as {
+          type?: unknown;
+        };
+        if (isEphemeralToolProgress(newProgressData.type)) {
+          // Replace the previous ephemeral progress tick for the same tool
+          // call instead of appending. Sleep/Bash emit a tick per second and
+          // only the last one is rendered; appending blows up the messages
+          // array (13k+ observed) and the transcript (120MB of sleep_progress
+          // lines). useLogMessages tracks length, so same-length replacement
+          // also skips the transcript write.
+          // agent_progress / hook_progress / skill_progress are NOT ephemeral
+          // — each carries distinct state the UI needs (e.g. subagent tool
+          // history). Replacing those leaves the AgentTool UI stuck at
+          // "Initializing…" because it renders the full progress trail.
+          setMessages(oldMessages => {
+            const last = oldMessages.at(-1);
+            const lastProgressData = last?.type === 'progress' ? last.data as {
+              type?: unknown;
+            } : undefined;
+            if (last?.type === 'progress' && last.parentToolUseID === newMessage.parentToolUseID && lastProgressData?.type === newProgressData.type) {
+              const copy = oldMessages.slice();
+              copy[copy.length - 1] = newMessage;
+              return copy;
+            }
+            return [...oldMessages, newMessage];
+          });
+        } else {
+          setMessages(oldMessages => [...oldMessages, newMessage]);
+        }
       } else {
         setMessages(oldMessages => [...oldMessages, newMessage]);
       }
@@ -2653,7 +2716,7 @@ export function REPL({
       setResponseLength(length => length + newContent.length);
     }, setStreamMode, setStreamingToolUses, tombstonedMessage => {
       setMessages(oldMessages => oldMessages.filter(m => m !== tombstonedMessage));
-      void removeTranscriptMessage(tombstonedMessage.uuid);
+      void removeTranscriptMessage(tombstonedMessage.uuid as UUID);
     }, setStreamingThinking, metrics => {
       const now = Date.now();
       const baseline = responseLengthRef.current;
@@ -2819,7 +2882,7 @@ export function REPL({
 
     // Capture ant-only API metrics before resetLoadingState clears the ref.
     // For multi-request turns (tool use loops), compute P50 across all requests.
-    if ("external" === 'ant' && apiMetricsRef.current.length > 0) {
+    if (process.env.USER_TYPE === 'ant' && apiMetricsRef.current.length > 0) {
       const entries = apiMetricsRef.current;
       const ttfts = entries.map(e => e.ttftMs);
       // Compute per-request OTPS using only active streaming time and
@@ -2947,7 +3010,7 @@ export function REPL({
         // minutes — wiping the session made the pill disappear entirely, forcing
         // the user to re-invoke Tmux just to peek. Skip on abort so the panel
         // stays open for inspection (matches the turn-duration guard below).
-        if ("external" === 'ant' && !abortController.signal.aborted) {
+        if (process.env.USER_TYPE === 'ant' && !abortController.signal.aborted) {
           setAppState(prev => {
             if (prev.tungstenActiveSession === undefined) return prev;
             if (prev.tungstenPanelAutoHidden === true) return prev;
@@ -3070,7 +3133,8 @@ export function REPL({
       }
 
       // Atomically: clear initial message, set permission mode and rules, and store plan for verification
-      const shouldStorePlanForVerification = initialMsg.message.planContent && "external" === 'ant' && isEnvTruthy(undefined);
+      const planContent = typeof initialMsg.message.planContent === 'string' ? initialMsg.message.planContent : undefined;
+      const shouldStorePlanForVerification = Boolean(planContent) && process.env.CLAUDE_CODE_VERIFY_PLAN === 'true';
       setAppState(prev => {
         // Build and apply permission updates (mode + allowedPrompts rules)
         let updatedToolPermissionContext = initialMsg.mode ? applyPermissionUpdates(prev.toolPermissionContext, buildPermissionUpdates(initialMsg.mode, initialMsg.allowedPrompts)) : prev.toolPermissionContext;
@@ -3089,7 +3153,7 @@ export function REPL({
           toolPermissionContext: updatedToolPermissionContext,
           ...(shouldStorePlanForVerification && {
             pendingPlanVerification: {
-              plan: initialMsg.message.planContent!,
+              plan: planContent!,
               verificationStarted: false,
               verificationCompleted: false
             }
@@ -3104,7 +3168,7 @@ export function REPL({
             ...prev,
             fileHistory: updater(prev.fileHistory)
           }));
-        }, initialMsg.message.uuid);
+        }, initialMsg.message.uuid as UUID);
       }
 
       // Ensure SessionStart hook context is available before the first API
@@ -3603,7 +3667,7 @@ export function REPL({
 
   // Handler for when user presses 1 on survey thanks screen to share details
   const handleSurveyRequestFeedback = useCallback(() => {
-    const command = "external" === 'ant' ? '/issue' : '/feedback';
+    const command = process.env.USER_TYPE === 'ant' ? '/issue' : '/feedback';
     onSubmit(command, {
       setCursorOffset: () => {},
       clearBuffer: () => {},
@@ -3701,7 +3765,7 @@ export function REPL({
       // Restore permission mode from the message
       toolPermissionContext: message.permissionMode && prev.toolPermissionContext.mode !== message.permissionMode ? {
         ...prev.toolPermissionContext,
-        mode: message.permissionMode
+        mode: message.permissionMode as typeof prev.toolPermissionContext.mode
       } : prev.toolPermissionContext,
       // Clear stale prompt suggestion from previous conversation state
       promptSuggestion: {
@@ -3779,7 +3843,7 @@ export function REPL({
       const rawIdx = findRawIndex(msg.uuid);
       const raw = rawIdx >= 0 ? messages[rawIdx] : undefined;
       if (!raw || !selectableUserMessagesFilter(raw)) return;
-      const noFileChanges = !(await fileHistoryHasAnyChanges(fileHistory, raw.uuid));
+      const noFileChanges = !(await fileHistoryHasAnyChanges(fileHistory, raw.uuid as UUID));
       const onlySynthetic = messagesAfterAreOnlySynthetic(messages, rawIdx);
       if (noFileChanges && onlySynthetic) {
         // rewindConversationTo's setMessages races stream appends — cancel first (idempotent).
@@ -4071,7 +4135,7 @@ export function REPL({
   // - Workers receive permission responses via mailbox messages
   // - Leaders receive permission requests via mailbox messages
 
-  if ("external" === 'ant') {
+  if (process.env.USER_TYPE === 'ant') {
     // Tasks mode: watch for tasks and auto-process them
     // eslint-disable-next-line react-hooks/rules-of-hooks
     // biome-ignore lint/correctness/useHookAtTopLevel: conditional for dead code elimination in external builds
@@ -4151,7 +4215,13 @@ export function REPL({
     if (!isLoading) return null;
 
     // Find stop hook progress messages
-    const progressMsgs = messages.filter((m): m is ProgressMessage<HookProgress> => m.type === 'progress' && m.data.type === 'hook_progress' && (m.data.hookEvent === 'Stop' || m.data.hookEvent === 'SubagentStop'));
+    const progressMsgs = messages.filter((m): m is ProgressMessage<HookProgress> => {
+      if (m.type !== 'progress') {
+        return false;
+      }
+      const data = m.data as Partial<HookProgress> | undefined;
+      return data?.type === 'hook_progress' && (data.hookEvent === 'Stop' || data.hookEvent === 'SubagentStop');
+    });
     if (progressMsgs.length === 0) return null;
 
     // Get the most recent stop hook execution
@@ -4180,7 +4250,7 @@ export function REPL({
 
     // Fall back to default behavior
     const hookType = currentHooks[0]?.data.hookEvent === 'SubagentStop' ? 'subagent stop' : 'stop';
-    if ("external" === 'ant') {
+    if (process.env.USER_TYPE === 'ant') {
       const cmd = currentHooks[completedCount]?.data.command;
       const label = cmd ? ` '${truncateToWidth(cmd, 40)}'` : '';
       return total === 1 ? `running ${hookType} hook${label}` : `running ${hookType} hook${label}\u2026 ${completedCount}/${total}`;
@@ -4589,10 +4659,10 @@ export function REPL({
               {toolJSX && !(toolJSX.isLocalJSXCommand && toolJSX.isImmediate) && !toolJsxCentered && <Box flexDirection="column" width="100%">
                     {toolJSX.jsx}
                   </Box>}
-              {"external" === 'ant' && <TungstenLiveMonitor />}
+              {process.env.USER_TYPE === 'ant' && <TungstenLiveMonitor />}
               {feature('WEB_BROWSER_TOOL') ? WebBrowserPanelModule && <WebBrowserPanelModule.WebBrowserPanel /> : null}
               <Box flexGrow={1} />
-              {showSpinner && <SpinnerWithVerb mode={streamMode} spinnerTip={spinnerTip} responseLengthRef={responseLengthRef} apiMetricsRef={apiMetricsRef} overrideMessage={spinnerMessage} spinnerSuffix={stopHookSpinnerSuffix} verbose={verbose} loadingStartTimeRef={loadingStartTimeRef} totalPausedMsRef={totalPausedMsRef} pauseStartTimeRef={pauseStartTimeRef} overrideColor={spinnerColor} overrideShimmerColor={spinnerShimmerColor} hasActiveTools={inProgressToolUseIDs.size > 0} leaderIsIdle={!isLoading} />}
+              {showSpinner && <SpinnerWithVerb mode={streamMode} spinnerTip={spinnerTip} responseLengthRef={responseLengthRef} overrideMessage={spinnerMessage} spinnerSuffix={stopHookSpinnerSuffix} verbose={verbose} loadingStartTimeRef={loadingStartTimeRef} totalPausedMsRef={totalPausedMsRef} pauseStartTimeRef={pauseStartTimeRef} overrideColor={spinnerColor} overrideShimmerColor={spinnerShimmerColor} hasActiveTools={inProgressToolUseIDs.size > 0} leaderIsIdle={!isLoading} />}
               {!showSpinner && !isLoading && !userInputOnProcessing && !hasRunningTeammates && isBriefOnly && !viewedAgentTask && <BriefIdleStatus />}
               {isFullscreenEnvEnabled() && <PromptInputQueuedCommands />}
             </>} bottom={<Box flexDirection={feature('BUDDY') && companionNarrow ? 'column' : 'row'} width="100%" alignItems={feature('BUDDY') && companionNarrow ? undefined : 'flex-end'}>
@@ -4812,7 +4882,7 @@ export function REPL({
             });
           }} />}
                 {focusedInputDialog === 'ide-onboarding' && <IdeOnboardingDialog onDone={() => setShowIdeOnboarding(false)} installationStatus={ideInstallationStatus} />}
-                {"external" === 'ant' && focusedInputDialog === 'model-switch' && AntModelSwitchCallout && <AntModelSwitchCallout onDone={(selection: string, modelAlias?: string) => {
+                {process.env.USER_TYPE === 'ant' && focusedInputDialog === 'model-switch' && AntModelSwitchCallout && <AntModelSwitchCallout onDone={(selection: string, modelAlias?: string) => {
             setShowModelSwitchCallout(false);
             if (selection === 'switch' && modelAlias) {
               setAppState(prev => ({
@@ -4822,7 +4892,7 @@ export function REPL({
               }));
             }
           }} />}
-                {"external" === 'ant' && focusedInputDialog === 'undercover-callout' && UndercoverAutoCallout && <UndercoverAutoCallout onDone={() => setShowUndercoverCallout(false)} />}
+                {process.env.USER_TYPE === 'ant' && focusedInputDialog === 'undercover-callout' && UndercoverAutoCallout && <UndercoverAutoCallout onDone={() => setShowUndercoverCallout(false)} />}
                 {focusedInputDialog === 'effort-callout' && <EffortCallout model={mainLoopModel} onDone={selection => {
             setShowEffortCallout(false);
             if (selection !== 'dismiss') {
@@ -4905,7 +4975,7 @@ export function REPL({
                       {/* Frustration-triggered transcript sharing prompt */}
                       {frustrationDetection.state !== 'closed' && <FeedbackSurvey state={frustrationDetection.state} lastResponse={null} handleSelect={() => {}} handleTranscriptSelect={frustrationDetection.handleTranscriptSelect} inputValue={inputValue} setInputValue={setInputValue} />}
                       {/* Skill improvement survey - appears when improvements detected (ant-only) */}
-                      {"external" === 'ant' && skillImprovementSurvey.suggestion && <SkillImprovementSurvey isOpen={skillImprovementSurvey.isOpen} skillName={skillImprovementSurvey.suggestion.skillName} updates={skillImprovementSurvey.suggestion.updates} handleSelect={skillImprovementSurvey.handleSelect} inputValue={inputValue} setInputValue={setInputValue} />}
+                      {process.env.USER_TYPE === 'ant' && skillImprovementSurvey.suggestion && <SkillImprovementSurvey isOpen={skillImprovementSurvey.isOpen} skillName={skillImprovementSurvey.suggestion.skillName} updates={skillImprovementSurvey.suggestion.updates} handleSelect={skillImprovementSurvey.handleSelect} inputValue={inputValue} setInputValue={setInputValue} />}
                       {showIssueFlagBanner && <IssueFlagBanner />}
                       {}
                       <PromptInput debug={debug} ideSelection={ideSelection} hasSuppressedDialogs={!!hasSuppressedDialogs} isLocalJSXCommandActive={isShowingLocalJSXCommand} getToolUseContext={getToolUseContext} toolPermissionContext={toolPermissionContext} setToolPermissionContext={setToolPermissionContext} apiKeyStatus={apiKeyStatus} commands={commands} agents={agentDefinitions.activeAgents} isLoading={isLoading} onExit={handleExit} verbose={verbose} messages={messages} onAutoUpdaterResult={setAutoUpdaterResult} autoUpdaterResult={autoUpdaterResult} input={inputValue} onInputChange={setInputValue} mode={inputMode} onModeChange={setInputMode} stashedPrompt={stashedPrompt} setStashedPrompt={setStashedPrompt} submitCount={submitCount} onShowMessageSelector={handleShowMessageSelector} onMessageActionsEnter={
@@ -4922,7 +4992,7 @@ export function REPL({
                 ...prev,
                 fileHistory: updater(prev.fileHistory)
               }));
-            }, message.uuid);
+            }, message.uuid as UUID);
           }} onSummarize={async (message: UserMessage, feedback?: string, direction: PartialCompactDirection = 'from') => {
             // Project snipped messages so the compact model
             // doesn't summarize content that was intentionally removed.
@@ -4998,7 +5068,7 @@ export function REPL({
             setIsMessageSelectorVisible(false);
             setMessageSelectorPreselect(undefined);
           }} />}
-                {"external" === 'ant' && <DevBar />}
+                {process.env.USER_TYPE === 'ant' && <DevBar />}
               </Box>
               {feature('BUDDY') && !(companionNarrow && isFullscreenEnvEnabled()) && companionVisible ? <CompanionSprite /> : null}
             </Box>} />

@@ -7,6 +7,7 @@ export type KeybindingContextName =
   | 'Confirmation'
   | 'Help'
   | 'Transcript'
+  | 'Scroll'
   | 'HistorySearch'
   | 'Task'
   | 'ThemePicker'
