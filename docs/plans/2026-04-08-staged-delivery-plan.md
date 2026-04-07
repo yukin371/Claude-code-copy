@@ -76,7 +76,7 @@
 
 ### Status
 
-- current
+- completed
 
 ### Goal
 
@@ -110,6 +110,13 @@
 - 已有 `scripts/install-local-launcher.ps1`
 - 已有 `bun run install:local-launcher`
 - 已在临时安装目录验证安装脚本产出的 `neko.exe` 可运行 `--version`、`--help` 和单轮 `-p`
+- 已在真实用户目录 `C:\Users\yukin\.local\bin\neko.exe` 完成安装
+- 已验证新 shell 中可直接执行 `neko --version` 与 `neko --help`
+- 已验证 PATH 上的 `neko -p --max-turns 1 "Reply with exactly OK"` 可返回 `OK`
+- 已新增 native build blocker 分类清单：
+  - [2026-04-08-native-build-blockers.md](./2026-04-08-native-build-blockers.md)
+- 已完成 `bun run build:native`
+- 已验证编译产物 `dist/neko-code.exe` 可运行 `--version` 与 `--help`
 
 ### Validation
 
@@ -139,7 +146,7 @@
 
 ### Status
 
-- queued
+- current
 
 ### Goal
 
@@ -168,6 +175,7 @@
 - `bun run test:routing`
 - route helper / diagnostics 命令
 - 至少一组真实 headless 回放
+- 编译产物链路验证失败时，必须先和源码模式做对照，避免把外部 API/网络抖动误判成 router 回归
 
 ### Exit Conditions
 
@@ -246,11 +254,17 @@
 
 ### Validation
 
-- `bun build --compile ...`
+- `bun run build:native`
 - 编译产物 `--version`
 - 编译产物 `--help`
 - 编译产物 `-p` 单轮回放
 - 新终端 PATH 调用验证
+
+### Current Notes
+
+- 当前机器上已经打通 `bun run build:native`
+- 当前编译产物已验证 `--version`、`--help`
+- 编译产物 `-p` 单轮回放需在 API 连通状态正常时复验；本轮同一时刻源码模式也出现相同连接失败，不视为 native build 特有回归
 
 ### Exit Conditions
 

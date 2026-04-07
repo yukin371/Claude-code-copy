@@ -50,8 +50,11 @@ Neko Code 是一个从 Claude Code 源码快照反向补全出来的可运行项
   - 已修补 headless 未等待 `runHeadless(...)` 的提前退出问题
   - 已补齐关键 `MACRO.*` bootstrap / 兜底
   - 已修补 OpenAI-compatible stream `.withResponse()` 兼容问题
-  - 使用迁移后的真实 Claude 配置回放 `bun src/entrypoints/cli.tsx -p --max-turns 1 "Reply with exactly OK"` 已可返回 `OK`
+- 使用迁移后的真实 Claude 配置回放 `bun src/entrypoints/cli.tsx -p --max-turns 1 "Reply with exactly OK"` 已可返回 `OK`
 - Bun 工程依赖基线已补齐
+- native build 基线已打通
+  - `bun run build:native` 已可生成 `dist/neko-code.exe`
+  - 编译产物已通过 `--version`、`--help` 验证
 - `bun run typecheck` 已通过
 - `bun run test:routing` 已通过
 - `bun run smoke:claude-config` 已通过
@@ -63,6 +66,7 @@ Neko Code 是一个从 Claude Code 源码快照反向补全出来的可运行项
 - `基础 CLI 可用`
 - `基础 headless / --print 可用`
 - `多 provider / 多 route 基础能力可用`
+- `当前机器上的 native build 基线可用`
 - `仍处于从源码快照向长期可维护版本收口的阶段`
 
 换句话说：
@@ -92,6 +96,7 @@ bun src/entrypoints/cli.tsx plugin --help
 bun src/entrypoints/cli.tsx mcp --help
 bun src/entrypoints/cli.tsx doctor --help
 bun src/entrypoints/cli.tsx -p --max-turns 1 "Reply with exactly OK"
+bun run build:native
 bun run typecheck
 bun run test:routing
 bun run smoke:claude-config
@@ -106,11 +111,13 @@ bun run smoke:claude-config
 - 真实 `--print` / headless 单轮执行
 - 配置迁移后的真实网关回放
 - 基础任务路由诊断与回归
+- native build 编译与基础 CLI 自检
 
 需要注意：
 
 - `--print` 已验证主链路可用，但若显式设置过低的 `--max-budget-usd`，仍会因预算上限而退出
 - 这类报错属于预算策略，不再是当前已修复的应用内执行链故障
+- 本轮编译产物 `-p` 烟测遇到 API 连接失败；同一时刻源码模式也出现相同错误，因此暂不判定为 native build 特有问题
 
 ## 预计继续补完
 
@@ -141,6 +148,12 @@ bun run smoke:claude-config
 - 继续系统梳理剩余 `MACRO.*` 构建注入点
 - 继续移除临时占位类型与兼容 shim
 - 把更多“可降级但未完整恢复”的路径替换成真实实现
+
+### 5. native build 到完整分发版的最后一段
+
+- 补齐“安装后不依赖仓库源码路径”的本地分发 workflow
+- 把编译产物 `-p` 烟测纳入稳定回归
+- 继续判断哪些 ant-only 能力应显式裁剪，哪些应恢复真实实现
 
 ## 为什么先做“可运行”
 
@@ -196,6 +209,21 @@ bun run install:local-launcher
 - 这是“本地终端直启”方案，不是完整 native release build
 - 当前 launcher 仍依赖本机已安装 Bun，且依赖当前仓库源码仍存在
 - PATH 更新后通常需要重新打开一个终端窗口
+
+构建当前机器可用的 native binary：
+
+```bash
+bun run build:native
+```
+
+当前已验证：
+
+- `dist/neko-code.exe --version`
+- `dist/neko-code.exe --help`
+
+当前仍待在 API 连通正常时复验：
+
+- `dist/neko-code.exe -p --max-turns 1 "Reply with exactly OK"`
 
 使用现有 Claude 配置做隔离 smoke：
 

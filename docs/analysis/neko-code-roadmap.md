@@ -24,6 +24,8 @@
 
 - 阶段交付计划：
   - [2026-04-08-staged-delivery-plan.md](../plans/2026-04-08-staged-delivery-plan.md)
+- native build blocker 分类：
+  - [2026-04-08-native-build-blockers.md](../plans/2026-04-08-native-build-blockers.md)
 - 当前默认执行规则：
   - 以后默认按阶段计划推进
   - 只有当前 active phase 的 Exit Conditions 满足后，才切到下一阶段
@@ -41,13 +43,16 @@
 ## 当前执行阶段
 
 - active phase：
-  - Phase 1. 终端直启最小闭环
+  - Phase 2. provider/router 闭环
 - 本阶段要解决的问题：
-  - 先让用户在当前机器上可以直接从终端调用 Neko Code
-  - 同时把 native build blocker 清单分类清楚，避免后续重复摸排
+  - 把 provider/router 主路径与关键辅助路径继续收口
+  - 在真实回归里稳定“直连 provider”和“外部 gateway”两种模式
+- 当前阶段状态：
+  - Phase 1 已完成并归档到阶段计划
+  - native build 基线已提前打通，可作为后续阶段的稳定验证手段
 - 本阶段完成前，不默认切去做：
-  - 真正单文件 native build
   - 大范围状态型工作流补完
+  - 发布渠道 / auto-update
   - 非关键低频功能恢复
 
 ## 当前进行中
@@ -91,33 +96,14 @@
   - 当前仓库已可通过 `bun src/entrypoints/cli.tsx` 直接运行
   - 已补一个本地验证 launcher，可编译出仅面向当前仓库的 `dist/neko-code-local.exe`
   - 该 launcher 已验证可跑 `--version`、`--help`、`-p --max-turns 1 "Reply with exactly OK"`
-  - 直接对主入口执行 `bun build --compile src/entrypoints/cli.tsx` 仍失败
-- 当前已知阻塞：
-  - 打包阶段会强制解析一批源码模式下未必立即执行、但 native build 需要完整存在的模块
-  - 当前缺失项同时包含两类：
-    - 仓库内尚未恢复的模块入口
-    - `package.json` 里尚未补齐的可选外部依赖
-  - 目前已观测到的阻塞包括：
-    - `src/utils/protectedNamespace.js`
-    - `src/tools/REPLTool/REPLTool.js`
-    - `src/tools/SuggestBackgroundPRTool/SuggestBackgroundPRTool.js`
-    - `src/tools/VerifyPlanExecutionTool/VerifyPlanExecutionTool.js`
-    - `src/commands/agents-platform/index.js`
-    - `../components/AntModelSwitchCallout.js`
-    - `../components/UndercoverAutoCallout.js`
-    - `@anthropic-ai/bedrock-sdk`
-    - `@anthropic-ai/foundry-sdk`
-    - `@anthropic-ai/vertex-sdk`
-    - `@azure/identity`
-    - `@aws-sdk/client-sts`
-    - `@aws-sdk/client-bedrock`
-    - `turndown`
-    - `sharp`
-    - `modifiers-napi`
+  - 直接对主入口执行 `bun run build:native` 已成功生成 `dist/neko-code.exe`
+  - 编译产物已验证可跑 `--version`、`--help`
+- 当前已知尾项：
+  - 编译产物 `-p` 单轮回放需要在 API 连通状态正常时复验
+  - Phase 4 仍需补“安装后不依赖仓库源码路径”的完整本地分发 workflow
 - 剩余收口：
-  - 先把“本地 launcher 可运行”推进到“终端命令可稳定调用”
-  - 再把 `bun build --compile` 的缺失模块与缺失依赖分批清零
-  - 最后补 shell integration / PATH / launcher install 流程验证
+  - 把当前 native build 能力沉淀成稳定脚本与阶段验证项
+  - 后续再补 shell integration / PATH / launcher install 的完整分发路径
 
 ## 待完成
 
@@ -155,7 +141,12 @@
 - 已验证：`dist/neko-code-local.exe` 已通过 `--version`、`--help` 与单轮 `-p` 回放验证
 - 已验证：新增 `bun run install:local-launcher` Windows 安装脚本，可把本地 launcher 编译到指定目录
 - 已验证：安装脚本产出的 `neko.exe` 已在临时安装目录通过 `--version`、`--help` 与单轮 `-p` 回放验证
-- 已确认未完成：直接 `bun build --compile src/entrypoints/cli.tsx` 仍被一批缺失模块和缺失依赖阻塞，尚不能视为“像 Claude 一样可直接安装运行”
+- 已验证：真实用户目录 `C:\Users\yukin\.local\bin\neko.exe` 已安装完成，且新 shell 中可直接执行 `neko --version`、`neko --help`
+- 已验证：PATH 上的 `neko -p --max-turns 1 "Reply with exactly OK"` 已返回 `OK`
+- 已落地：native build blocker 已整理为分类清单与分批顺序，见 [2026-04-08-native-build-blockers.md](../plans/2026-04-08-native-build-blockers.md)
+- 已验证：补齐 compile-safe 缺失模块与依赖基线后，`bun run build:native` 已成功生成 `dist/neko-code.exe`
+- 已验证：编译产物 `dist/neko-code.exe --version`、`dist/neko-code.exe --help` 正常
+- 已确认：本轮编译产物 `-p` 烟测遇到 API 连接失败；同一时刻源码模式 `bun src/entrypoints/cli.tsx -p ...` 也出现相同错误，因此暂不判定为 native build 回归
 - 已验证：本轮入口收口后再次通过 `bun run typecheck`、`bun run smoke:claude-config`、`bun run test:routing`
 
 更多已确认完成项见归档文档，不再在主 roadmap 中重复展开。
@@ -164,13 +155,12 @@
 
 ### 当前阶段下一步
 
-1. 补一个“本地安装到 PATH”的最小工作流，让当前 launcher 先满足终端直启验证
-2. 在真实用户 PATH 上完成一次安装验证，确认新终端可直接执行 `neko`
-3. 把 native build blocker 拆成“缺失模块 / 缺失依赖 / 可裁剪功能”三类，并建立分批修复清单
-4. 优先处理最能直接解锁 `bun build --compile` 的缺失模块
+1. 按 Phase 2 继续补齐 provider/router 的辅助路径与真实回归矩阵
+2. 在 API 连通状态恢复时补跑源码模式与编译产物的 `-p` 对照烟测
+3. 把 native build 结果作为后续阶段的固定验证项，而不是重新回到 blocker 摸排
 
 ### 下一阶段入口
 
-1. Phase 1 完成后，切入 Phase 2 的 provider/router 闭环
-2. Phase 2 再补真实 `--print` / headless session 的更系统 smoke
+1. Phase 2 完成后，切入 Phase 3 的状态型工作流闭环
+2. Phase 3 再做“复制现有 Claude 配置”的系统回归
 3. 后续新增完成项时，直接迁入归档而不是继续膨胀主 roadmap

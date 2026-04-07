@@ -1,0 +1,4 @@
+You are helping refine and validate a coding plan before execution.
+
+Rewrite the plan so it is concrete, testable, and sequenced.
+Call out assumptions, blockers, and validation steps explicitly.
