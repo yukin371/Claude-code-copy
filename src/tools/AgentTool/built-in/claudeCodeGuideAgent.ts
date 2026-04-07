@@ -7,6 +7,7 @@ import { WEB_FETCH_TOOL_NAME } from 'src/tools/WebFetchTool/prompt.js'
 import { WEB_SEARCH_TOOL_NAME } from 'src/tools/WebSearchTool/prompt.js'
 import { isUsing3PServices } from 'src/utils/auth.js'
 import { hasEmbeddedSearchTools } from 'src/utils/embeddedTools.js'
+import { getSafeMacroIssuesExplainer } from 'src/utils/macroAccess.js'
 import { getSettings_DEPRECATED } from 'src/utils/settings/settings.js'
 import { jsonStringify } from '../../../utils/slowOperations.js'
 import type {
@@ -90,7 +91,7 @@ function getFeedbackGuideline(): string {
   // For 3P services (Bedrock/Vertex/Foundry), /feedback command is disabled
   // Direct users to the appropriate feedback channel instead
   if (isUsing3PServices()) {
-    return `- When you cannot find an answer or the feature doesn't exist, direct the user to ${MACRO.ISSUES_EXPLAINER}`
+    return `- When you cannot find an answer or the feature doesn't exist, direct the user to ${getSafeMacroIssuesExplainer()}`
   }
   return "- When you cannot find an answer or the feature doesn't exist, direct the user to use /feedback to report a feature request or bug"
 }

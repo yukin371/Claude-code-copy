@@ -1,5 +1,8 @@
 import { feature } from 'bun:bundle';
 import { PRODUCT_NAME } from '../constants/product.js';
+import { ensureBootstrapMacro } from '../bootstrapMacro.js';
+
+ensureBootstrapMacro();
 
 const APP_VERSION =
   typeof MACRO !== 'undefined' && MACRO.VERSION ? MACRO.VERSION : 'dev';

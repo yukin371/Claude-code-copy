@@ -88,6 +88,9 @@
 - 已验证：session resume 隔离 harness 已收口，并修补了 direct resume metadata 漏传
 - 已验证：MCP strict-config 隔离 harness 已收口
 - 已验证：修补了 `--print` headless 入口未等待 `runHeadless(...)` 的收口问题，避免非交互执行链提前退出
+- 已验证：源码模式下补齐 `MACRO` bootstrap 与关键热路径兜底，`--print` / headless 主链已不再因 `MACRO is not defined` 在启动阶段中断
+- 已验证：修补 OpenAI-compatible client 的流式 `.withResponse()` 兼容层，避免任务路由走外部 OpenAI-compatible 代理时在真实 API 请求前崩溃
+- 已验证：真实 `bun src/entrypoints/cli.tsx -p ...` 已推进到实际 API 连通性阶段，当前首个阻塞已下沉为外部网络 / 网关可达性错误，而非应用内执行链错误
 - 已验证：本轮入口收口后再次通过 `bun run typecheck`、`bun run smoke:claude-config`、`bun run test:routing`
 
 更多已确认完成项见归档文档，不再在主 roadmap 中重复展开。
@@ -95,6 +98,6 @@
 ## 下一步
 
 1. 继续推进 provider/router 与最小应用内回退的剩余收口
-2. 补一条真实 `--print` / headless session smoke，验证非交互主执行链产物而不只验证配置与状态
+2. 为真实 `--print` / headless session 增加“可达 API 层”的 smoke 或诊断断言，区分应用内错误与外部网关 / 网络错误
 3. 为任务级模型/API 路由与外部网关接入模式补更系统的回归验证
 4. 后续新增完成项时，直接迁入归档而不是继续膨胀主 roadmap

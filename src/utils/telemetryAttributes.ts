@@ -4,6 +4,7 @@ import { getOauthAccountInfo } from './auth.js'
 import { getOrCreateUserID } from './config.js'
 import { envDynamic } from './envDynamic.js'
 import { isEnvTruthy } from './envUtils.js'
+import { getSafeMacroVersion } from './macroAccess.js'
 import { toTaggedId } from './taggedId.js'
 
 // Default configuration for metrics cardinality
@@ -38,7 +39,7 @@ export function getTelemetryAttributes(): Attributes {
     attributes['session.id'] = sessionId
   }
   if (shouldIncludeAttribute('OTEL_METRICS_INCLUDE_VERSION')) {
-    attributes['app.version'] = MACRO.VERSION
+    attributes['app.version'] = getSafeMacroVersion()
   }
 
   // Only include OAuth account data when actively using OAuth authentication

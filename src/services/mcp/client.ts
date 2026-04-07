@@ -123,6 +123,12 @@ const fetchMcpSkillsForClient = feature('MCP_SKILLS')
 import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js'
 import type { AssistantMessage } from 'src/types/message.js'
 /* eslint-enable @typescript-eslint/no-require-imports */
+
+function getMcpClientVersion(): string {
+  return typeof MACRO !== 'undefined' && MACRO.VERSION
+    ? MACRO.VERSION
+    : 'unknown'
+}
 import { classifyMcpToolForCollapse } from '../../tools/MCPTool/classifyForCollapse.js'
 import { clearKeychainCache } from '../../utils/secureStorage/macOsKeychainHelpers.js'
 import { sleep } from '../../utils/sleep.js'
@@ -1011,7 +1017,7 @@ export const connectToServer = memoize(
         {
           name: 'claude-code',
           title: 'Claude Code',
-          version: MACRO.VERSION ?? 'unknown',
+          version: getMcpClientVersion(),
           description: "Anthropic's agentic coding tool",
           websiteUrl: PRODUCT_URL,
         },
@@ -3306,7 +3312,7 @@ export async function setupSdkMcpClients(
         {
           name: 'claude-code',
           title: 'Claude Code',
-          version: MACRO.VERSION ?? 'unknown',
+          version: getMcpClientVersion(),
           description: "Anthropic's agentic coding tool",
           websiteUrl: PRODUCT_URL,
         },

@@ -32,6 +32,12 @@ type ToolOutput = Tool['outputSchema']
 
 const MCP_COMMANDS: Command[] = [review]
 
+function getMcpServerVersion(): string {
+  return typeof MACRO !== 'undefined' && MACRO.VERSION
+    ? MACRO.VERSION
+    : 'unknown'
+}
+
 export async function startMCPServer(
   cwd: string,
   debug: boolean,
@@ -47,7 +53,7 @@ export async function startMCPServer(
   const server = new Server(
     {
       name: 'claude/tengu',
-      version: MACRO.VERSION,
+      version: getMcpServerVersion(),
     },
     {
       capabilities: {

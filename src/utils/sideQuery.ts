@@ -16,6 +16,7 @@ import { getAPIMetadata } from '../services/api/claude.js'
 import { getTaskRouteAnthropicClient } from '../services/api/client.js'
 import { getModelBetas, modelSupportsStructuredOutputs } from './betas.js'
 import { computeFingerprint } from './fingerprint.js'
+import { getSafeMacroVersion } from './macroAccess.js'
 import { normalizeModelStringForAPI } from './model/model.js'
 
 type MessageParam = Anthropic.MessageParam
@@ -141,7 +142,7 @@ export async function sideQuery(opts: SideQueryOptions): Promise<BetaMessage> {
   const messageText = extractFirstUserMessageText(messages)
 
   // Compute fingerprint for OAuth attribution
-  const fingerprint = computeFingerprint(messageText, MACRO.VERSION)
+  const fingerprint = computeFingerprint(messageText, getSafeMacroVersion())
   const attributionHeader = getAttributionHeader(fingerprint)
 
   // Build system as array to keep attribution header in its own block

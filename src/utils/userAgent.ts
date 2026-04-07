@@ -1,3 +1,6 @@
+export { getSafeMacroVersion } from './macroAccess.js'
+import { getSafeMacroVersion } from './macroAccess.js'
+
 /**
  * User-Agent string helpers.
  *
@@ -7,11 +10,4 @@
 
 export function getClaudeCodeUserAgent(): string {
   return `claude-code/${getSafeMacroVersion()}`
-}
-
-export function getSafeMacroVersion(): string {
-  if (typeof MACRO !== 'undefined' && MACRO.VERSION) {
-    return MACRO.VERSION
-  }
-  return 'unknown'
 }

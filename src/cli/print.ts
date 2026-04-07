@@ -2435,6 +2435,12 @@ function runHeadlessStreaming(
     } catch (error) {
       // Emit error result message before shutting down
       // Write directly to structuredIO to ensure immediate delivery
+      logForDebugging(
+        `runHeadless failed: ${
+          error instanceof Error ? error.stack || error.message : String(error)
+        }`,
+        { level: 'error' },
+      )
       try {
         await structuredIO.write({
           type: 'result',

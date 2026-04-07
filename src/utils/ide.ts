@@ -25,6 +25,7 @@ import { getFsImplementation } from './fsOperations.js'
 import { getAncestorPidsAsync } from './genericProcessUtils.js'
 import { isJetBrainsPluginInstalledCached } from './jetbrains.js'
 import { logError } from './log.js'
+import { getSafeMacroVersion } from './macroAccess.js'
 import { getPlatform } from './platform.js'
 import { lt } from './semver.js'
 
@@ -925,7 +926,7 @@ function getInstallationEnv(): NodeJS.ProcessEnv | undefined {
 }
 
 function getClaudeCodeVersion() {
-  return MACRO.VERSION
+  return getSafeMacroVersion()
 }
 
 async function getInstalledVSCodeExtensionVersion(

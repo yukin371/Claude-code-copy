@@ -13,6 +13,12 @@ import type {
   ScopedMcpServerConfig,
 } from './types.js'
 
+function getHeadersHelperFeedbackChannel(): string {
+  return typeof MACRO !== 'undefined' && MACRO.FEEDBACK_CHANNEL
+    ? MACRO.FEEDBACK_CHANNEL
+    : 'support'
+}
+
 /**
  * Check if the MCP server config comes from project settings (projectSettings or localSettings)
  * This is important for security checks
@@ -48,7 +54,7 @@ export async function getMcpHeadersFromHelper(
     const hasTrust = checkHasTrustDialogAccepted()
     if (!hasTrust) {
       const error = new Error(
-        `Security: headersHelper for MCP server '${serverName}' executed before workspace trust is confirmed. If you see this message, post in ${MACRO.FEEDBACK_CHANNEL}.`,
+        `Security: headersHelper for MCP server '${serverName}' executed before workspace trust is confirmed. If you see this message, post in ${getHeadersHelperFeedbackChannel()}.`,
       )
       logAntError('MCP headersHelper invoked before trust check', error)
       logEvent('tengu_mcp_headersHelper_missing_trust', {})

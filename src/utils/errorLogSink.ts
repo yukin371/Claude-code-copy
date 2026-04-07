@@ -19,6 +19,7 @@ import { registerCleanup } from './cleanupRegistry.js'
 import { logForDebugging } from './debug.js'
 import { getFsImplementation } from './fsOperations.js'
 import { attachErrorLogSink, dateToFilename } from './log.js'
+import { getSafeMacroVersion } from './macroAccess.js'
 import { jsonStringify } from './slowOperations.js'
 
 const DATE = dateToFilename(new Date())
@@ -119,7 +120,7 @@ function appendToLog(path: string, message: object): void {
     cwd: getFsImplementation().cwd(),
     userType: process.env.USER_TYPE,
     sessionId: getSessionId(),
-    version: MACRO.VERSION,
+    version: getSafeMacroVersion(),
   }
 
   getLogWriter(path).write(messageWithTimestamp)

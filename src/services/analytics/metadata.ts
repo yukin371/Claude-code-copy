@@ -28,6 +28,10 @@ import {
   getLinuxDistroInfo,
   detectVcs,
 } from '../../utils/platform.js'
+import {
+  getSafeMacroBuildTime,
+  getSafeMacroVersion,
+} from '../../utils/macroAccess.js'
 import type { CoreUserData } from 'src/utils/user.js'
 import { getAgentContext } from '../../utils/agentContext.js'
 import type { EnvironmentMetadata } from '../../types/generated/events_mono/claude_code/v1/claude_code_internal_event.js'
@@ -564,7 +568,7 @@ function getAgentIdentification(): {
  * Extract base version from full version string. "2.0.36-dev.20251107.t174150.sha2709699" → "2.0.36-dev"
  */
 const getVersionBase = memoize((): string | undefined => {
-  const match = MACRO.VERSION.match(/^\d+\.\d+\.\d+(?:-[a-z]+)?/)
+  const match = getSafeMacroVersion().match(/^\d+\.\d+\.\d+(?:-[a-z]+)?/)
   return match ? match[0] : undefined
 })
 
@@ -617,9 +621,9 @@ const buildEnvContext = memoize(async (): Promise<EnvContext> => {
     isGithubAction: isEnvTruthy(process.env.GITHUB_ACTIONS),
     isClaudeCodeAction: isEnvTruthy(process.env.CLAUDE_CODE_ACTION),
     isClaudeAiAuth: isClaudeAISubscriber(),
-    version: MACRO.VERSION,
+    version: getSafeMacroVersion(),
     versionBase: getVersionBase(),
-    buildTime: MACRO.BUILD_TIME,
+    buildTime: getSafeMacroBuildTime(),
     deploymentEnvironment: env.detectDeploymentEnvironment(),
     ...(isEnvTruthy(process.env.GITHUB_ACTIONS) && {
       githubEventName: process.env.GITHUB_EVENT_NAME,

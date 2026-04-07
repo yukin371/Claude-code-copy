@@ -90,6 +90,27 @@ function createJsonResponse(body: unknown, status = 200): Response {
   })
 }
 
+function createSseResponse(frames: string[]): Response {
+  const encoder = new TextEncoder()
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        for (const frame of frames) {
+          controller.enqueue(encoder.encode(frame))
+        }
+        controller.close()
+      },
+    }),
+    {
+      status: 200,
+      headers: {
+        'content-type': 'text/event-stream',
+        'request-id': 'req_test_stream',
+      },
+    },
+  )
+}
+
   describe('openaiCompatibleClient', () => {
   let envSnapshot: EnvSnapshot
 
@@ -231,6 +252,50 @@ function createJsonResponse(body: unknown, status = 200): Response {
       authorization: 'Bearer explicit-gemini-key',
       googleClient: 'neko-code',
     })
+  })
+
+  test('streaming create exposes withResponse compatibility for openai-compatible clients', async () => {
+    const { createOpenAICompatibleAnthropicClient } = await import(
+      './openaiCompatibleClient.js'
+    )
+
+    const client = await createOpenAICompatibleAnthropicClient({
+      transport: {
+        provider: 'gemini',
+        apiStyle: 'openai-compatible',
+      },
+      maxRetries: 0,
+      fetchOverride: ((async () =>
+        createSseResponse([
+          'data: {"id":"chatcmpl-test","model":"gemini-2.5-pro","choices":[{"index":0,"delta":{"role":"assistant","content":"OK"}}]}\n\n',
+          'data: {"id":"chatcmpl-test","model":"gemini-2.5-pro","choices":[{"index":0,"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1}}\n\n',
+          'data: [DONE]\n\n',
+        ])) as unknown) as typeof fetch,
+    })
+
+    const result = await client.beta.messages
+      .create({
+        model: 'gemini-2.5-pro',
+        max_tokens: 32,
+        messages: [{ role: 'user', content: 'ping stream route' }],
+        stream: true,
+      } as any)
+      .withResponse()
+
+    expect(result.request_id).toBe('req_test_stream')
+    expect(result.response.headers.get('content-type')).toContain(
+      'text/event-stream',
+    )
+
+    const events: Array<Record<string, unknown>> = []
+    for await (const event of result.data as unknown as AsyncIterable<
+      Record<string, unknown>
+    >) {
+      events.push(event)
+    }
+
+    expect(events.some(event => event.type === 'message_start')).toBe(true)
+    expect(events.some(event => event.type === 'message_stop')).toBe(true)
   })
 
   test('fails over across providers when the preferred provider is unavailable', async () => {

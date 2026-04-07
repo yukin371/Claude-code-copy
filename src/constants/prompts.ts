@@ -26,6 +26,7 @@ import {
 import { getAntModelOverrideConfig } from '../utils/model/antModels.js'
 import { getSkillToolCommands } from 'src/commands.js'
 import { SKILL_TOOL_NAME } from '../tools/SkillTool/constants.js'
+import { getSafeMacroIssuesExplainer } from '../utils/macroAccess.js'
 import { getOutputStyleConfig } from './outputStyles.js'
 import type {
   MCPServerConnection,
@@ -212,7 +213,7 @@ function getSimpleDoingTasksSection(): string {
 
   const userHelpSubitems = [
     `/help: Get help with using Claude Code`,
-    `To give feedback, users should ${MACRO.ISSUES_EXPLAINER}`,
+    `To give feedback, users should ${getSafeMacroIssuesExplainer()}`,
   ]
 
   const items = [

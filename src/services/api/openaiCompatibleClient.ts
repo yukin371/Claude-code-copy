@@ -136,33 +136,40 @@ export async function createOpenAICompatibleAnthropicClient({
   fetchOverride,
   source,
 }: OpenAICompatibleOptions): Promise<Anthropic> {
-  const create = async (
+  const create = (
     params: BetaMessageStreamParams,
     requestOptions?: { signal?: AbortSignal; timeout?: number },
   ) => {
     if (params.stream) {
+      const withResponse = async () => {
+        const request = (await executeOpenAICompatibleRequest({
+          transport,
+          apiKey,
+          maxRetries,
+          model: model ?? params.model,
+          fetchOverride,
+          source,
+          params,
+          requestOptions,
+        })) as OpenAIRequestResult
+        return {
+          data: request.data,
+          response: request.response,
+          request_id: request.requestId,
+        }
+      }
+
+      const streamPromise = withResponse().then(result => result.data)
+
       return {
-        withResponse: async () => {
-          const request = (await executeOpenAICompatibleRequest({
-            transport,
-            apiKey,
-            maxRetries,
-            model: model ?? params.model,
-            fetchOverride,
-            source,
-            params,
-            requestOptions,
-          })) as OpenAIRequestResult
-          return {
-            data: request.data,
-            response: request.response,
-            request_id: request.requestId,
-          }
-        },
+        withResponse,
+        then: streamPromise.then.bind(streamPromise),
+        catch: streamPromise.catch.bind(streamPromise),
+        finally: streamPromise.finally.bind(streamPromise),
       }
     }
 
-    const request = await executeOpenAICompatibleRequest({
+    return executeOpenAICompatibleRequest({
       transport,
       apiKey,
       maxRetries,
@@ -172,8 +179,7 @@ export async function createOpenAICompatibleAnthropicClient({
       params,
       requestOptions,
       stream: false,
-    })
-    return request.data as unknown as BetaMessage
+    }).then(request => request.data as unknown as BetaMessage)
   }
 
   return {
