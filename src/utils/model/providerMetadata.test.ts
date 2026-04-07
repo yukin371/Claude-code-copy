@@ -98,4 +98,18 @@ describe('providerMetadata', () => {
     })
     expect(snapshot.weightSource).toBe('env')
   })
+
+  test('getProviderLoadBalanceStrategy prioritizes env values over provided settings', () => {
+    process.env.NEKO_CODE_OPENAI_PROVIDER_STRATEGY = 'round-robin'
+    const strategyFromSettings = getProviderLoadBalanceStrategy({
+      openAIProviderStrategy: 'fallback',
+    })
+    expect(strategyFromSettings).toBe('round-robin')
+  })
+
+  test('getProviderLoadBalanceWeight reads env overrides and clamps non-positive values', () => {
+    process.env.NEKO_CODE_OPENAI_PROVIDER_WEIGHTS = 'codex=0,glm=3'
+    expect(getProviderLoadBalanceWeight('codex')).toBe(1)
+    expect(getProviderLoadBalanceWeight('glm')).toBe(3)
+  })
 })
