@@ -127,6 +127,8 @@ describe('taskRouting transport compatibility', () => {
         'agent:builtin:plan',
         'agent:builtin:statusline-setup',
         'agent:custom',
+        'agent:custom:route:frontend',
+        'agent:builtin:general-purpose:route:review',
         'web_search_tool',
       ],
     })
@@ -166,6 +168,16 @@ describe('taskRouting transport compatibility', () => {
         querySource: 'agent:custom',
         normalizedQuerySource: 'agent:custom',
         route: 'subagent',
+      },
+      {
+        querySource: 'agent:custom:route:frontend',
+        normalizedQuerySource: 'agent:custom:route:frontend',
+        route: 'frontend',
+      },
+      {
+        querySource: 'agent:builtin:general-purpose:route:review',
+        normalizedQuerySource: 'agent:builtin:general-purpose:route:review',
+        route: 'review',
       },
       {
         querySource: 'web_search_tool',

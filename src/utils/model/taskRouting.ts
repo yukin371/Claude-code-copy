@@ -812,6 +812,11 @@ function resolveTaskRouteNameFromNormalizedQuerySource(
   if (normalized === 'hook_agent') return 'subagent'
   if (normalized === 'web_search_tool') return 'main'
 
+  const explicitRoute = normalized.match(/:route:(main|subagent|frontend|review|explore|plan|guide|statusline)$/)
+  if (explicitRoute?.[1]) {
+    return explicitRoute[1] as TaskRouteName
+  }
+
   if (normalized.startsWith('agent:builtin:')) {
     const agentType = normalized.slice('agent:builtin:'.length)
     if (agentType === 'explore') return 'explore'

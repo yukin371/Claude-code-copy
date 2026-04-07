@@ -2,7 +2,7 @@ import { feature } from 'bun:bundle';
 import * as React from 'react';
 import { buildTool, type ToolDef, toolMatchesName } from 'src/Tool.js';
 import type { Message as MessageType, NormalizedUserMessage } from 'src/types/message.js';
-import { getQuerySourceForAgent } from 'src/utils/promptCategory.js';
+import { getQuerySourceForSpawnedAgent } from 'src/utils/promptCategory.js';
 import { z } from 'zod/v4';
 import { clearInvokedSkillsForAgent, getSdkAgentProgressSummariesEnabled } from '../../bootstrap/state.js';
 import { enhanceSystemPromptWithEnvDetails, getSystemPrompt } from '../../constants/prompts.js';
@@ -614,7 +614,13 @@ export const AgentTool = buildTool({
       toolUseContext,
       canUseTool,
       isAsync: shouldRunAsync,
-      querySource: toolUseContext.options.querySource ?? getQuerySourceForAgent(selectedAgent.agentType, isBuiltInAgent(selectedAgent)),
+      querySource: getQuerySourceForSpawnedAgent({
+        agentType: selectedAgent.agentType,
+        isBuiltInAgent: isBuiltInAgent(selectedAgent),
+        parentQuerySource: toolUseContext.options.querySource,
+        preserveParentQuerySource: isForkPath,
+        taskPrompt: prompt
+      }),
       model: isForkPath ? undefined : model,
       // Fork path: pass parent's system prompt AND parent's exact tool
       // array (cache-identical prefix). workerTools is rebuilt under
