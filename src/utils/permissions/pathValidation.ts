@@ -21,8 +21,22 @@ import {
 } from './filesystem.js'
 import type { PermissionDecisionReason } from './PermissionResult.js'
 
+type PathSafetyFailure = {
+  safe: false
+  message: string
+  classifierApprovable: boolean
+}
+
 const MAX_DIRS_TO_LIST = 5
 const GLOB_PATTERN_REGEX = /[*?[\]{}]/
+
+type PathSafetyCheckResult = ReturnType<typeof checkPathSafetyForAutoEdit>
+
+function isPathSafetyCheckUnsafe(
+  result: PathSafetyCheckResult,
+): result is PathSafetyFailure {
+  return result.safe === false
+}
 
 export type FileOperationType = 'read' | 'write' | 'create'
 
@@ -183,7 +197,7 @@ export function isPathAllowed(
       resolvedPath,
       precomputedPathsToCheck,
     )
-    if (!safetyCheck.safe) {
+    if (isPathSafetyCheckUnsafe(safetyCheck)) {
       return {
         allowed: false,
         decisionReason: {

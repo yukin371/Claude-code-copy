@@ -26,18 +26,24 @@ import { YOLO_CLASSIFIER_TOOL_NAME } from './yoloClassifier.js'
 /* eslint-disable @typescript-eslint/no-require-imports */
 const TERMINAL_CAPTURE_TOOL_NAME = feature('TERMINAL_PANEL')
   ? (
-      require('../../tools/TerminalCaptureTool/prompt.js') as typeof import('../../tools/TerminalCaptureTool/prompt.js')
+      require('../../tools/TerminalCaptureTool/prompt.js') as {
+        TERMINAL_CAPTURE_TOOL_NAME: string
+      }
     ).TERMINAL_CAPTURE_TOOL_NAME
   : null
 const OVERFLOW_TEST_TOOL_NAME = feature('OVERFLOW_TEST_TOOL')
   ? (
-      require('../../tools/OverflowTestTool/OverflowTestTool.js') as typeof import('../../tools/OverflowTestTool/OverflowTestTool.js')
+      require('../../tools/OverflowTestTool/OverflowTestTool.js') as {
+        OVERFLOW_TEST_TOOL_NAME: string
+      }
     ).OVERFLOW_TEST_TOOL_NAME
   : null
 const VERIFY_PLAN_EXECUTION_TOOL_NAME =
   process.env.USER_TYPE === 'ant'
     ? (
-        require('../../tools/VerifyPlanExecutionTool/constants.js') as typeof import('../../tools/VerifyPlanExecutionTool/constants.js')
+        require('../../tools/VerifyPlanExecutionTool/constants.js') as {
+          VERIFY_PLAN_EXECUTION_TOOL_NAME: string
+        }
       ).VERIFY_PLAN_EXECUTION_TOOL_NAME
     : null
 const WORKFLOW_TOOL_NAME = feature('WORKFLOW_SCRIPTS')

@@ -17,7 +17,7 @@ import { getCacheControl } from '../../services/api/claude.js'
 import { parsePromptTooLongTokenCounts } from '../../services/api/errors.js'
 import { getDefaultMaxRetries } from '../../services/api/withRetry.js'
 import type { Tool, ToolPermissionContext, Tools } from '../../Tool.js'
-import type { Message } from '../../types/message.js'
+import { getMessageContentBlocks, type Message } from '../../types/message.js'
 import type {
   ClassifierUsage,
   YoloClassifierResult,
@@ -340,14 +340,20 @@ export function buildTranscriptEntries(messages: Message[]): TranscriptEntry[] {
       }
     } else if (msg.type === 'assistant') {
       const blocks: TranscriptBlock[] = []
-      for (const block of msg.message.content) {
+      const assistantContent = getMessageContentBlocks(msg.message.content)
+      for (const block of assistantContent) {
         // Only include tool_use blocks — assistant text is model-authored
         // and could be crafted to influence the classifier's decision.
-        if (block.type === 'tool_use') {
+        if (
+          block.type === 'tool_use' &&
+          'name' in block &&
+          typeof block.name === 'string'
+        ) {
+          const input = 'input' in block ? block.input : undefined
           blocks.push({
             type: 'tool_use',
             name: block.name,
-            input: block.input,
+            input,
           })
         }
       }
