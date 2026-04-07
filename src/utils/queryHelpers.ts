@@ -1,10 +1,14 @@
 import type { ToolUseBlock } from '@anthropic-ai/sdk/resources/index.mjs'
-import last from 'lodash-es/last.js'
 import {
   getSessionId,
   isSessionPersistenceDisabled,
 } from 'src/bootstrap/state.js'
-import type { SDKMessage } from 'src/entrypoints/agentSdkTypes.js'
+import type {
+  SDKAssistantMessage,
+  SDKMessage,
+  SDKToolProgressMessage,
+  SDKUserMessage,
+} from 'src/entrypoints/agentSdkTypes.js'
 import type { CanUseToolFn } from '../hooks/useCanUseTool.js'
 import { runTools } from '../services/tools/toolOrchestration.js'
 import { findToolByName, type Tool, type Tools } from '../Tool.js'
@@ -16,7 +20,13 @@ import {
   FILE_UNCHANGED_STUB,
 } from '../tools/FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from '../tools/FileWriteTool/prompt.js'
-import type { Message } from '../types/message.js'
+import type {
+  AssistantMessage,
+  Message,
+  NormalizedAssistantMessage,
+  NormalizedUserMessage,
+  UserMessage,
+} from '../types/message.js'
 import type { OrphanedPermission } from '../types/textInputTypes.js'
 import { logForDebugging } from './debug.js'
 import { isEnvTruthy } from './envUtils.js'
@@ -60,7 +70,10 @@ export function isResultSuccessful(
   if (!message) return false
 
   if (message.type === 'assistant') {
-    const lastContent = last(message.message.content)
+    if (!Array.isArray(message.message.content)) {
+      return false
+    }
+    const lastContent = message.message.content.at(-1)
     return (
       lastContent?.type === 'text' ||
       lastContent?.type === 'thinking' ||
@@ -99,125 +112,196 @@ const MAX_TOOL_PROGRESS_TRACKING_ENTRIES = 100
 const TOOL_PROGRESS_THROTTLE_MS = 30000
 const toolProgressLastSentTime = new Map<string, number>()
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function getOptionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined
+}
+
+function buildToolUseResult(toolUseResult: unknown, mcpMeta: unknown): unknown {
+  if (isRecord(mcpMeta)) {
+    return { content: toolUseResult, ...mcpMeta }
+  }
+  return toolUseResult
+}
+
+function isAssistantMessage(message: Message): message is AssistantMessage {
+  return (
+    message.type === 'assistant' &&
+    isRecord(message.message) &&
+    Array.isArray(message.message.content)
+  )
+}
+
+function isUserMessage(message: Message): message is UserMessage {
+  return (
+    message.type === 'user' &&
+    isRecord(message.message) &&
+    'content' in message.message
+  )
+}
+
+function isAgentOrSkillProgressData(
+  data: unknown,
+): data is { type: 'agent_progress' | 'skill_progress'; message: Message } {
+  return (
+    isRecord(data) &&
+    (data.type === 'agent_progress' || data.type === 'skill_progress') &&
+    isRecord(data.message) &&
+    typeof data.message.type === 'string' &&
+    isRecord(data.message.message) &&
+    'content' in data.message.message
+  )
+}
+
+function isShellProgressData(
+  data: unknown,
+): data is {
+  type: 'bash_progress' | 'powershell_progress'
+  elapsedTimeSeconds: number
+  taskId?: string
+} {
+  return (
+    isRecord(data) &&
+    (data.type === 'bash_progress' || data.type === 'powershell_progress') &&
+    typeof data.elapsedTimeSeconds === 'number'
+  )
+}
+
+function toSdkAssistantMessage(
+  message: NormalizedAssistantMessage,
+  parentToolUseId: string | null,
+): SDKAssistantMessage {
+  const sdkError: SDKAssistantMessage['error'] = isRecord(message.error)
+    ? message.error
+    : undefined
+
+  return {
+    type: 'assistant',
+    message: {
+      ...message.message,
+      id: getOptionalString(message.message.id) ?? message.uuid,
+    },
+    parent_tool_use_id: parentToolUseId,
+    session_id: getSessionId(),
+    uuid: message.uuid,
+    error: sdkError,
+  }
+}
+
+function toSdkUserMessage(
+  message: NormalizedUserMessage,
+  parentToolUseId: string | null,
+): SDKUserMessage {
+  return {
+    type: 'user',
+    message: message.message,
+    parent_tool_use_id: parentToolUseId,
+    session_id: getSessionId(),
+    uuid: message.uuid,
+    timestamp: message.timestamp,
+    isSynthetic: Boolean(message.isMeta || message.isVisibleInTranscriptOnly),
+    tool_use_result: buildToolUseResult(message.toolUseResult, message.mcpMeta),
+  }
+}
+
 export function* normalizeMessage(message: Message): Generator<SDKMessage> {
-  switch (message.type) {
-    case 'assistant':
-      for (const _ of normalizeMessages([message])) {
-        // Skip empty messages (e.g., "(no content)") that shouldn't be output to SDK
-        if (!isNotEmptyMessage(_)) {
+  if (isAssistantMessage(message)) {
+    for (const normalizedMessage of normalizeMessages([message])) {
+      if (normalizedMessage.type !== 'assistant') continue
+      // Skip empty messages (e.g., "(no content)") that shouldn't be output to SDK
+      if (!isNotEmptyMessage(normalizedMessage)) {
+        continue
+      }
+      yield toSdkAssistantMessage(normalizedMessage, null)
+    }
+    return
+  }
+
+  if (message.type === 'progress') {
+    const progressParentToolUseId =
+      getOptionalString(message.parentToolUseID) ?? null
+
+    if (isAgentOrSkillProgressData(message.data)) {
+      for (const normalizedMessage of normalizeMessages([message.data.message])) {
+        if (normalizedMessage.type === 'assistant') {
+          // Skip empty messages (e.g., "(no content)") that shouldn't be output to SDK
+          if (!isNotEmptyMessage(normalizedMessage)) {
+            continue
+          }
+          yield toSdkAssistantMessage(normalizedMessage, progressParentToolUseId)
           continue
         }
-        yield {
-          type: 'assistant',
-          message: _.message,
-          parent_tool_use_id: null,
-          session_id: getSessionId(),
-          uuid: _.uuid,
-          error: _.error,
+        if (normalizedMessage.type === 'user') {
+          yield toSdkUserMessage(normalizedMessage, progressParentToolUseId)
         }
       }
       return
-    case 'progress':
-      if (
-        message.data.type === 'agent_progress' ||
-        message.data.type === 'skill_progress'
-      ) {
-        for (const _ of normalizeMessages([message.data.message])) {
-          switch (_.type) {
-            case 'assistant':
-              // Skip empty messages (e.g., "(no content)") that shouldn't be output to SDK
-              if (!isNotEmptyMessage(_)) {
-                break
-              }
-              yield {
-                type: 'assistant',
-                message: _.message,
-                parent_tool_use_id: message.parentToolUseID,
-                session_id: getSessionId(),
-                uuid: _.uuid,
-                error: _.error,
-              }
-              break
-            case 'user':
-              yield {
-                type: 'user',
-                message: _.message,
-                parent_tool_use_id: message.parentToolUseID,
-                session_id: getSessionId(),
-                uuid: _.uuid,
-                timestamp: _.timestamp,
-                isSynthetic: _.isMeta || _.isVisibleInTranscriptOnly,
-                tool_use_result: _.mcpMeta
-                  ? { content: _.toolUseResult, ..._.mcpMeta }
-                  : _.toolUseResult,
-              }
-              break
-          }
-        }
-      } else if (
-        message.data.type === 'bash_progress' ||
-        message.data.type === 'powershell_progress'
-      ) {
-        // Filter bash progress to send only one per minute
-        // Only emit for Claude Code Remote for now
-        if (
-          !isEnvTruthy(process.env.CLAUDE_CODE_REMOTE) &&
-          !process.env.CLAUDE_CODE_CONTAINER_ID
-        ) {
-          break
-        }
+    }
 
-        // Use parentToolUseID as the key since toolUseID changes for each progress message
-        const trackingKey = message.parentToolUseID
-        const now = Date.now()
-        const lastSent = toolProgressLastSentTime.get(trackingKey) || 0
-        const timeSinceLastSent = now - lastSent
-
-        // Send if at least 30 seconds have passed since last update
-        if (timeSinceLastSent >= TOOL_PROGRESS_THROTTLE_MS) {
-          // Remove oldest entry if we're at capacity (LRU eviction)
-          if (
-            toolProgressLastSentTime.size >= MAX_TOOL_PROGRESS_TRACKING_ENTRIES
-          ) {
-            const firstKey = toolProgressLastSentTime.keys().next().value
-            if (firstKey !== undefined) {
-              toolProgressLastSentTime.delete(firstKey)
-            }
-          }
-
-          toolProgressLastSentTime.set(trackingKey, now)
-          yield {
-            type: 'tool_progress',
-            tool_use_id: message.toolUseID,
-            tool_name:
-              message.data.type === 'bash_progress' ? 'Bash' : 'PowerShell',
-            parent_tool_use_id: message.parentToolUseID,
-            elapsed_time_seconds: message.data.elapsedTimeSeconds,
-            task_id: message.data.taskId,
-            session_id: getSessionId(),
-            uuid: message.uuid,
-          }
-        }
-      }
-      break
-    case 'user':
-      for (const _ of normalizeMessages([message])) {
-        yield {
-          type: 'user',
-          message: _.message,
-          parent_tool_use_id: null,
-          session_id: getSessionId(),
-          uuid: _.uuid,
-          timestamp: _.timestamp,
-          isSynthetic: _.isMeta || _.isVisibleInTranscriptOnly,
-          tool_use_result: _.mcpMeta
-            ? { content: _.toolUseResult, ..._.mcpMeta }
-            : _.toolUseResult,
-        }
-      }
+    if (!isShellProgressData(message.data)) {
       return
-    default:
-    // yield nothing
+    }
+
+    // Filter bash progress to send only one per minute
+    // Only emit for Claude Code Remote for now
+    if (
+      !isEnvTruthy(process.env.CLAUDE_CODE_REMOTE) &&
+      !process.env.CLAUDE_CODE_CONTAINER_ID
+    ) {
+      return
+    }
+
+    if (!progressParentToolUseId) {
+      return
+    }
+
+    // Use parentToolUseID as the key since toolUseID changes for each progress message
+    const trackingKey = progressParentToolUseId
+    const now = Date.now()
+    const lastSent = toolProgressLastSentTime.get(trackingKey) || 0
+    const timeSinceLastSent = now - lastSent
+
+    // Send if at least 30 seconds have passed since last update
+    if (timeSinceLastSent < TOOL_PROGRESS_THROTTLE_MS) {
+      return
+    }
+
+    const toolUseId = getOptionalString(message.toolUseID)
+    if (!toolUseId) {
+      return
+    }
+
+    // Remove oldest entry if we're at capacity (LRU eviction)
+    if (toolProgressLastSentTime.size >= MAX_TOOL_PROGRESS_TRACKING_ENTRIES) {
+      const firstKey = toolProgressLastSentTime.keys().next().value
+      if (firstKey !== undefined) {
+        toolProgressLastSentTime.delete(firstKey)
+      }
+    }
+
+    toolProgressLastSentTime.set(trackingKey, now)
+    const toolProgressMessage: SDKToolProgressMessage = {
+      type: 'tool_progress',
+      tool_use_id: toolUseId,
+      tool_name: message.data.type === 'bash_progress' ? 'Bash' : 'PowerShell',
+      parent_tool_use_id: progressParentToolUseId,
+      elapsed_time_seconds: message.data.elapsedTimeSeconds,
+      task_id: getOptionalString(message.data.taskId),
+      session_id: getSessionId(),
+      uuid: message.uuid,
+    }
+    yield toolProgressMessage
+    return
+  }
+
+  if (isUserMessage(message)) {
+    for (const normalizedMessage of normalizeMessages([message])) {
+      if (normalizedMessage.type !== 'user') continue
+      yield toSdkUserMessage(normalizedMessage, null)
+    }
   }
 }
 

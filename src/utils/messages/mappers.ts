@@ -1,4 +1,3 @@
-import type { BetaContentBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import { randomUUID, type UUID } from 'crypto'
 import { getSessionId } from 'src/bootstrap/state.js'
 import {
@@ -9,6 +8,7 @@ import type {
   SDKAssistantMessage,
   SDKCompactBoundaryMessage,
   SDKMessage,
+  SDKUserMessage,
   SDKRateLimitInfo,
 } from 'src/entrypoints/agentSdkTypes.js'
 import type { ClaudeAILimits } from 'src/services/claudeAiLimits.js'
@@ -17,6 +17,7 @@ import type {
   AssistantMessage,
   CompactMetadata,
   Message,
+  UserMessage,
 } from 'src/types/message.js'
 import type { DeepImmutable } from 'src/types/utils.js'
 import stripAnsi from 'strip-ansi'
@@ -116,6 +117,9 @@ export function toSDKMessages(messages: Message[]): SDKMessage[] {
   return messages.flatMap((message): SDKMessage[] => {
     switch (message.type) {
       case 'assistant':
+        if (!isAssistantMessage(message)) {
+          return []
+        }
         return [
           {
             type: 'assistant',
@@ -123,10 +127,15 @@ export function toSDKMessages(messages: Message[]): SDKMessage[] {
             session_id: getSessionId(),
             parent_tool_use_id: null,
             uuid: message.uuid,
-            error: message.error,
+            ...(normalizeAssistantError(message.error) !== undefined
+              ? { error: normalizeAssistantError(message.error) }
+              : {}),
           },
         ]
       case 'user':
+        if (!isUserMessage(message)) {
+          return []
+        }
         return [
           {
             type: 'user',
@@ -135,7 +144,9 @@ export function toSDKMessages(messages: Message[]): SDKMessage[] {
             parent_tool_use_id: null,
             uuid: message.uuid,
             timestamp: message.timestamp,
-            isSynthetic: message.isMeta || message.isVisibleInTranscriptOnly,
+            isSynthetic: toBooleanFlag(
+              message.isMeta || message.isVisibleInTranscriptOnly,
+            ),
             // Structured tool output (not the string content sent to the
             // model — the full Output object). Rides the protobuf catchall
             // so web viewers can read things like BriefTool's file_uuid
@@ -195,7 +206,7 @@ export function toSDKMessages(messages: Message[]): SDKMessage[] {
  */
 export function localCommandOutputToSDKAssistantMessage(
   rawContent: string,
-  uuid: UUID,
+  uuid: string | undefined,
 ): SDKAssistantMessage {
   const cleanContent = stripAnsi(rawContent)
     .replace(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/, '$1')
@@ -207,10 +218,10 @@ export function localCommandOutputToSDKAssistantMessage(
   const synthetic = createAssistantMessage({ content: cleanContent })
   return {
     type: 'assistant',
-    message: synthetic.message,
+    message: toSDKAssistantPayload(synthetic.message),
     parent_tool_use_id: null,
     session_id: getSessionId(),
-    uuid,
+    uuid: toUuid(uuid),
   }
 }
 
@@ -259,13 +270,13 @@ export function toSDKRateLimitInfo(
  */
 function normalizeAssistantMessageForSDK(
   message: AssistantMessage,
-): AssistantMessage['message'] {
+): SDKAssistantMessage['message'] {
   const content = message.message.content
   if (!Array.isArray(content)) {
-    return message.message
+    return toSDKAssistantPayload(message.message)
   }
 
-  const normalizedContent = content.map((block): BetaContentBlock => {
+  const normalizedContent = content.map(block => {
     if (block.type !== 'tool_use') {
       return block
     }
@@ -283,8 +294,55 @@ function normalizeAssistantMessageForSDK(
     return block
   })
 
-  return {
+  return toSDKAssistantPayload({
     ...message.message,
     content: normalizedContent,
+  })
+}
+
+function toUuid(value: string | undefined): UUID {
+  return (typeof value === 'string' && value.length > 0
+    ? value
+    : randomUUID()) as UUID
+}
+
+function isAssistantMessage(message: Message): message is AssistantMessage {
+  return (
+    message.type === 'assistant' &&
+    typeof message.message === 'object' &&
+    message.message !== null
+  )
+}
+
+function isUserMessage(message: Message): message is UserMessage {
+  return (
+    message.type === 'user' &&
+    typeof message.message === 'object' &&
+    message.message !== null
+  )
+}
+
+function toSDKAssistantPayload(
+  message: AssistantMessage['message'],
+): SDKAssistantMessage['message'] {
+  return {
+    ...message,
+    id: message.id ?? randomUUID(),
   }
+}
+
+function normalizeAssistantError(
+  error: unknown,
+): SDKAssistantMessage['error'] | undefined {
+  if (error === null || error === undefined) {
+    return undefined
+  }
+  if (typeof error === 'object') {
+    return error as SDKAssistantMessage['error']
+  }
+  return { message: String(error) }
+}
+
+function toBooleanFlag(value: unknown): boolean {
+  return value === true
 }

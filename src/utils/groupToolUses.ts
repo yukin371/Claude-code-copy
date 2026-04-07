@@ -1,5 +1,3 @@
-import type { BetaToolUseBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
-import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/messages/messages.mjs'
 import type { Tools } from '../Tool.js'
 import type {
   GroupedToolUseMessage,
@@ -33,16 +31,58 @@ function getToolsWithGrouping(tools: Tools): Set<string> {
 
 function getToolUseInfo(
   msg: MessageWithoutProgress,
-): { messageId: string; toolUseId: string; toolName: string } | null {
-  if (msg.type === 'assistant' && msg.message.content[0]?.type === 'tool_use') {
-    const content = msg.message.content[0]
+): {
+  assistantMessage: NormalizedAssistantMessage
+  messageId: string
+  toolUseId: string
+  toolName: string
+} | null {
+  if (msg.type !== 'assistant') {
+    return null
+  }
+  const messageId = msg.message.id
+  const firstBlock = msg.message.content[0]
+  if (
+    typeof messageId === 'string' &&
+    firstBlock?.type === 'tool_use' &&
+    typeof firstBlock.id === 'string' &&
+    typeof firstBlock.name === 'string'
+  ) {
     return {
-      messageId: msg.message.id,
-      toolUseId: content.id,
-      toolName: content.name,
+      assistantMessage: msg,
+      messageId,
+      toolUseId: firstBlock.id,
+      toolName: firstBlock.name,
     }
   }
   return null
+}
+
+function isRenderableMessage(msg: MessageWithoutProgress): msg is RenderableMessage {
+  return (
+    msg.type === 'assistant' ||
+    msg.type === 'user' ||
+    msg.type === 'system' ||
+    msg.type === 'attachment' ||
+    msg.type === 'grouped_tool_use' ||
+    msg.type === 'collapsed_read_search'
+  )
+}
+
+type ToolResultBlock = {
+  type: 'tool_result'
+  tool_use_id: string
+}
+
+function isToolResultBlock(value: unknown): value is ToolResultBlock {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'type' in value &&
+    'tool_use_id' in value &&
+    (value as { type: unknown }).type === 'tool_result' &&
+    typeof (value as { tool_use_id: unknown }).tool_use_id === 'string'
+  )
 }
 
 /**
@@ -59,7 +99,7 @@ export function applyGrouping(
   // In verbose mode, don't group - each message renders at its original position
   if (verbose) {
     return {
-      messages: messages,
+      messages: messages.filter(isRenderableMessage),
     }
   }
   const toolsWithGrouping = getToolsWithGrouping(tools)
@@ -67,7 +107,7 @@ export function applyGrouping(
   // First pass: group tool uses by message.id + tool name
   const groups = new Map<
     string,
-    NormalizedAssistantMessage<BetaToolUseBlock>[]
+    NormalizedAssistantMessage[]
   >()
 
   for (const msg of messages) {
@@ -75,7 +115,7 @@ export function applyGrouping(
     if (info && toolsWithGrouping.has(info.toolName)) {
       const key = `${info.messageId}:${info.toolName}`
       const group = groups.get(key) ?? []
-      group.push(msg as NormalizedAssistantMessage<BetaToolUseBlock>)
+      group.push(info.assistantMessage)
       groups.set(key, group)
     }
   }
@@ -83,7 +123,7 @@ export function applyGrouping(
   // Identify valid groups (2+ items) and collect their tool use IDs
   const validGroups = new Map<
     string,
-    NormalizedAssistantMessage<BetaToolUseBlock>[]
+    NormalizedAssistantMessage[]
   >()
   const groupedToolUseIds = new Set<string>()
 
@@ -163,7 +203,7 @@ export function applyGrouping(
     // Skip user messages whose tool_results are all grouped
     if (msg.type === 'user') {
       const toolResults = msg.message.content.filter(
-        (c): c is ToolResultBlockParam => c.type === 'tool_result',
+        isToolResultBlock,
       )
       if (toolResults.length > 0) {
         const allGrouped = toolResults.every(tr =>
@@ -175,7 +215,9 @@ export function applyGrouping(
       }
     }
 
-    result.push(msg)
+    if (isRenderableMessage(msg)) {
+      result.push(msg)
+    }
   }
 
   return { messages: result }

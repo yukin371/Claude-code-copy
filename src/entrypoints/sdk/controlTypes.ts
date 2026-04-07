@@ -21,17 +21,27 @@ type SDKHookCallbackMatcher = {
   timeout?: number
 }
 
-type SDKProcessTransportConfig = SDKLooseRecord & {
-  type?: 'stdio' | 'sse' | 'http' | 'sdk' | 'sse-ide' | string
-  command?: string
-  args?: string[]
-  env?: Record<string, string>
-  url?: string
-  name?: string
-  ideName?: string
-  ideRunningInWindows?: boolean
-  headers?: Record<string, string>
-}
+type SDKProcessTransportConfig =
+  | {
+      type?: 'stdio'
+      command: string
+      args?: string[]
+      env?: Record<string, string>
+    }
+  | {
+      type: 'sse'
+      url: string
+      headers?: Record<string, string>
+    }
+  | {
+      type: 'http'
+      url: string
+      headers?: Record<string, string>
+    }
+  | {
+      type: 'sdk'
+      name: string
+    }
 
 type SDKNamedControlRequest<
   TSubtype extends string,

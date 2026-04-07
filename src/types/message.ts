@@ -1,3 +1,5 @@
+import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs'
+
 export type SystemMessageLevel =
   | 'info'
   | 'success'
@@ -5,15 +7,8 @@ export type SystemMessageLevel =
   | 'error'
   | 'suggestion'
 
-export type MessageContentBlock = {
-  type: string
-  text?: string
-  id?: string
-  name?: string
-  input?: unknown
+export type MessageContentBlock = ContentBlockParam & {
   content?: string | MessageContentBlock[]
-  tool_use_id?: string
-  is_error?: boolean
   [key: string]: unknown
 }
 

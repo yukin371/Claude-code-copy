@@ -13,6 +13,7 @@ import type {
   CallToolResult,
   ToolAnnotations,
 } from '@modelcontextprotocol/sdk/types.js'
+import { z } from 'zod/v4'
 
 // Control protocol types for SDK builders (bridge subpath consumers)
 /** @alpha */
@@ -24,6 +25,13 @@ export type {
 export * from './sdk/coreTypes.js'
 // Re-export runtime types (callbacks, interfaces with methods)
 export * from './sdk/runtimeTypes.js'
+import type { HookEvent } from './sdk/coreTypes.js'
+import { EXIT_REASONS } from './sdk/coreTypes.js'
+import {
+  AsyncHookJSONOutputSchema,
+  HookInputSchema,
+  SyncHookJSONOutputSchema,
+} from './sdk/coreSchemas.js'
 
 // Re-export settings types (generated from settings JSON schema)
 export type { Settings } from './sdk/settingsTypes.generated.js'
@@ -87,16 +95,42 @@ export type SDKUserMessageReplay = SDKUserMessage & {
   }
 }
 
-export type McpServerConfigForProcessTransport = {
-  type?: 'stdio' | 'sse' | 'sse-ide' | string
-  command?: string
-  args?: string[]
-  env?: Record<string, string>
-  url?: string
-  ideName?: string
-  ideRunningInWindows?: boolean
-  [key: string]: unknown
-}
+export type McpServerConfigForProcessTransport =
+  | {
+      type?: 'stdio'
+      command: string
+      args?: string[]
+      env?: Record<string, string>
+    }
+  | {
+      type: 'sse'
+      url: string
+      headers?: Record<string, string>
+      headersHelper?: string
+      oauth?: Record<string, unknown>
+    }
+  | {
+      type: 'http'
+      url: string
+      headers?: Record<string, string>
+      headersHelper?: string
+      oauth?: Record<string, unknown>
+    }
+  | {
+      type: 'ws'
+      url: string
+      headers?: Record<string, string>
+      headersHelper?: string
+    }
+  | {
+      type: 'sdk'
+      name: string
+    }
+  | {
+      type: 'claudeai-proxy'
+      url: string
+      id: string
+    }
 
 export type McpServerStatus = {
   name?: string
@@ -111,22 +145,51 @@ export type RewindFilesResult = {
   [key: string]: unknown
 }
 
-export type HookInput = Record<string, unknown>
+export type HookInput = z.infer<ReturnType<typeof HookInputSchema>>
 
-export type AsyncHookJSONOutput = {
-  async: true
-  asyncTimeout?: number
-  [key: string]: unknown
-}
+export type AsyncHookJSONOutput = z.infer<
+  ReturnType<typeof AsyncHookJSONOutputSchema>
+>
 
-export type SyncHookJSONOutput = {
-  async?: false
-  [key: string]: unknown
-}
+export type SyncHookJSONOutput = z.infer<
+  ReturnType<typeof SyncHookJSONOutputSchema>
+>
 
 export type HookJSONOutput = AsyncHookJSONOutput | SyncHookJSONOutput
 
 export type { PermissionUpdate }
+
+type HookInputFor<TEvent extends HookEvent> = Extract<
+  HookInput,
+  { hook_event_name: TEvent }
+>
+
+export type PreToolUseHookInput = HookInputFor<'PreToolUse'>
+export type PostToolUseHookInput = HookInputFor<'PostToolUse'>
+export type PostToolUseFailureHookInput = HookInputFor<'PostToolUseFailure'>
+export type NotificationHookInput = HookInputFor<'Notification'>
+export type UserPromptSubmitHookInput = HookInputFor<'UserPromptSubmit'>
+export type SessionStartHookInput = HookInputFor<'SessionStart'>
+export type SessionEndHookInput = HookInputFor<'SessionEnd'>
+export type StopHookInput = HookInputFor<'Stop'>
+export type StopFailureHookInput = HookInputFor<'StopFailure'>
+export type SubagentStartHookInput = HookInputFor<'SubagentStart'>
+export type SubagentStopHookInput = HookInputFor<'SubagentStop'>
+export type PreCompactHookInput = HookInputFor<'PreCompact'>
+export type PostCompactHookInput = HookInputFor<'PostCompact'>
+export type PermissionRequestHookInput = HookInputFor<'PermissionRequest'>
+export type PermissionDeniedHookInput = HookInputFor<'PermissionDenied'>
+export type SetupHookInput = HookInputFor<'Setup'>
+export type TeammateIdleHookInput = HookInputFor<'TeammateIdle'>
+export type TaskCreatedHookInput = HookInputFor<'TaskCreated'>
+export type TaskCompletedHookInput = HookInputFor<'TaskCompleted'>
+export type ElicitationHookInput = HookInputFor<'Elicitation'>
+export type ElicitationResultHookInput = HookInputFor<'ElicitationResult'>
+export type ConfigChangeHookInput = HookInputFor<'ConfigChange'>
+export type CwdChangedHookInput = HookInputFor<'CwdChanged'>
+export type FileChangedHookInput = HookInputFor<'FileChanged'>
+export type InstructionsLoadedHookInput = HookInputFor<'InstructionsLoaded'>
+export type ExitReason = (typeof EXIT_REASONS)[number]
 
 export function tool<Schema extends AnyZodRawShape>(
   _name: string,

@@ -1,4 +1,5 @@
 import type { PermissionMode } from '../../types/permissions.js'
+import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs'
 
 // This repository snapshot is missing the generated SDK type exports.
 // These hand-written placeholders keep source-mode CLI and editor tooling
@@ -6,13 +7,7 @@ import type { PermissionMode } from '../../types/permissions.js'
 
 type SDKLooseRecord = Record<string, unknown>
 
-type SDKContentBlock = {
-  type: string
-  text?: string
-  id?: string
-  name?: string
-  input?: unknown
-  tool_use_id?: string
+type SDKContentBlock = ContentBlockParam & {
   thinking?: string
   data?: string
 }
