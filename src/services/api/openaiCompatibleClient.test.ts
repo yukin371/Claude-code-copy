@@ -46,6 +46,13 @@ class MockAPIError extends Error {
   }
 }
 
+class MockAnthropicError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'AnthropicError'
+  }
+}
+
 class MockAPIConnectionTimeoutError extends Error {
   constructor({ message }: { message: string }) {
     super(message)
@@ -88,21 +95,30 @@ function createJsonResponse(body: unknown, status = 200): Response {
 
   beforeEach(() => {
     mock.module('@anthropic-ai/sdk/error', () => ({
+      AnthropicError: MockAnthropicError,
       APIConnectionTimeoutError: MockAPIConnectionTimeoutError,
       APIError: MockAPIError,
       APIUserAbortError: MockAPIUserAbortError,
     }))
     mock.module('src/bootstrap/sessionId.js', () => ({
       getSessionId: () => 'session-test',
+      setSessionId: () => {},
     }))
     mock.module('src/utils/debug.js', () => ({
+      isDebugToStdErr: () => false,
+      logAntError: () => {},
       logForDebugging: () => {},
     }))
     mock.module('src/utils/httpUserAgent.js', () => ({
       getHttpUserAgent: () => 'claude-cli/test',
     }))
     mock.module('src/utils/slowOperations.js', () => ({
+      clone: <T>(value: T) => structuredClone(value),
+      cloneDeep: <T>(value: T) => structuredClone(value),
+      jsonParse: JSON.parse,
       jsonStringify: JSON.stringify,
+      slowLogging: () => {},
+      writeFileSync_DEPRECATED: () => {},
     }))
     mock.module('src/utils/model/modelNormalization.js', () => ({
       normalizeModelStringForAPI: (model: string) => model,
@@ -696,6 +712,64 @@ function createJsonResponse(body: unknown, status = 200): Response {
     expect(calls[0]).toEqual({
       url: 'https://main-gateway.example.com/v1/chat/completions',
       authorization: 'Bearer shared-gateway-key',
+      googleClient: 'neko-code',
+    })
+  })
+
+  test('getAnthropicClientForTaskRoute keeps direct-provider routing on main route', async () => {
+    const { getAnthropicClientForTaskRoute } = await import('./client.js')
+    process.env.NEKO_CODE_MAIN_PROVIDER = 'gemini'
+    process.env.NEKO_CODE_MAIN_API_STYLE = 'openai-compatible'
+    process.env.NEKO_CODE_GEMINI_API_KEY = 'gemini-direct-key'
+    process.env.NEKO_CODE_OPENAI_COMPATIBLE_API_KEY = 'shared-openai-key'
+
+    const calls: FetchCall[] = []
+    const client = await getAnthropicClientForTaskRoute({
+      route: 'main',
+      maxRetries: 0,
+      model: 'gemini-2.5-pro',
+      source: 'route_helper_test',
+      fetchOverride: (async (input, init) => {
+        const url = input instanceof Request ? input.url : String(input)
+        const headers = new Headers(init?.headers)
+        calls.push({
+          url,
+          authorization: headers.get('authorization'),
+          googleClient: headers.get('x-goog-api-client'),
+        })
+
+        return createJsonResponse({
+          id: 'msg_main_direct',
+          model: 'gemini-2.5-pro',
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: 'assistant',
+                content: 'ok',
+              },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: {
+            prompt_tokens: 2,
+            completion_tokens: 1,
+          },
+        })
+      }) as typeof fetch,
+    })
+
+    await client.beta.messages.create({
+      model: 'gemini-2.5-pro',
+      max_tokens: 32,
+      messages: [{ role: 'user', content: 'ping main direct route' }],
+      stream: false,
+    } as any)
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toEqual({
+      url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      authorization: 'Bearer gemini-direct-key',
       googleClient: 'neko-code',
     })
   })
