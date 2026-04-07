@@ -15,7 +15,7 @@ import { getClaudeAiUserDefaultModelDescription, getMainLoopModel, modelDisplayS
 import { formatProviderTargetLabel, getMainLoopProviderState } from './model/mainProvider.js';
 import { getProviderLoadBalanceConfigSnapshot } from './model/providerMetadata.js';
 import { getAPIProvider } from './model/providers.js';
-import { getTaskRouteDebugSnapshot } from './model/taskRouting.js';
+import { getTaskRouteDebugSnapshot, TASK_ROUTE_NAMES, type TaskRouteName } from './model/taskRouting.js';
 import { getMTLSConfig } from './mtls.js';
 import { checkInstall } from './nativeInstaller/index.js';
 import { getProxyUrl } from './proxy.js';
@@ -208,6 +208,21 @@ function buildMainTaskRouteProperties(): Property[] {
     value: `${snapshot.transport.apiKey ?? 'unset'} (${snapshot.fields.apiKey.source})`
   }];
 }
+function formatSecondaryTaskRouteLine(route: TaskRouteName): string {
+  const snapshot = getTaskRouteDebugSnapshot(route);
+  const parts = [snapshot.executionTarget.provider, snapshot.executionTarget.apiStyle, snapshot.executionTarget.model ?? '[default]'];
+  if (snapshot.transport.baseUrl) {
+    parts.push(snapshot.transport.baseUrl);
+  }
+  return `${route}: ${parts.join(' / ')}`;
+}
+function buildAdditionalTaskRouteProperties(): Property[] {
+  const routes = TASK_ROUTE_NAMES.filter(route => route !== 'main');
+  return [{
+    label: 'Task route matrix',
+    value: routes.map(route => formatSecondaryTaskRouteLine(route))
+  }];
+}
 export async function buildInstallationHealthDiagnostics(): Promise<Diagnostic[]> {
   const diagnostic = await getDoctorDiagnostic();
   const items: Diagnostic[] = [];
@@ -375,6 +390,7 @@ export function buildAPIProviderProperties(): Property[] {
     value: `${getModelDisplayLabel(getMainLoopModel())}${sessionModelOverride ? ' (session override)' : ''}`
   });
   properties.push(...buildMainTaskRouteProperties());
+  properties.push(...buildAdditionalTaskRouteProperties());
   const proxyUrl = getProxyUrl();
   if (proxyUrl) {
     properties.push({
