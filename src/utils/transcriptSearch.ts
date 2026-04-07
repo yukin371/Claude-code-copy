@@ -16,6 +16,22 @@ const RENDERED_AS_SENTINEL = new Set([
 
 const searchTextCache = new WeakMap<RenderableMessage, string>()
 
+function extractMemoryContents(memories: unknown): string {
+  if (!Array.isArray(memories)) return ''
+  return memories
+    .flatMap(memory => {
+      if (
+        typeof memory === 'object' &&
+        memory !== null &&
+        typeof (memory as { content?: unknown }).content === 'string'
+      ) {
+        return [(memory as { content: string }).content]
+      }
+      return []
+    })
+    .join('\n')
+}
+
 /** Flatten a RenderableMessage to lowercased searchable text. WeakMap-
  *  cached — messages are append-only and immutable so a hit is always
  *  valid. Lowercased at cache time: the only caller immediately
@@ -84,7 +100,7 @@ function computeSearchText(msg: RenderableMessage): string {
       // (AttachmentMessage.tsx <Ansi>{m.content}</Ansi>). Visible but
       // unsearchable without this — [ dump finds it, / doesn't.
       if (msg.attachment.type === 'relevant_memories') {
-        raw = msg.attachment.memories.map(m => m.content).join('\n')
+        raw = extractMemoryContents(msg.attachment.memories)
       } else if (
         // Mid-turn prompts — queued while an agent is running. Render via
         // UserTextMessage (AttachmentMessage.tsx:~348). stickyPromptText

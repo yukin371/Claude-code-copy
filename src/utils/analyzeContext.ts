@@ -38,13 +38,14 @@ import {
   getLimitedSkillToolCommands,
   getSkillToolInfo as getSlashCommandInfo,
 } from '../tools/SkillTool/prompt.js'
-import type {
-  AssistantMessage,
-  AttachmentMessage,
-  Message,
-  NormalizedAssistantMessage,
-  NormalizedUserMessage,
-  UserMessage,
+import {
+  getMessageContentBlocks,
+  type AssistantMessage,
+  type AttachmentMessage,
+  type Message,
+  type NormalizedAssistantMessage,
+  type NormalizedUserMessage,
+  type UserMessage,
 } from '../types/message.js'
 import { toolToAPISchema } from './api.js'
 import { filterInjectedMemoryFiles, getMemoryFiles } from './claudemd.js'
@@ -64,6 +65,22 @@ import { getCurrentUsage } from './tokens.js'
 
 const RESERVED_CATEGORY_NAME = 'Autocompact buffer'
 const MANUAL_COMPACT_BUFFER_NAME = 'Compact buffer'
+
+function isAssistantLikeMessage(
+  message: Message,
+): message is AssistantMessage | NormalizedAssistantMessage {
+  return message.type === 'assistant'
+}
+
+function isUserLikeMessage(
+  message: Message,
+): message is UserMessage | NormalizedUserMessage {
+  return message.type === 'user'
+}
+
+function isAttachmentLikeMessage(message: Message): message is AttachmentMessage {
+  return message.type === 'attachment'
+}
 
 /**
  * Fixed token overhead added by the API when tools are present.
@@ -446,8 +463,10 @@ async function countBuiltInToolTokens(
       const deferredToolNameSet = new Set(deferredBuiltinTools.map(t => t.name))
       for (const msg of messages) {
         if (msg.type === 'assistant') {
-          for (const block of msg.message.content) {
+          for (const block of getMessageContentBlocks(msg.message.content)) {
             if (
+              typeof block === 'object' &&
+              block !== null &&
               'type' in block &&
               block.type === 'tool_use' &&
               'name' in block &&
@@ -683,8 +702,10 @@ export async function countMcpToolTokens(
     const mcpToolNameSet = new Set(mcpTools.map(t => t.name))
     for (const msg of messages) {
       if (msg.type === 'assistant') {
-        for (const block of msg.message.content) {
+        for (const block of getMessageContentBlocks(msg.message.content)) {
           if (
+            typeof block === 'object' &&
+            block !== null &&
             'type' in block &&
             block.type === 'tool_use' &&
             'name' in block &&
@@ -872,8 +893,13 @@ async function approximateMessageTokens(
   const toolUseIdToName = new Map<string, string>()
   for (const msg of microcompactResult.messages) {
     if (msg.type === 'assistant') {
-      for (const block of msg.message.content) {
-        if ('type' in block && block.type === 'tool_use') {
+      for (const block of getMessageContentBlocks(msg.message.content)) {
+        if (
+          typeof block === 'object' &&
+          block !== null &&
+          'type' in block &&
+          block.type === 'tool_use'
+        ) {
           const toolUseId = 'id' in block ? block.id : undefined
           const toolName =
             ('name' in block ? block.name : undefined) || 'unknown'
@@ -887,27 +913,33 @@ async function approximateMessageTokens(
 
   // Process each message for detailed breakdown
   for (const msg of microcompactResult.messages) {
-    if (msg.type === 'assistant') {
+    if (isAssistantLikeMessage(msg)) {
       processAssistantMessage(msg, breakdown)
-    } else if (msg.type === 'user') {
+    } else if (isUserLikeMessage(msg)) {
       processUserMessage(msg, breakdown, toolUseIdToName)
-    } else if (msg.type === 'attachment') {
+    } else if (isAttachmentLikeMessage(msg)) {
       processAttachment(msg, breakdown)
     }
   }
 
   // Calculate total tokens using the API for accuracy
-  const approximateMessageTokens = await countTokensWithFallback(
-    normalizeMessagesForAPI(microcompactResult.messages).map(_ => {
-      if (_.type === 'assistant') {
-        return {
-          // Important: strip out fields like id, etc. -- the counting API errors if they're present
-          role: 'assistant',
-          content: _.message.content,
-        }
+  const normalizedMessages = normalizeMessagesForAPI(
+    microcompactResult.messages,
+  )
+  const apiMessages = normalizedMessages.map(message => {
+    if (message.type === 'assistant') {
+      return {
+        role: 'assistant' as const,
+        content: message.message.content,
       }
-      return _.message
-    }),
+    }
+    return {
+      role: 'user' as const,
+      content: message.message.content,
+    }
+  })
+  const approximateMessageTokens = await countTokensWithFallback(
+    apiMessages as Anthropic.Beta.Messages.BetaMessageParam[],
     [],
   )
 

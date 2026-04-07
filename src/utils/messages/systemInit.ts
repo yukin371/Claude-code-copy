@@ -2,18 +2,18 @@ import { feature } from 'bun:bundle'
 import { randomUUID } from 'crypto'
 import { getSdkBetas, getSessionId } from 'src/bootstrap/state.js'
 import { DEFAULT_OUTPUT_STYLE_NAME } from 'src/constants/outputStyles.js'
-import type {
-  ApiKeySource,
-  PermissionMode,
-  SDKMessage,
-} from 'src/entrypoints/agentSdkTypes.js'
+import type { SDKMessage } from 'src/entrypoints/agentSdkTypes.js'
 import {
   AGENT_TOOL_NAME,
   LEGACY_AGENT_TOOL_NAME,
 } from 'src/tools/AgentTool/constants.js'
-import { getAnthropicApiKeyWithSource } from '../auth.js'
+import {
+  type ApiKeySource,
+  getAnthropicApiKeyWithSource,
+} from '../auth.js'
 import { getCwd } from '../cwd.js'
 import { getFastModeState } from '../fastMode.js'
+import type { PermissionMode } from '../permissions/PermissionMode.js'
 import { getSettings_DEPRECATED } from '../settings/settings.js'
 
 // TODO(next-minor): remove this translation once SDK consumers have migrated
@@ -36,6 +36,14 @@ export type SystemInitInputs = {
   skills: ReadonlyArray<CommandLike>
   plugins: ReadonlyArray<{ name: string; path: string; source: string }>
   fastMode: boolean | undefined
+}
+
+const guardVersion = (): string => {
+  if (typeof MACRO === 'undefined' || !MACRO.VERSION) {
+    return 'unknown'
+  }
+
+  return MACRO.VERSION
 }
 
 /**
@@ -71,7 +79,7 @@ export function buildSystemInitMessage(inputs: SystemInitInputs): SDKMessage {
       .map(c => c.name),
     apiKeySource: getAnthropicApiKeyWithSource().source as ApiKeySource,
     betas: getSdkBetas(),
-    claude_code_version: MACRO.VERSION,
+    claude_code_version: guardVersion(),
     output_style: outputStyle,
     agents: inputs.agents.map(agent => agent.agentType),
     skills: inputs.skills

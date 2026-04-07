@@ -54,3 +54,22 @@ export async function applyCollapsesIfNeeded(
 ): Promise<{ messages: Message[] }> {
   return { messages: projectView(messages) }
 }
+
+export function isWithheldPromptTooLong(
+  _message: unknown,
+  _isPromptTooLongMessage: unknown,
+  _querySource?: QuerySource,
+): boolean {
+  return false
+}
+
+export function isWithheldMediaSizeError(_message: unknown): boolean {
+  return false
+}
+
+export function recoverFromOverflow(
+  messages: Message[],
+  _querySource?: QuerySource,
+): { messages: Message[]; committed: number } {
+  return { messages, committed: 0 }
+}

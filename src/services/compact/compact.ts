@@ -263,7 +263,9 @@ export function truncateHeadForPTLRetry(
     let acc = 0
     dropCount = 0
     for (const g of groups) {
-      acc += roughTokenCountEstimationForMessages(g)
+      acc += roughTokenCountEstimationForMessages(
+        g as Parameters<typeof roughTokenCountEstimationForMessages>[0],
+      )
       dropCount++
       if (acc >= tokenGap) break
     }
@@ -598,8 +600,12 @@ export async function compactConversation(
     const boundaryMarker = createCompactBoundaryMessage(
       isAutoCompact ? 'auto' : 'manual',
       preCompactTokenCount ?? 0,
-      messages.at(-1)?.uuid,
-    )
+      messages.at(-1)?.uuid as UUID | undefined,
+    ) as ReturnType<typeof createCompactBoundaryMessage> & {
+      compactMetadata: {
+        preCompactDiscoveredTools?: string[]
+      }
+    }
     // Carry loaded-tool state — the summary doesn't preserve tool_reference
     // blocks, so the post-compact schema filter needs this to keep sending
     // already-loaded deferred tool schemas to the API.
@@ -634,12 +640,14 @@ export async function compactConversation(
     // shouldAutoCompact will see this PLUS ~20-40K for system prompt + tools +
     // userContext (via API usage.input_tokens). So `willRetriggerNextTurn: true`
     // is a strong signal; `false` may still retrigger when this is close to threshold.
-    const truePostCompactTokenCount = roughTokenCountEstimationForMessages([
-      boundaryMarker,
-      ...summaryMessages,
-      ...postCompactFileAttachments,
-      ...hookMessages,
-    ])
+    const truePostCompactTokenCount = roughTokenCountEstimationForMessages(
+      [
+        boundaryMarker,
+        ...summaryMessages,
+        ...postCompactFileAttachments,
+        ...hookMessages,
+      ] as Parameters<typeof roughTokenCountEstimationForMessages>[0],
+    )
 
     // Extract compaction API usage metrics
     const compactionUsage = getTokenUsage(summaryResponse)
@@ -1014,10 +1022,14 @@ export async function partialCompactConversation(
     const boundaryMarker = createCompactBoundaryMessage(
       'manual',
       preCompactTokenCount ?? 0,
-      lastPreCompactUuid,
+      lastPreCompactUuid as UUID | undefined,
       userFeedback,
       messagesToSummarize.length,
-    )
+    ) as ReturnType<typeof createCompactBoundaryMessage> & {
+      compactMetadata: {
+        preCompactDiscoveredTools?: string[]
+      }
+    }
     // allMessages not just messagesToSummarize — set union is idempotent,
     // simpler than tracking which half each tool lived in.
     const preCompactDiscovered = extractDiscoveredToolNames(allMessages)
@@ -1082,7 +1094,7 @@ export async function partialCompactConversation(
     return {
       boundaryMarker: annotateBoundaryWithPreservedSegment(
         boundaryMarker,
-        anchorUuid,
+        anchorUuid as UUID,
         messagesToKeep,
       ),
       summaryMessages,
@@ -1329,28 +1341,38 @@ async function streamCompactSummary({
 
       while (!next.done) {
         const event = next.value
+        const typedEvent = event as {
+          type?: string
+          event?: unknown
+        }
+
+        const streamEvent = typedEvent.type === 'stream_event' ? typedEvent.event as {
+          type?: string
+          content_block?: { type?: string }
+          delta?: { type?: string; text?: string }
+        } : undefined
 
         if (
           !hasStartedStreaming &&
-          event.type === 'stream_event' &&
-          event.event.type === 'content_block_start' &&
-          event.event.content_block.type === 'text'
+          typedEvent.type === 'stream_event' &&
+          streamEvent?.type === 'content_block_start' &&
+          streamEvent.content_block?.type === 'text'
         ) {
           hasStartedStreaming = true
           context.setStreamMode?.('responding')
         }
 
         if (
-          event.type === 'stream_event' &&
-          event.event.type === 'content_block_delta' &&
-          event.event.delta.type === 'text_delta'
+          typedEvent.type === 'stream_event' &&
+          streamEvent?.type === 'content_block_delta' &&
+          streamEvent.delta?.type === 'text_delta'
         ) {
-          const charactersStreamed = event.event.delta.text.length
+          const charactersStreamed = streamEvent.delta.text?.length ?? 0
           context.setResponseLength?.(length => length + charactersStreamed)
         }
 
-        if (event.type === 'assistant') {
-          response = event
+        if (typedEvent.type === 'assistant') {
+          response = event as typeof response
         }
 
         next = await streamIter.next()

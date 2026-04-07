@@ -85,7 +85,7 @@ import uniqBy from 'lodash-es/uniqBy.js'
 import { getProjectRoot } from '../bootstrap/state.js'
 import { formatCommandsWithinBudget } from '../tools/SkillTool/prompt.js'
 import { getContextWindowForModel } from './context.js'
-import type { DiscoverySignal } from '../services/skillSearch/signals.js'
+type DiscoverySignal = string
 // Conditional require for DCE. All skill-search string literals that would
 // otherwise leak into external builds live inside these modules. The only
 // surfaces in THIS file are: the maybe() call (gated via spread below) and
@@ -95,9 +95,17 @@ import type { DiscoverySignal } from '../services/skillSearch/signals.js'
 const skillSearchModules = feature('EXPERIMENTAL_SKILL_SEARCH')
   ? {
       featureCheck:
-        require('../services/skillSearch/featureCheck.js') as typeof import('../services/skillSearch/featureCheck.js'),
+        require('../services/skillSearch/featureCheck.js') as {
+          isSkillSearchEnabled: () => boolean
+        },
       prefetch:
-        require('../services/skillSearch/prefetch.js') as typeof import('../services/skillSearch/prefetch.js'),
+        require('../services/skillSearch/prefetch.js') as {
+          getTurnZeroSkillDiscovery: (
+            input: string,
+            messages: Message[],
+            context: ToolUseContext,
+          ) => Promise<Attachment[] | Attachment | null | undefined>
+        },
     }
   : null
 const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
@@ -204,7 +212,9 @@ const BRIEF_TOOL_NAME: string | null =
       ).BRIEF_TOOL_NAME
     : null
 const sessionTranscriptModule = feature('KAIROS')
-  ? (require('../services/sessionTranscript/sessionTranscript.js') as typeof import('../services/sessionTranscript/sessionTranscript.js'))
+  ? (require('../services/sessionTranscript/sessionTranscript.js') as {
+      flushOnDateChange: (messages: Message[], currentDate: string) => void
+    })
   : null
 /* eslint-enable @typescript-eslint/no-require-imports */
 import { hasUltrathinkKeyword, isUltrathinkEnabled } from './thinking.js'
@@ -803,11 +813,15 @@ export async function getAttachments(
         !options?.skipSkillDiscovery
           ? [
               maybe('skill_discovery', () =>
-                skillSearchModules.prefetch.getTurnZeroSkillDiscovery(
-                  input,
-                  messages ?? [],
-                  context,
-                ),
+                skillSearchModules.prefetch
+                  .getTurnZeroSkillDiscovery(input, messages ?? [], context)
+                  .then(result =>
+                    result == null
+                      ? []
+                      : Array.isArray(result)
+                        ? result
+                        : [result],
+                  ),
               ),
             ]
           : []),
@@ -999,7 +1013,7 @@ export async function getAttachments(
     ...userAttachmentResults.flat(),
     ...threadAttachmentResults.flat(),
     ...mainThreadAttachmentResults.flat(),
-  ].filter(a => a !== undefined && a !== null)
+  ].filter((a): a is Attachment => a !== undefined && a !== null)
 }
 
 async function maybe<A>(label: string, f: () => Promise<A[]>): Promise<A[]> {
@@ -1525,8 +1539,8 @@ export function getAgentListingDeltaAttachment(
   for (const msg of messages ?? []) {
     if (msg.type !== 'attachment') continue
     if (msg.attachment.type !== 'agent_listing_delta') continue
-    for (const t of msg.attachment.addedTypes) announced.add(t)
-    for (const t of msg.attachment.removedTypes) announced.delete(t)
+    for (const t of msg.attachment.addedTypes as string[]) announced.add(t)
+    for (const t of msg.attachment.removedTypes as string[]) announced.delete(t)
   }
 
   const currentTypes = new Set(filtered.map(a => a.agentType))
@@ -2256,7 +2270,10 @@ export function collectSurfacedMemories(messages: ReadonlyArray<Message>): {
   let totalBytes = 0
   for (const m of messages) {
     if (m.type === 'attachment' && m.attachment.type === 'relevant_memories') {
-      for (const mem of m.attachment.memories) {
+      for (const mem of m.attachment.memories as Array<{
+        path: string
+        content: string
+      }>) {
         paths.add(mem.path)
         totalBytes += mem.content.length
       }
@@ -2776,7 +2793,7 @@ export function extractAtMentionedFiles(content: string): string[] {
   }
 
   // Extract regular mentions
-  const regularMatchArray = content.match(regularAtMentionRegex) || []
+  const regularMatchArray = (content.match(regularAtMentionRegex) || []) as string[]
   regularMatchArray.forEach(match => {
     const filename = match.slice(match.indexOf('@') + 1)
     // Don't include if it starts with a quote (already handled as quoted)
@@ -3202,7 +3219,7 @@ export function createAttachmentMessage(
   attachment: Attachment,
 ): AttachmentMessage {
   return {
-    attachment,
+    attachment: attachment as AttachmentMessage['attachment'],
     type: 'attachment',
     uuid: randomUUID(),
     timestamp: new Date().toISOString(),
@@ -3970,7 +3987,10 @@ export function getContextEfficiencyAttachment(
   // isn't in the tool list. Lazy require keeps this file snip-string-free.
   const { isSnipRuntimeEnabled, shouldNudgeForSnips } =
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    require('../services/compact/snipCompact.js') as typeof import('../services/compact/snipCompact.js')
+    require('../services/compact/snipCompact.js') as {
+      isSnipRuntimeEnabled: () => boolean
+      shouldNudgeForSnips: (messages: Message[]) => boolean
+    }
   if (!isSnipRuntimeEnabled()) {
     return []
   }
