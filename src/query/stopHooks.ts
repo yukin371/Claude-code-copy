@@ -223,18 +223,22 @@ export async function* handleStopHooks(
           ) {
             if (attachment.type === 'hook_non_blocking_error') {
               hookErrors.push(
-                attachment.stderr || `Exit code ${attachment.exitCode}`,
+                typeof attachment.stderr === 'string'
+                  ? attachment.stderr
+                  : `Exit code ${String(attachment.exitCode)}`,
               )
               // Non-blocking errors always have output
               hasOutput = true
             } else if (attachment.type === 'hook_error_during_execution') {
-              hookErrors.push(attachment.content)
+              hookErrors.push(String(attachment.content))
               hasOutput = true
             } else if (attachment.type === 'hook_success') {
               // Check if successful hook produced any stdout/stderr
               if (
-                (attachment.stdout && attachment.stdout.trim()) ||
-                (attachment.stderr && attachment.stderr.trim())
+                (typeof attachment.stdout === 'string' &&
+                  attachment.stdout.trim()) ||
+                (typeof attachment.stderr === 'string' &&
+                  attachment.stderr.trim())
               ) {
                 hasOutput = true
               }
@@ -248,7 +252,10 @@ export async function* handleStopHooks(
                   i.durationMs === undefined,
               )
               if (info) {
-                info.durationMs = attachment.durationMs
+                info.durationMs =
+                  typeof attachment.durationMs === 'number'
+                    ? attachment.durationMs
+                    : undefined
               }
             }
           }

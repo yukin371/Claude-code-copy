@@ -3,6 +3,8 @@ import type {
   ToolResultBlockParam,
   ToolUseBlock,
 } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { UUID } from 'crypto'
+import type { SDKAssistantMessageError } from './entrypoints/sdk/coreTypes.generated.js'
 import type { CanUseToolFn } from './hooks/useCanUseTool.js'
 import { FallbackTriggeredError } from './services/api/withRetry.js'
 import {
@@ -142,7 +144,7 @@ function* yieldMissingToolResultBlocks(
           },
         ],
         toolUseResult: errorMessage,
-        sourceToolAssistantUUID: assistantMessage.uuid,
+        sourceToolAssistantUUID: assistantMessage.uuid as UUID,
       })
     }
   }
@@ -641,7 +643,7 @@ async function* queryLoop(
       if (isAtBlockingLimit) {
         yield createAssistantAPIErrorMessage({
           content: PROMPT_TOO_LONG_ERROR_MESSAGE,
-          error: 'invalid_request',
+          error: { type: 'invalid_request' } as SDKAssistantMessageError,
         })
         return { reason: 'blocking_limit' }
       }
@@ -773,7 +775,10 @@ async function* queryLoop(
                     )
                     if (addedFields) {
                       clonedContent ??= [...message.message.content]
-                      clonedContent[i] = { ...block, input: inputCopy }
+                      clonedContent[i] = {
+                        ...(block as object),
+                        input: inputCopy,
+                      } as (typeof clonedContent)[number]
                     }
                   }
                 }
@@ -1450,10 +1455,9 @@ async function* queryLoop(
         const resultContent =
           toolResult?.type === 'user' &&
           Array.isArray(toolResult.message.content)
-            ? toolResult.message.content.find(
-                (c): c is ToolResultBlockParam =>
-                  c.type === 'tool_result' && c.tool_use_id === block.id,
-              )
+            ? (toolResult.message.content.find(
+                c => c.type === 'tool_result' && c.tool_use_id === block.id,
+              ) as ToolResultBlockParam | undefined)
             : undefined
         return {
           name: block.name,
