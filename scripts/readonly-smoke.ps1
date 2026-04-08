@@ -6,7 +6,11 @@ param(
 
   [int]$MaxPreviewLines = 3,
 
-  [int]$MaxWidth = 120
+  [int]$MaxWidth = 120,
+
+  [string]$DisableMcpServers,
+
+  [switch]$DisableSerena
 )
 
 Set-StrictMode -Version Latest
@@ -102,6 +106,24 @@ function Get-SmokeCases {
       Command = $BunPath
       Args = @('src/entrypoints/cli.tsx', 'doctor', '--help')
       Notes = 'Help-only because doctor itself is interactive'
+    }
+    [pscustomobject]@{
+      Name = 'install-help'
+      Workflow = 'cli'
+      ReadOnly = $true
+      ExpectedExitCodes = @(0)
+      Command = $BunPath
+      Args = @('src/entrypoints/cli.tsx', 'install', '--help')
+      Notes = 'Help-only for native installer command surface'
+    }
+    [pscustomobject]@{
+      Name = 'update-help'
+      Workflow = 'cli'
+      ReadOnly = $true
+      ExpectedExitCodes = @(0)
+      Command = $BunPath
+      Args = @('src/entrypoints/cli.tsx', 'update', '--help')
+      Notes = 'Help-only for updater command surface'
     }
     [pscustomobject]@{
       Name = 'resume-help'
@@ -225,6 +247,20 @@ function Get-SmokeCases {
       Notes = 'Task route debug snapshot seeded from the compact query source'
     }
     [pscustomobject]@{
+      Name = 'route-session-search'
+      Workflow = 'routing'
+      ReadOnly = $true
+      ExpectedExitCodes = @(0)
+      Env = @{}
+      ExpectedOutputContains = @(
+        '"querySource": "session_search"',
+        '"route": "main"'
+      )
+      Command = $BunPath
+      Args = @('run', 'scripts/bun-tools.ts', 'route', 'session_search')
+      Notes = 'Helper sideQuery session_search should resolve through the main task route'
+    }
+    [pscustomobject]@{
       Name = 'route-agent-plan'
       Workflow = 'routing'
       ReadOnly = $true
@@ -272,6 +308,44 @@ function Get-SmokeCases {
       Command = $BunPath
       Args = @('run', 'scripts/bun-tools.ts', 'route', 'compact')
       Notes = 'Global Anthropic gateway should pin the default main route to a single-upstream transport'
+    }
+    [pscustomobject]@{
+      Name = 'route-permission-explainer-gateway'
+      Workflow = 'routing'
+      ReadOnly = $true
+      ExpectedExitCodes = @(0)
+      Env = @{
+        ANTHROPIC_BASE_URL = 'https://gateway.example.com/v1/messages'
+        NEKO_CODE_OPENAI_COMPATIBLE_API_KEY = $null
+      }
+      ExpectedOutputContains = @(
+        '"querySource": "permission_explainer"',
+        '"provider": "anthropic"',
+        '"transportMode": "single-upstream"',
+        '"baseUrl": "https://gateway.example.com/v1/messages"'
+      )
+      Command = $BunPath
+      Args = @('run', 'scripts/bun-tools.ts', 'route', 'permission_explainer')
+      Notes = 'Helper sideQuery permission_explainer should inherit the main-route gateway transport'
+    }
+    [pscustomobject]@{
+      Name = 'route-mcp-datetime-parse-gateway'
+      Workflow = 'routing'
+      ReadOnly = $true
+      ExpectedExitCodes = @(0)
+      Env = @{
+        ANTHROPIC_BASE_URL = 'https://gateway.example.com/v1/messages'
+        NEKO_CODE_OPENAI_COMPATIBLE_API_KEY = $null
+      }
+      ExpectedOutputContains = @(
+        '"querySource": "mcp_datetime_parse"',
+        '"provider": "anthropic"',
+        '"transportMode": "single-upstream"',
+        '"baseUrl": "https://gateway.example.com/v1/messages"'
+      )
+      Command = $BunPath
+      Args = @('run', 'scripts/bun-tools.ts', 'route', 'mcp_datetime_parse')
+      Notes = 'queryHaiku helper mcp_datetime_parse should inherit the main-route gateway transport'
     }
     [pscustomobject]@{
       Name = 'providers'
@@ -358,7 +432,8 @@ function Invoke-SmokeCase {
     [pscustomobject]$Case,
     [string]$WorkingDirectory,
     [int]$PreviewLineLimit,
-    [int]$PreviewWidth
+    [int]$PreviewWidth,
+    [string]$DisabledMcpServers
   )
 
   $previousLocation = Get-Location
@@ -370,7 +445,18 @@ function Invoke-SmokeCase {
     $caseEnv = if ($Case.PSObject.Properties['Env']) { $Case.Env } else { @{} }
     $expectedOutputContains = if ($Case.PSObject.Properties['ExpectedOutputContains']) { $Case.ExpectedOutputContains } else { @() }
 
+    if (-not ($caseEnv -is [hashtable])) {
+      $normalizedCaseEnv = @{}
+      foreach ($entry in $caseEnv.GetEnumerator()) {
+        $normalizedCaseEnv[$entry.Key] = $entry.Value
+      }
+      $caseEnv = $normalizedCaseEnv
+    }
+
     $envBackup = @{}
+    if (-not [string]::IsNullOrWhiteSpace($DisabledMcpServers) -and -not $caseEnv.ContainsKey('NEKO_CODE_DISABLED_MCP_SERVERS')) {
+      $caseEnv['NEKO_CODE_DISABLED_MCP_SERVERS'] = $DisabledMcpServers
+    }
     foreach ($envEntry in $caseEnv.GetEnumerator()) {
       $envBackup[$envEntry.Key] = [Environment]::GetEnvironmentVariable($envEntry.Key)
       [Environment]::SetEnvironmentVariable($envEntry.Key, $envEntry.Value)
@@ -460,6 +546,7 @@ if ($null -eq $bunCommand) {
 $cases = Get-SmokeCases -BunPath $bunCommand.Source
 $workflowFilter = Normalize-WorkflowFilter -WorkflowInput $Workflow
 $selectedCases = Select-SmokeCases -Cases $cases -WorkflowFilter $workflowFilter
+$disabledMcpServersValue = if ($DisableSerena) { 'serena' } else { $DisableMcpServers }
 
 if (@($selectedCases).Count -eq 0) {
   throw 'No smoke cases matched the requested workflow filter.'
@@ -485,7 +572,8 @@ foreach ($case in $selectedCases) {
     -Case $case `
     -WorkingDirectory $RepoRoot `
     -PreviewLineLimit $MaxPreviewLines `
-    -PreviewWidth $MaxWidth
+    -PreviewWidth $MaxWidth `
+    -DisabledMcpServers $disabledMcpServersValue
   $results += $result
   Write-CaseSummary -Result $result
 }

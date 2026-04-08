@@ -307,6 +307,7 @@ import {
 } from 'src/utils/fileHistory.js'
 import {
   restoreAgentFromSession,
+  restoreWorktreeForResume,
   restoreSessionStateFromLog,
 } from 'src/utils/sessionRestore.js'
 import { SandboxManager } from 'src/utils/sandbox/sandbox-adapter.js'
@@ -2990,6 +2991,7 @@ function runHeadlessStreaming(
                 agentDefinitions: appState.agentDefinitions,
                 customSystemPrompt: options.systemPrompt,
                 appendSystemPrompt: options.appendSystemPrompt,
+                querySource: 'sdk',
               },
             })
             sendControlResponseSuccess(message, { ...data })
@@ -4916,6 +4918,79 @@ type LoadInitialMessagesResult = {
   agentSetting?: string
 }
 
+type LoadedResumeConversation = NonNullable<
+  Awaited<ReturnType<typeof loadConversationForResume>>
+>
+
+async function clearCachesForPrintResume(): Promise<void> {
+  const { clearSessionCaches } = await import('../commands/clear/caches.js')
+  clearSessionCaches()
+}
+
+async function applyPrintResumeResult(
+  result: LoadedResumeConversation,
+  setAppState: (f: (prev: AppState) => AppState) => void,
+  options: {
+    forkSession: boolean | undefined
+  },
+  persistSession: boolean,
+): Promise<LoadInitialMessagesResult> {
+  // Match coordinator mode to the resumed session's mode
+  if (feature('COORDINATOR_MODE') && coordinatorModeModule) {
+    const warning = coordinatorModeModule.matchSessionMode(result.mode)
+    if (warning) {
+      process.stderr.write(warning + '\n')
+      // Refresh agent definitions to reflect the mode switch
+      const { getAgentDefinitionsWithOverrides, getActiveAgentsFromList } =
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        require('../tools/AgentTool/loadAgentsDir.js') as typeof import('../tools/AgentTool/loadAgentsDir.js')
+      getAgentDefinitionsWithOverrides.cache.clear?.()
+      const freshAgentDefs = await getAgentDefinitionsWithOverrides(getCwd())
+
+      setAppState(prev => ({
+        ...prev,
+        agentDefinitions: {
+          ...freshAgentDefs,
+          allAgents: freshAgentDefs.allAgents,
+          activeAgents: getActiveAgentsFromList(freshAgentDefs.allAgents),
+        },
+      }))
+    }
+  }
+
+  // Reuse the resumed session's ID
+  if (!options.forkSession && result.sessionId) {
+    switchSession(
+      asSessionId(result.sessionId),
+      result.fullPath ? dirname(result.fullPath) : null,
+    )
+    if (persistSession) {
+      await resetSessionFilePointer()
+    }
+  }
+  restoreSessionStateFromLog(result, setAppState)
+
+  // Restore session metadata so it's re-appended on exit via reAppendSessionMetadata
+  restoreSessionMetadata(
+    options.forkSession ? { ...result, worktreeSession: undefined } : result,
+  )
+
+  if (!options.forkSession) {
+    restoreWorktreeForResume(result.worktreeSession)
+  }
+
+  // Write mode entry for the resumed session
+  if (feature('COORDINATOR_MODE') && coordinatorModeModule) {
+    saveMode(coordinatorModeModule.isCoordinatorMode() ? 'coordinator' : 'normal')
+  }
+
+  return {
+    messages: result.messages,
+    turnInterruptionState: result.turnInterruptionState,
+    agentSetting: result.agentSetting,
+  }
+}
+
 async function loadInitialMessages(
   setAppState: (f: (prev: AppState) => AppState) => void,
   options: {
@@ -4934,75 +5009,19 @@ async function loadInitialMessages(
   if (options.continue) {
     try {
       logEvent('tengu_continue_print', {})
+      await clearCachesForPrintResume()
 
       const result = await loadConversationForResume(
         undefined /* sessionId */,
         undefined /* file path */,
       )
       if (result) {
-        // Match coordinator mode to the resumed session's mode
-        if (feature('COORDINATOR_MODE') && coordinatorModeModule) {
-          const warning = coordinatorModeModule.matchSessionMode(result.mode)
-          if (warning) {
-            process.stderr.write(warning + '\n')
-            // Refresh agent definitions to reflect the mode switch
-            const {
-              getAgentDefinitionsWithOverrides,
-              getActiveAgentsFromList,
-            } =
-              // eslint-disable-next-line @typescript-eslint/no-require-imports
-              require('../tools/AgentTool/loadAgentsDir.js') as typeof import('../tools/AgentTool/loadAgentsDir.js')
-            getAgentDefinitionsWithOverrides.cache.clear?.()
-            const freshAgentDefs = await getAgentDefinitionsWithOverrides(
-              getCwd(),
-            )
-
-            setAppState(prev => ({
-              ...prev,
-              agentDefinitions: {
-                ...freshAgentDefs,
-                allAgents: freshAgentDefs.allAgents,
-                activeAgents: getActiveAgentsFromList(freshAgentDefs.allAgents),
-              },
-            }))
-          }
-        }
-
-        // Reuse the resumed session's ID
-        if (!options.forkSession) {
-          if (result.sessionId) {
-            switchSession(
-              asSessionId(result.sessionId),
-              result.fullPath ? dirname(result.fullPath) : null,
-            )
-            if (persistSession) {
-              await resetSessionFilePointer()
-            }
-          }
-        }
-        restoreSessionStateFromLog(result, setAppState)
-
-        // Restore session metadata so it's re-appended on exit via reAppendSessionMetadata
-        restoreSessionMetadata(
-          options.forkSession
-            ? { ...result, worktreeSession: undefined }
-            : result,
+        return applyPrintResumeResult(
+          result,
+          setAppState,
+          { forkSession: options.forkSession },
+          persistSession,
         )
-
-        // Write mode entry for the resumed session
-        if (feature('COORDINATOR_MODE') && coordinatorModeModule) {
-          saveMode(
-            coordinatorModeModule.isCoordinatorMode()
-              ? 'coordinator'
-              : 'normal',
-          )
-        }
-
-        return {
-          messages: result.messages,
-          turnInterruptionState: result.turnInterruptionState,
-          agentSetting: result.agentSetting,
-        }
       }
     } catch (error) {
       logError(error)
@@ -5062,7 +5081,7 @@ async function loadInitialMessages(
       )
       if (!parsedSessionId) {
         let errorMessage =
-          'Error: --resume requires a valid session ID when used with --print. Usage: claude -p --resume <session-id>'
+          'Error: --resume requires a valid session ID when used with --print. Usage: neko -p --resume <session-id>'
         if (typeof options.resume === 'string') {
           errorMessage += `. Session IDs must be in UUID format (e.g., 550e8400-e29b-41d4-a716-446655440000). Provided value "${options.resume}" is not a valid UUID`
         }
@@ -5096,6 +5115,8 @@ async function loadInitialMessages(
           parsedSessionId.ingressUrl,
         )
       }
+
+      await clearCachesForPrintResume()
 
       // Load the conversation with the specified session ID
       const result = await loadConversationForResume(
@@ -5145,62 +5166,12 @@ async function loadInitialMessages(
         result.messages = index >= 0 ? result.messages.slice(0, index + 1) : []
       }
 
-      // Match coordinator mode to the resumed session's mode
-      if (feature('COORDINATOR_MODE') && coordinatorModeModule) {
-        const warning = coordinatorModeModule.matchSessionMode(result.mode)
-        if (warning) {
-          process.stderr.write(warning + '\n')
-          // Refresh agent definitions to reflect the mode switch
-          const { getAgentDefinitionsWithOverrides, getActiveAgentsFromList } =
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
-            require('../tools/AgentTool/loadAgentsDir.js') as typeof import('../tools/AgentTool/loadAgentsDir.js')
-          getAgentDefinitionsWithOverrides.cache.clear?.()
-          const freshAgentDefs = await getAgentDefinitionsWithOverrides(
-            getCwd(),
-          )
-
-          setAppState(prev => ({
-            ...prev,
-            agentDefinitions: {
-              ...freshAgentDefs,
-              allAgents: freshAgentDefs.allAgents,
-              activeAgents: getActiveAgentsFromList(freshAgentDefs.allAgents),
-            },
-          }))
-        }
-      }
-
-      // Reuse the resumed session's ID
-      if (!options.forkSession && result.sessionId) {
-        switchSession(
-          asSessionId(result.sessionId),
-          result.fullPath ? dirname(result.fullPath) : null,
-        )
-        if (persistSession) {
-          await resetSessionFilePointer()
-        }
-      }
-      restoreSessionStateFromLog(result, setAppState)
-
-      // Restore session metadata so it's re-appended on exit via reAppendSessionMetadata
-      restoreSessionMetadata(
-        options.forkSession
-          ? { ...result, worktreeSession: undefined }
-          : result,
+      return applyPrintResumeResult(
+        result,
+        setAppState,
+        { forkSession: options.forkSession },
+        persistSession,
       )
-
-      // Write mode entry for the resumed session
-      if (feature('COORDINATOR_MODE') && coordinatorModeModule) {
-        saveMode(
-          coordinatorModeModule.isCoordinatorMode() ? 'coordinator' : 'normal',
-        )
-      }
-
-      return {
-        messages: result.messages,
-        turnInterruptionState: result.turnInterruptionState,
-        agentSetting: result.agentSetting,
-      }
     } catch (error) {
       logError(error)
       const errorMessage =

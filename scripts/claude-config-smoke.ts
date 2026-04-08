@@ -12,6 +12,7 @@ type EnvKey =
   | 'NEKO_CODE_CONFIG_DIR'
   | 'CLAUDE_CODE_PLUGIN_CACHE_DIR'
   | 'CLAUDE_CODE_SIMPLE'
+  | 'NEKO_CODE_DISABLED_MCP_SERVERS'
 
 type SmokeCase = {
   name: string
@@ -58,6 +59,7 @@ type SmokeOptions = {
   listOnly: boolean
   maxPreviewLines: number
   sourceDir: string
+  disableMcpServers?: string
 }
 
 const repoRoot = process.cwd()
@@ -69,6 +71,7 @@ function parseArgs(argv: string[]): SmokeOptions {
   let listOnly = false
   let maxPreviewLines = 4
   let sourceDir = join(homedir(), '.claude')
+  let disableMcpServers: string | undefined
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
@@ -103,6 +106,21 @@ function parseArgs(argv: string[]): SmokeOptions {
       continue
     }
 
+    if (arg === '--disable-mcp-servers') {
+      const value = argv[index + 1]?.trim()
+      if (!value) {
+        throw new Error('--disable-mcp-servers requires a comma-separated value')
+      }
+      disableMcpServers = value
+      index += 1
+      continue
+    }
+
+    if (arg === '--disable-serena') {
+      disableMcpServers = 'serena'
+      continue
+    }
+
     throw new Error(`Unsupported argument: ${arg}`)
   }
 
@@ -111,6 +129,7 @@ function parseArgs(argv: string[]): SmokeOptions {
     listOnly,
     maxPreviewLines,
     sourceDir,
+    disableMcpServers,
   }
 }
 
@@ -211,6 +230,26 @@ function getSmokeCases(): SmokeCase[] {
       ],
     },
     {
+      name: 'route-session-search-direct-provider',
+      expectedExitCodes: [0],
+      commandLabel:
+        'NEKO_CODE_OPENAI_COMPATIBLE_API_KEY=shared-openai-key bun-tools route session_search',
+      entrypoint: 'bun-tools',
+      args: ['route', 'session_search'],
+      notes:
+        'Assert that helper sideQuery session_search stays on the main direct-provider route after config migration',
+      env: {
+        NEKO_CODE_OPENAI_COMPATIBLE_API_KEY: 'shared-openai-key',
+        ANTHROPIC_BASE_URL: undefined,
+      },
+      expectedOutputContains: [
+        '"querySource": "session_search"',
+        '"provider": "glm"',
+        '"transportMode": "direct-provider"',
+        '"baseUrl": null',
+      ],
+    },
+    {
       name: 'route-compact-gateway',
       expectedExitCodes: [0],
       commandLabel:
@@ -226,6 +265,46 @@ function getSmokeCases(): SmokeCase[] {
       expectedOutputContains: [
         '"provider": "anthropic"',
         '"apiStyle": "anthropic"',
+        '"transportMode": "single-upstream"',
+        '"baseUrl": "https://gateway.example.com/v1/messages"',
+      ],
+    },
+    {
+      name: 'route-permission-explainer-gateway',
+      expectedExitCodes: [0],
+      commandLabel:
+        'ANTHROPIC_BASE_URL=https://gateway.example.com/v1/messages bun-tools route permission_explainer',
+      entrypoint: 'bun-tools',
+      args: ['route', 'permission_explainer'],
+      notes:
+        'Assert that helper sideQuery permission_explainer inherits the main single-upstream gateway route after config migration',
+      env: {
+        ANTHROPIC_BASE_URL: 'https://gateway.example.com/v1/messages',
+        NEKO_CODE_OPENAI_COMPATIBLE_API_KEY: undefined,
+      },
+      expectedOutputContains: [
+        '"querySource": "permission_explainer"',
+        '"provider": "anthropic"',
+        '"transportMode": "single-upstream"',
+        '"baseUrl": "https://gateway.example.com/v1/messages"',
+      ],
+    },
+    {
+      name: 'route-mcp-datetime-parse-gateway',
+      expectedExitCodes: [0],
+      commandLabel:
+        'ANTHROPIC_BASE_URL=https://gateway.example.com/v1/messages bun-tools route mcp_datetime_parse',
+      entrypoint: 'bun-tools',
+      args: ['route', 'mcp_datetime_parse'],
+      notes:
+        'Assert that queryHaiku-based helper mcp_datetime_parse inherits the main single-upstream gateway route after config migration',
+      env: {
+        ANTHROPIC_BASE_URL: 'https://gateway.example.com/v1/messages',
+        NEKO_CODE_OPENAI_COMPATIBLE_API_KEY: undefined,
+      },
+      expectedOutputContains: [
+        '"querySource": "mcp_datetime_parse"',
+        '"provider": "anthropic"',
         '"transportMode": "single-upstream"',
         '"baseUrl": "https://gateway.example.com/v1/messages"',
       ],
@@ -477,6 +556,7 @@ async function runSmokeCase(
   smokeCase: SmokeCase,
   environment: SmokeEnvironment,
   maxPreviewLines: number,
+  disableMcpServers?: string,
 ): Promise<SmokeResult> {
   const bunPath = Bun.which('bun') ?? process.execPath
   const entrypoint =
@@ -486,6 +566,9 @@ async function runSmokeCase(
     ...process.env,
     NEKO_CODE_CONFIG_DIR: environment.configDir,
     CLAUDE_CODE_PLUGIN_CACHE_DIR: environment.pluginCacheDir,
+    ...(disableMcpServers
+      ? { NEKO_CODE_DISABLED_MCP_SERVERS: disableMcpServers }
+      : {}),
   } as Record<string, string | undefined>
 
   for (const [key, value] of Object.entries(smokeCase.env ?? {})) {
@@ -565,11 +648,37 @@ function printUsage(): void {
     '  --max-preview-lines <n>    Limit preview lines per command (default: 4)',
   )
   console.log(
+    '  --disable-mcp-servers <v>  Temporarily disable MCP servers by name (comma-separated)',
+  )
+  console.log(
+    '  --disable-serena           Shortcut for --disable-mcp-servers serena',
+  )
+  console.log(
     '  --list-only                Print the smoke command matrix without executing it',
   )
   console.log(
     '  --keep-temp                Keep the temp workspace/config dirs after the run',
   )
+}
+
+async function removeTempDirectoryWithRetry(tempRoot: string): Promise<void> {
+  const delaysMs = [0, 250, 1000, 2500]
+
+  let lastError: unknown
+  for (const delayMs of delaysMs) {
+    if (delayMs > 0) {
+      await new Promise(resolve => setTimeout(resolve, delayMs))
+    }
+
+    try {
+      await rm(tempRoot, { recursive: true, force: true })
+      return
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError))
 }
 
 const trackedEnvVars: EnvKey[] = [
@@ -690,11 +799,12 @@ try {
 
   let failureCount = 0
   for (const smokeCase of smokeCases) {
-    const result = await runSmokeCase(
-      smokeCase,
-      environment,
-      options.maxPreviewLines,
-    )
+      const result = await runSmokeCase(
+        smokeCase,
+        environment,
+        options.maxPreviewLines,
+        options.disableMcpServers,
+      )
     if (!result.passed) {
       failureCount += 1
     }
@@ -727,7 +837,7 @@ try {
 
   if (!options.keepTemp) {
     try {
-      await rm(environment.tempRoot, { recursive: true, force: true })
+      await removeTempDirectoryWithRetry(environment.tempRoot)
     } catch (error) {
       console.warn(
         `Warning: failed to remove temp directory ${environment.tempRoot}: ${
