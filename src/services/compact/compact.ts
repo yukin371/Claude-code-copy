@@ -1280,6 +1280,7 @@ async function streamCompactSummary({
         async () => appState.toolPermissionContext,
         context.options.agentDefinitions.activeAgents,
         'compact',
+        context.options.querySource,
       )
 
       // When tool search is enabled, include ToolSearchTool and MCP tools. They get

@@ -725,16 +725,24 @@ export async function queryModelWithoutStreaming({
   // Store the assistant message but continue consuming the generator to ensure
   // logAPISuccessAndDuration gets called (which happens after all yields)
   let assistantMessage: AssistantMessage | undefined
-  for await (const message of withStreamingVCR(messages, async function* () {
-    yield* queryModel(
-      messages,
+  for await (const message of withStreamingVCR(
+    messages,
+    {
       systemPrompt,
-      thinkingConfig,
-      tools,
-      signal,
-      options,
-    )
-  })) {
+      model: options.model,
+      querySource: options.querySource,
+    },
+    async function* () {
+      yield* queryModel(
+        messages,
+        systemPrompt,
+        thinkingConfig,
+        tools,
+        signal,
+        options,
+      )
+    },
+  )) {
     if (message.type === 'assistant') {
       assistantMessage = message
     }
@@ -768,16 +776,24 @@ export async function* queryModelWithStreaming({
   StreamEvent | AssistantMessage | SystemAPIErrorMessage,
   void
 > {
-  return yield* withStreamingVCR(messages, async function* () {
-    yield* queryModel(
-      messages,
+  return yield* withStreamingVCR(
+    messages,
+    {
       systemPrompt,
-      thinkingConfig,
-      tools,
-      signal,
-      options,
-    )
-  })
+      model: options.model,
+      querySource: options.querySource,
+    },
+    async function* () {
+      yield* queryModel(
+        messages,
+        systemPrompt,
+        thinkingConfig,
+        tools,
+        signal,
+        options,
+      )
+    },
+  )
 }
 
 /**
@@ -1129,6 +1145,7 @@ async function* queryModel(
     options.getToolPermissionContext,
     options.agents,
     'query',
+    options.querySource,
   )
 
   // Precompute once — isDeferredTool does 2 GrowthBook lookups per call
@@ -3296,6 +3313,11 @@ export async function queryHaiku({
       })
       return [result]
     },
+    {
+      systemPrompt,
+      model: getSmallFastModel(),
+      querySource: options.querySource,
+    },
   )
   // We don't use streaming for Haiku so this is safe
   return result[0]! as AssistantMessage
@@ -3353,6 +3375,11 @@ export async function queryWithModel({
         },
       })
       return [result]
+    },
+    {
+      systemPrompt,
+      model: options.model,
+      querySource: options.querySource,
     },
   )
   return result[0]! as AssistantMessage

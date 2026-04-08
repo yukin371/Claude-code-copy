@@ -3,6 +3,7 @@ import type {
   ImageBlockParam,
   TextBlockParam,
 } from '@anthropic-ai/sdk/resources/index.mjs'
+import type { QuerySource } from '../constants/querySource.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../services/analytics/growthbook.js'
 import {
   countMessagesTokensWithAPI,
@@ -150,6 +151,7 @@ async function truncateContentBlocks(
 
 export async function mcpContentNeedsTruncation(
   content: MCPToolResult,
+  querySource?: QuerySource,
 ): Promise<boolean> {
   if (!content) return false
 
@@ -168,7 +170,9 @@ export async function mcpContentNeedsTruncation(
         ? [{ role: 'user' as const, content }]
         : [{ role: 'user' as const, content }]
 
-    const tokenCount = await countMessagesTokensWithAPI(messages, [])
+    const tokenCount = await countMessagesTokensWithAPI(messages, [], {
+      querySource,
+    })
     return !!(tokenCount && tokenCount > getMaxMcpOutputTokens())
   } catch (error) {
     logError(error)
@@ -199,8 +203,9 @@ export async function truncateMcpContent(
 
 export async function truncateMcpContentIfNeeded(
   content: MCPToolResult,
+  querySource?: QuerySource,
 ): Promise<MCPToolResult> {
-  if (!(await mcpContentNeedsTruncation(content))) {
+  if (!(await mcpContentNeedsTruncation(content, querySource))) {
     return content
   }
 

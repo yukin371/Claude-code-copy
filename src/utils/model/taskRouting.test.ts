@@ -142,6 +142,22 @@ describe('taskRouting transport compatibility', () => {
     const snapshot = getTaskRoutingDebugSnapshot({
       querySources: [
         'compact',
+        'session_search',
+        'permission_explainer',
+        'model_validation',
+        'side_question',
+        'auto_mode',
+        'memdir_relevance',
+        'hook_prompt',
+        'chrome_mcp',
+        'mcp_datetime_parse',
+        'generate_session_title',
+        'rename_generate_name',
+        'tool_use_summary_generation',
+        'feedback',
+        'agent_creation',
+        'away_summary',
+        'teleport_generate_title',
         'verification_agent',
         'agent:builtin:plan',
         'agent:builtin:statusline-setup',
@@ -166,6 +182,86 @@ describe('taskRouting transport compatibility', () => {
       {
         querySource: 'compact',
         normalizedQuerySource: 'compact',
+        route: 'main',
+      },
+      {
+        querySource: 'session_search',
+        normalizedQuerySource: 'session_search',
+        route: 'main',
+      },
+      {
+        querySource: 'permission_explainer',
+        normalizedQuerySource: 'permission_explainer',
+        route: 'main',
+      },
+      {
+        querySource: 'model_validation',
+        normalizedQuerySource: 'model_validation',
+        route: 'main',
+      },
+      {
+        querySource: 'side_question',
+        normalizedQuerySource: 'side_question',
+        route: 'main',
+      },
+      {
+        querySource: 'auto_mode',
+        normalizedQuerySource: 'auto_mode',
+        route: 'main',
+      },
+      {
+        querySource: 'memdir_relevance',
+        normalizedQuerySource: 'memdir_relevance',
+        route: 'main',
+      },
+      {
+        querySource: 'hook_prompt',
+        normalizedQuerySource: 'hook_prompt',
+        route: 'main',
+      },
+      {
+        querySource: 'chrome_mcp',
+        normalizedQuerySource: 'chrome_mcp',
+        route: 'main',
+      },
+      {
+        querySource: 'mcp_datetime_parse',
+        normalizedQuerySource: 'mcp_datetime_parse',
+        route: 'main',
+      },
+      {
+        querySource: 'generate_session_title',
+        normalizedQuerySource: 'generate_session_title',
+        route: 'main',
+      },
+      {
+        querySource: 'rename_generate_name',
+        normalizedQuerySource: 'rename_generate_name',
+        route: 'main',
+      },
+      {
+        querySource: 'tool_use_summary_generation',
+        normalizedQuerySource: 'tool_use_summary_generation',
+        route: 'main',
+      },
+      {
+        querySource: 'feedback',
+        normalizedQuerySource: 'feedback',
+        route: 'main',
+      },
+      {
+        querySource: 'agent_creation',
+        normalizedQuerySource: 'agent_creation',
+        route: 'main',
+      },
+      {
+        querySource: 'away_summary',
+        normalizedQuerySource: 'away_summary',
+        route: 'main',
+      },
+      {
+        querySource: 'teleport_generate_title',
+        normalizedQuerySource: 'teleport_generate_title',
         route: 'main',
       },
       {
@@ -206,6 +302,22 @@ describe('taskRouting transport compatibility', () => {
     ])
     expect(snapshot.querySourceRoutes.map(entry => entry.routeSnapshot.route)).toEqual([
       'main',
+      'main',
+      'main',
+      'main',
+      'main',
+      'main',
+      'main',
+      'main',
+      'main',
+      'main',
+      'main',
+      'main',
+      'main',
+      'main',
+      'main',
+      'main',
+      'main',
       'review',
       'plan',
       'statusline',
@@ -214,6 +326,11 @@ describe('taskRouting transport compatibility', () => {
       'review',
       'main',
     ])
+    expect(
+      snapshot.querySourceRoutes.find(
+        entry => entry.querySource === 'permission_explainer',
+      )?.routeSnapshot.executionTarget.provider,
+    ).toBe('glm')
     expect(
       snapshot.querySourceRoutes.find(
         entry => entry.querySource === 'agent:custom:route:frontend',

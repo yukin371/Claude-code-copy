@@ -94,9 +94,12 @@ export const TOOL_TOKEN_COUNT_OVERHEAD = 500
 async function countTokensWithFallback(
   messages: Anthropic.Beta.Messages.BetaMessageParam[],
   tools: Anthropic.Beta.Messages.BetaToolUnion[],
+  querySource?: string,
 ): Promise<number | null> {
   try {
-    const result = await countMessagesTokensWithAPI(messages, tools)
+    const result = await countMessagesTokensWithAPI(messages, tools, {
+      querySource,
+    })
     if (result !== null) {
       return result
     }
@@ -109,7 +112,9 @@ async function countTokensWithFallback(
   }
 
   try {
-    const fallbackResult = await countTokensViaHaikuFallback(messages, tools)
+    const fallbackResult = await countTokensViaHaikuFallback(messages, tools, {
+      querySource,
+    })
     if (fallbackResult === null) {
       logForDebugging(
         `countTokensWithFallback: haiku fallback also returned null (${tools.length} tools)`,
@@ -253,6 +258,7 @@ export async function countToolDefinitionTokens(
   getToolPermissionContext: () => Promise<ToolPermissionContext>,
   agentInfo: AgentDefinitionsResult | null,
   model?: string,
+  querySource?: string,
 ): Promise<number> {
   const toolSchemas = await Promise.all(
     tools.map(tool =>
@@ -264,7 +270,7 @@ export async function countToolDefinitionTokens(
       }),
     ),
   )
-  const result = await countTokensWithFallback([], toolSchemas)
+  const result = await countTokensWithFallback([], toolSchemas, querySource)
   if (result === null || result === 0) {
     const toolNames = tools.map(t => t.name).join(', ')
     logForDebugging(
@@ -288,6 +294,7 @@ function extractSectionName(content: string): string {
 
 async function countSystemTokens(
   effectiveSystemPrompt: readonly string[],
+  querySource?: string,
 ): Promise<{
   systemPromptTokens: number
   systemPromptSections: SystemPromptSectionDetail[]
@@ -315,7 +322,7 @@ async function countSystemTokens(
 
   const systemTokenCounts = await Promise.all(
     namedEntries.map(({ content }) =>
-      countTokensWithFallback([{ role: 'user', content }], []),
+      countTokensWithFallback([{ role: 'user', content }], [], querySource),
     ),
   )
 
@@ -334,7 +341,9 @@ async function countSystemTokens(
   return { systemPromptTokens, systemPromptSections }
 }
 
-async function countMemoryFileTokens(): Promise<{
+async function countMemoryFileTokens(
+  querySource?: string,
+): Promise<{
   memoryFileDetails: MemoryFile[]
   claudeMdTokens: number
 }> {
@@ -359,6 +368,7 @@ async function countMemoryFileTokens(): Promise<{
       const tokens = await countTokensWithFallback(
         [{ role: 'user', content: file.content }],
         [],
+        querySource,
       )
 
       return { file, tokens: tokens || 0 }
@@ -383,6 +393,7 @@ async function countBuiltInToolTokens(
   agentInfo: AgentDefinitionsResult | null,
   model?: string,
   messages?: Message[],
+  querySource?: string,
 ): Promise<{
   builtInToolTokens: number
   deferredBuiltinDetails: DeferredBuiltinTool[]
@@ -408,6 +419,7 @@ async function countBuiltInToolTokens(
     getToolPermissionContext,
     agentInfo?.activeAgents ?? [],
     'analyzeBuiltIn',
+    querySource,
   )
 
   // Separate always-loaded and deferred builtin tools using dynamic isDeferredTool check
@@ -422,6 +434,7 @@ async function countBuiltInToolTokens(
           getToolPermissionContext,
           agentInfo,
           model,
+          querySource,
         )
       : 0
 
@@ -488,6 +501,7 @@ async function countBuiltInToolTokens(
           getToolPermissionContext,
           agentInfo,
           model,
+          querySource,
         ),
       ),
     )
@@ -515,6 +529,7 @@ async function countBuiltInToolTokens(
       getToolPermissionContext,
       agentInfo,
       model,
+      querySource,
     )
     return {
       builtInToolTokens: alwaysLoadedTokens + deferredTokens,
@@ -541,6 +556,7 @@ async function countSlashCommandTokens(
   tools: Tools,
   getToolPermissionContext: () => Promise<ToolPermissionContext>,
   agentInfo: AgentDefinitionsResult | null,
+  querySource?: string,
 ): Promise<{
   slashCommandTokens: number
   commandInfo: { totalCommands: number; includedCommands: number }
@@ -559,6 +575,8 @@ async function countSlashCommandTokens(
     [slashCommandTool],
     getToolPermissionContext,
     agentInfo,
+    undefined,
+    querySource,
   )
 
   return {
@@ -574,6 +592,7 @@ async function countSkillTokens(
   tools: Tools,
   getToolPermissionContext: () => Promise<ToolPermissionContext>,
   agentInfo: AgentDefinitionsResult | null,
+  querySource?: string,
 ): Promise<{
   skillTokens: number
   skillInfo: {
@@ -601,6 +620,8 @@ async function countSkillTokens(
       [slashCommandTool],
       getToolPermissionContext,
       agentInfo,
+      undefined,
+      querySource,
     )
 
     // Calculate per-skill token estimates based on frontmatter only
@@ -638,6 +659,7 @@ export async function countMcpToolTokens(
   agentInfo: AgentDefinitionsResult | null,
   model: string,
   messages?: Message[],
+  querySource?: string,
 ): Promise<{
   mcpToolTokens: number
   mcpToolDetails: McpTool[]
@@ -652,6 +674,7 @@ export async function countMcpToolTokens(
     getToolPermissionContext,
     agentInfo,
     model,
+    querySource,
   )
   // Subtract the single overhead since we made one bulk call
   const totalTokens = Math.max(
@@ -694,6 +717,7 @@ export async function countMcpToolTokens(
     getToolPermissionContext,
     agentInfo?.activeAgents ?? [],
     'analyzeMcp',
+    querySource,
   )
 
   // Find MCP tools that have been used in messages (loaded via ToolSearchTool)
@@ -752,7 +776,8 @@ export async function countMcpToolTokens(
 
 async function countCustomAgentTokens(agentDefinitions: {
   activeAgents: AgentDefinition[]
-}): Promise<{
+},
+querySource?: string): Promise<{
   agentTokens: number
   agentDetails: Agent[]
 }> {
@@ -772,6 +797,7 @@ async function countCustomAgentTokens(agentDefinitions: {
           },
         ],
         [],
+        querySource,
       ),
     ),
   )
@@ -873,6 +899,7 @@ function processAttachment(
 
 async function approximateMessageTokens(
   messages: Message[],
+  querySource?: string,
 ): Promise<MessageBreakdown> {
   const microcompactResult = await microcompactMessages(messages)
 
@@ -941,6 +968,7 @@ async function approximateMessageTokens(
   const approximateMessageTokens = await countTokensWithFallback(
     apiMessages as Anthropic.Beta.Messages.BetaMessageParam[],
     [],
+    querySource,
   )
 
   breakdown.totalTokens = approximateMessageTokens ?? 0
@@ -959,6 +987,7 @@ export async function analyzeContextUsage(
   /** Original messages before microcompact, used to extract API usage */
   originalMessages?: Message[],
 ): Promise<ContextData> {
+  const querySource = toolUseContext?.options.querySource
   const runtimeModel = getRuntimeMainLoopModel({
     permissionMode: (await getToolPermissionContext()).mode,
     mainLoopModel: model,
@@ -993,14 +1022,15 @@ export async function analyzeContextUsage(
     { slashCommandTokens, commandInfo },
     messageBreakdown,
   ] = await Promise.all([
-    countSystemTokens(effectiveSystemPrompt),
-    countMemoryFileTokens(),
+    countSystemTokens(effectiveSystemPrompt, querySource),
+    countMemoryFileTokens(querySource),
     countBuiltInToolTokens(
       tools,
       getToolPermissionContext,
       agentDefinitions,
       runtimeModel,
       messages,
+      querySource,
     ),
     countMcpToolTokens(
       tools,
@@ -1008,10 +1038,16 @@ export async function analyzeContextUsage(
       agentDefinitions,
       runtimeModel,
       messages,
+      querySource,
     ),
-    countCustomAgentTokens(agentDefinitions),
-    countSlashCommandTokens(tools, getToolPermissionContext, agentDefinitions),
-    approximateMessageTokens(messages),
+    countCustomAgentTokens(agentDefinitions, querySource),
+    countSlashCommandTokens(
+      tools,
+      getToolPermissionContext,
+      agentDefinitions,
+      querySource,
+    ),
+    approximateMessageTokens(messages, querySource),
   ])
 
   // Count skills separately with error isolation
@@ -1019,6 +1055,7 @@ export async function analyzeContextUsage(
     tools,
     getToolPermissionContext,
     agentDefinitions,
+    querySource,
   )
   const skillInfo = skillResult.skillInfo
   // Use sum of individual skill token estimates (matches what's shown in details)

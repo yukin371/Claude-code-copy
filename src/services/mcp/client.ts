@@ -1899,6 +1899,7 @@ export const fetchToolsForClient = memoizeWithLRU(
                     meta,
                     signal: context.abortController.signal,
                     setAppState: context.setAppState,
+                    querySource: context.options.querySource,
                     onProgress:
                       onProgress && toolUseId
                         ? progressData => {
@@ -2752,6 +2753,7 @@ export async function processMCPResult(
   result: unknown,
   tool: string, // Tool name for validation (e.g., "search")
   name: string, // Server name for IDE check and transformation (e.g., "slack")
+  querySource?: string,
 ): Promise<MCPToolResult> {
   const { content, type, schema } = await transformMCPResult(result, tool, name)
 
@@ -2762,7 +2764,7 @@ export async function processMCPResult(
   }
 
   // Check if content needs truncation (i.e., is too large)
-  if (!(await mcpContentNeedsTruncation(content))) {
+  if (!(await mcpContentNeedsTruncation(content, querySource))) {
     return content
   }
 
@@ -2775,7 +2777,7 @@ export async function processMCPResult(
       reason: 'env_disabled',
       sizeEstimateTokens,
     } as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS)
-    return await truncateMcpContentIfNeeded(content)
+    return await truncateMcpContentIfNeeded(content, querySource)
   }
 
   // Save large output to file and return instructions for reading it
@@ -2792,7 +2794,7 @@ export async function processMCPResult(
       reason: 'contains_images',
       sizeEstimateTokens,
     } as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS)
-    return await truncateMcpContentIfNeeded(content)
+    return await truncateMcpContentIfNeeded(content, querySource)
   }
 
   // Generate a unique ID for the persisted file (server__tool-timestamp)
@@ -2850,6 +2852,7 @@ export async function callMCPToolWithUrlElicitationRetry({
   signal,
   setAppState,
   onProgress,
+  querySource,
   callToolFn = callMCPTool,
   handleElicitation,
 }: {
@@ -2861,6 +2864,7 @@ export async function callMCPToolWithUrlElicitationRetry({
   signal: AbortSignal
   setAppState: (f: (prev: AppState) => AppState) => void
   onProgress?: (data: MCPProgress) => void
+  querySource?: string
   /** Injectable for testing. Defaults to callMCPTool. */
   callToolFn?: (opts: {
     client: ConnectedMCPServer
@@ -2869,6 +2873,7 @@ export async function callMCPToolWithUrlElicitationRetry({
     meta?: Record<string, unknown>
     signal: AbortSignal
     onProgress?: (data: MCPProgress) => void
+    querySource?: string
   }) => Promise<MCPToolCallResult>
   /** Handler for URL elicitations when no hook handles them.
    * In print/SDK mode, delegates to structuredIO. In REPL, falls back to queue. */
@@ -2888,6 +2893,7 @@ export async function callMCPToolWithUrlElicitationRetry({
         meta,
         signal,
         onProgress,
+        querySource,
       })
     } catch (error) {
       // The MCP SDK's Protocol creates plain McpError (not UrlElicitationRequiredError)
@@ -3064,6 +3070,7 @@ async function callMCPTool({
   meta,
   signal,
   onProgress,
+  querySource,
 }: {
   client: ConnectedMCPServer
   tool: string
@@ -3071,6 +3078,7 @@ async function callMCPTool({
   meta?: Record<string, unknown>
   signal: AbortSignal
   onProgress?: (data: MCPProgress) => void
+  querySource?: string
 }): Promise<{
   content: MCPToolResult
   _meta?: Record<string, unknown>
@@ -3199,7 +3207,7 @@ async function callMCPTool({
       })
     }
 
-    const content = await processMCPResult(result, tool, name)
+    const content = await processMCPResult(result, tool, name, querySource)
     return {
       content,
       _meta: result._meta as Record<string, unknown> | undefined,

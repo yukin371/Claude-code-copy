@@ -13,6 +13,7 @@ import type {
   ReferralEligibilityResponse,
 } from '../services/oauth/types.js'
 import { getCwd } from '../utils/cwd.js'
+import { isInBundledMode } from './bundledMode.js'
 import { registerCleanup } from './cleanupRegistry.js'
 import { logForDebugging } from './debug.js'
 import { logForDiagnosticsNoPII } from './diagLogs.js'
@@ -1733,7 +1734,7 @@ export function formatAutoUpdaterDisabledReason(
 }
 
 export function getAutoUpdaterDisabledReason(): AutoUpdaterDisabledReason | null {
-  if (process.env.NODE_ENV === 'development') {
+  if (!isInBundledMode() && process.env.NODE_ENV === 'development') {
     return { type: 'development' }
   }
   if (isEnvTruthy(process.env.DISABLE_AUTOUPDATER)) {

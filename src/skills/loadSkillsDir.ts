@@ -73,7 +73,7 @@ export type LoadedFrom =
   | 'mcp'
 
 /**
- * Returns a claude config directory path for a given source.
+ * Returns the preferred skill/command directory path for a given source.
  */
 export function getSkillsPath(
   source: SettingSource | 'plugin',
@@ -85,7 +85,7 @@ export function getSkillsPath(
     case 'userSettings':
       return join(getClaudeConfigHomeDir(), dir)
     case 'projectSettings':
-      return `.claude/${dir}`
+      return `.neko-code/${dir}`
     case 'plugin':
       return 'plugin'
     default:
@@ -884,7 +884,7 @@ export async function discoverSkillDirsForPaths(
         try {
           await fs.stat(skillDir)
           // Skills dir exists. Before loading, check if the containing dir
-          // is gitignored — blocks e.g. node_modules/pkg/.claude/skills from
+          // is gitignored — blocks e.g. node_modules/pkg/.neko-code/skills from
           // loading silently. `git check-ignore` handles nested .gitignore,
           // .git/info/exclude, and global gitignore. Fails open outside a
           // git repo (exit 128 → false); the invocation-time trust dialog

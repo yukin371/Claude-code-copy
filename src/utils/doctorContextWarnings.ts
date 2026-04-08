@@ -137,6 +137,8 @@ async function checkMcpTools(
       getToolPermissionContext,
       agentInfo,
       model,
+      undefined,
+      'doctor_context_warning',
     )
 
     if (mcpToolTokens <= MCP_TOOLS_THRESHOLD) {

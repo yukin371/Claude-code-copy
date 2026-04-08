@@ -1524,12 +1524,35 @@ function isDefaultDisabledBuiltin(name: string): boolean {
   return DEFAULT_DISABLED_BUILTIN !== null && name === DEFAULT_DISABLED_BUILTIN
 }
 
+function getEnvDisabledMcpServers(): Set<string> {
+  const raw = process.env.NEKO_CODE_DISABLED_MCP_SERVERS?.trim()
+  if (!raw) {
+    return new Set()
+  }
+
+  return new Set(
+    raw
+      .split(',')
+      .map(name => name.trim().toLowerCase())
+      .filter(Boolean),
+  )
+}
+
 /**
  * Check if an MCP server is disabled
  * @param name The name of the server
  * @returns true if the server is disabled
  */
 export function isMcpServerDisabled(name: string): boolean {
+  const normalizedName = name.trim().toLowerCase()
+  const envDisabledServers = getEnvDisabledMcpServers()
+  if (
+    envDisabledServers.has('*') ||
+    envDisabledServers.has(normalizedName)
+  ) {
+    return true
+  }
+
   const projectConfig = getCurrentProjectConfig()
   if (isDefaultDisabledBuiltin(name)) {
     const enabledServers = projectConfig.enabledMcpServers || []

@@ -24,6 +24,10 @@ import {
 } from './settings/constants.js'
 import { getManagedFilePath } from './settings/managedPath.js'
 import { isRestrictedToPluginOnly } from './settings/pluginOnlyPolicy.js'
+import {
+  resolveExistingProjectConfigDirPath,
+  resolveProjectConfigDirPath,
+} from './projectConfigPathResolution.js'
 
 // Claude configuration directory names
 export const CLAUDE_CONFIG_DIRECTORIES = [
@@ -221,7 +225,7 @@ function resolveStopBoundary(cwd: string): string | null {
 
 /**
  * Traverses from the current directory up to the git root (or home directory if not in a git repo),
- * collecting all .claude directories along the way.
+ * collecting all project config directories along the way.
  *
  * Stopping at git root prevents commands/skills from parent directories outside the repository
  * from leaking into projects. For example, if ~/projects/.claude/commands/ exists, it won't
@@ -229,7 +233,7 @@ function resolveStopBoundary(cwd: string): string | null {
  *
  * @param subdir Subdirectory (eg. "commands", "agents")
  * @param cwd Current working directory to start from
- * @returns Array of directory paths containing .claude/subdir, from most specific (cwd) to least specific
+ * @returns Array of directory paths containing project config subdirs, from most specific (cwd) to least specific
  */
 export function getProjectDirsUpToHome(
   subdir: ClaudeConfigDirectory,
@@ -250,18 +254,21 @@ export function getProjectDirsUpToHome(
       break
     }
 
-    const claudeSubdir = join(current, '.claude', subdir)
-    // Filter to existing dirs. This is a perf filter (avoids spawning
-    // ripgrep on non-existent dirs downstream) and the worktree fallback
-    // in loadMarkdownFilesForSubdir relies on it. statSync + explicit error
-    // handling instead of existsSync — re-throws unexpected errors rather
-    // than silently swallowing them. Downstream loadMarkdownFiles handles
-    // the TOCTOU window (dir disappearing before read) gracefully.
-    try {
-      statSync(claudeSubdir)
-      dirs.push(claudeSubdir)
-    } catch (e: unknown) {
-      if (!isFsInaccessible(e)) throw e
+    const projectSubdir = resolveExistingProjectConfigDirPath(
+      current,
+      subdir,
+      path => {
+        try {
+          statSync(path)
+          return true
+        } catch (e: unknown) {
+          if (!isFsInaccessible(e)) throw e
+          return false
+        }
+      },
+    )
+    if (projectSubdir) {
+      dirs.push(projectSubdir)
     }
 
     // Stop after processing the git root directory - this prevents commands from parent
@@ -304,7 +311,8 @@ export const loadMarkdownFilesForSubdir = memoize(
     const managedDir = join(getManagedFilePath(), '.claude', subdir)
     const projectDirs = getProjectDirsUpToHome(subdir, cwd)
 
-    // For git worktrees where the worktree does NOT have .claude/<subdir> checked
+    // For git worktrees where the worktree does NOT have the project config
+    // subdir checked
     // out (e.g. sparse-checkout), fall back to the main repository's copy.
     // getProjectDirsUpToHome stops at the worktree root (where the .git file is),
     // so it never sees the main repo on its own.
@@ -320,16 +328,41 @@ export const loadMarkdownFilesForSubdir = memoize(
     const gitRoot = findGitRoot(cwd)
     const canonicalRoot = findCanonicalGitRoot(cwd)
     if (gitRoot && canonicalRoot && canonicalRoot !== gitRoot) {
-      const worktreeSubdir = normalizePathForComparison(
-        join(gitRoot, '.claude', subdir),
+      const worktreeSubdir = resolveProjectConfigDirPath(
+        gitRoot,
+        subdir,
+        path => {
+          try {
+            statSync(path)
+            return true
+          } catch (e: unknown) {
+            if (!isFsInaccessible(e)) throw e
+            return false
+          }
+        },
       )
-      const worktreeHasSubdir = projectDirs.some(
-        dir => normalizePathForComparison(dir) === worktreeSubdir,
-      )
+      const worktreeHasSubdir = projectDirs.some(dir => {
+        return (
+          normalizePathForComparison(dir) ===
+          normalizePathForComparison(worktreeSubdir)
+        )
+      })
       if (!worktreeHasSubdir) {
-        const mainClaudeSubdir = join(canonicalRoot, '.claude', subdir)
-        if (!projectDirs.includes(mainClaudeSubdir)) {
-          projectDirs.push(mainClaudeSubdir)
+        const mainProjectSubdir = resolveProjectConfigDirPath(
+          canonicalRoot,
+          subdir,
+          path => {
+            try {
+              statSync(path)
+              return true
+            } catch (e: unknown) {
+              if (!isFsInaccessible(e)) throw e
+              return false
+            }
+          },
+        )
+        if (!projectDirs.includes(mainProjectSubdir)) {
+          projectDirs.push(mainProjectSubdir)
         }
       }
     }

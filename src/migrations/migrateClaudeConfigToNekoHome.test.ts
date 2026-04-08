@@ -114,6 +114,48 @@ describe('migrateClaudeConfigDirectory', () => {
     ).toBe('nested rule')
   })
 
+  test('reads legacy global config from sibling ~/.claude.json', async () => {
+    const { migrateClaudeConfigDirectory } = await import(
+      './migrateClaudeConfigToNekoHome.js'
+    )
+    const fakeHomeDir = createTempDir('legacy-home-')
+    const sourceDir = join(fakeHomeDir, '.claude')
+    const targetDir = createTempDir('neko-home-')
+    const mergedConfigs: Array<Record<string, unknown>> = []
+
+    mkdirSync(sourceDir, { recursive: true })
+    writeJson(join(fakeHomeDir, '.claude.json'), {
+      theme: 'dark',
+      mcpServers: {
+        serena: {
+          command: 'uv',
+          args: ['run', 'serena'],
+        },
+      },
+    })
+
+    const result = migrateClaudeConfigDirectory({
+      sourceDir,
+      targetDir,
+      targetGlobalConfigPath: join(targetDir, '.neko-code.json'),
+      mergeGlobalConfig: legacyConfig => {
+        mergedConfigs.push(legacyConfig)
+        return true
+      },
+    })
+
+    expect(result.mergedGlobalConfig).toBe(true)
+    expect(mergedConfigs).toHaveLength(1)
+    expect(mergedConfigs[0]?.theme).toBe('dark')
+    expect(
+      mergedConfigs[0]?.mcpServers as Record<string, { command: string }>,
+    ).toMatchObject({
+      serena: {
+        command: 'uv',
+      },
+    })
+  })
+
   test('does not overwrite existing Neko config artifacts', async () => {
     const { migrateClaudeConfigDirectory } = await import(
       './migrateClaudeConfigToNekoHome.js'

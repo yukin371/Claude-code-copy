@@ -756,6 +756,7 @@ async function validateContentTokens(
   content: string,
   ext: string,
   maxTokens?: number,
+  querySource?: string,
 ): Promise<void> {
   const effectiveMaxTokens =
     maxTokens ?? getDefaultFileReadingLimits().maxTokens
@@ -763,7 +764,7 @@ async function validateContentTokens(
   const tokenEstimate = roughTokenCountEstimationForFileType(content, ext)
   if (!tokenEstimate || tokenEstimate <= effectiveMaxTokens / 4) return
 
-  const tokenCount = await countTokensWithAPI(content)
+  const tokenCount = await countTokensWithAPI(content, { querySource })
   const effectiveCount = tokenCount ?? tokenEstimate
 
   if (effectiveCount > effectiveMaxTokens) {
@@ -835,7 +836,12 @@ async function callInner(
       )
     }
 
-    await validateContentTokens(cellsJson, ext, maxTokens)
+    await validateContentTokens(
+      cellsJson,
+      ext,
+      maxTokens,
+      context.options.querySource,
+    )
 
     // Get mtime via async stat (single call, no prior existence check)
     const stats = await getFsImplementation().stat(resolvedFilePath)
@@ -1036,7 +1042,12 @@ async function callInner(
       context.abortController.signal,
     )
 
-  await validateContentTokens(content, ext, maxTokens)
+  await validateContentTokens(
+    content,
+    ext,
+    maxTokens,
+    context.options.querySource,
+  )
 
   readFileState.set(fullFilePath, {
     content,

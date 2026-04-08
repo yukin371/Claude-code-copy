@@ -39,6 +39,9 @@ const LEGACY_CONFIG_FILENAMES = [
   '.config.json',
 ] as const
 const LEGACY_MCP_CONFIG_FILENAME = 'mcp_config.json'
+const LEGACY_ROOT_GLOBAL_CONFIG_FILENAMES = [
+  `.claude${fileSuffixForOauthConfig()}.json`,
+] as const
 
 const LEGACY_FILE_MAPPINGS = [
   ['settings.json', 'settings.json'],
@@ -178,8 +181,7 @@ function readLegacyGlobalConfig(
 ): LegacyGlobalConfig | null {
   const mergedConfig: LegacyGlobalConfig = {}
 
-  for (const filename of LEGACY_CONFIG_FILENAMES) {
-    const filePath = join(sourceDir, filename)
+  for (const filePath of getLegacyGlobalConfigCandidatePaths(sourceDir)) {
     const parsed = readJsonObject(fs, filePath)
     if (parsed) {
       Object.assign(mergedConfig, parsed)
@@ -202,6 +204,18 @@ function readLegacyGlobalConfig(
   }
 
   return Object.keys(mergedConfig).length > 0 ? mergedConfig : null
+}
+
+function getLegacyGlobalConfigCandidatePaths(sourceDir: string): string[] {
+  const sourceParentDir = dirname(sourceDir)
+  return Array.from(
+    new Set([
+      ...LEGACY_ROOT_GLOBAL_CONFIG_FILENAMES.map(filename =>
+        join(sourceParentDir, filename),
+      ),
+      ...LEGACY_CONFIG_FILENAMES.map(filename => join(sourceDir, filename)),
+    ]),
+  )
 }
 
 function migrateLegacyPluginState(

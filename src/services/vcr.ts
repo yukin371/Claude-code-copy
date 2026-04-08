@@ -88,6 +88,7 @@ async function withFixture<T>(
 export async function withVCR(
   messages: Message[],
   f: () => Promise<(AssistantMessage | StreamEvent | SystemAPIErrorMessage)[]>,
+  context?: unknown,
 ): Promise<(AssistantMessage | StreamEvent | SystemAPIErrorMessage)[]> {
   if (!shouldUseVCR()) {
     return await f()
@@ -109,9 +110,15 @@ export async function withVCR(
     messagesForAPI.map(_ => _.message.content),
     dehydrateValue,
   )
+  const dehydratedContext =
+    context === undefined ? undefined : dehydrateValue(context)
+  const contextHash =
+    dehydratedContext === undefined
+      ? ''
+      : `-${createHash('sha1').update(jsonStringify(dehydratedContext)).digest('hex').slice(0, 6)}`
   const filename = join(
     process.env.CLAUDE_CODE_TEST_FIXTURES_ROOT ?? getCwd(),
-    `fixtures/${dehydratedInput.map(_ => createHash('sha1').update(jsonStringify(_)).digest('hex').slice(0, 6)).join('-')}.json`,
+    `fixtures/${dehydratedInput.map(_ => createHash('sha1').update(jsonStringify(_)).digest('hex').slice(0, 6)).join('-')}${contextHash}.json`,
   )
 
   // Fetch cached fixture
@@ -148,6 +155,7 @@ export async function withVCR(
     jsonStringify(
       {
         input: dehydratedInput,
+        ...(dehydratedContext === undefined ? {} : { context: dehydratedContext }),
         output: results.map((message, index) =>
           mapMessage(message, dehydrateValue, index),
         ),
@@ -346,6 +354,7 @@ function hydrateValue(s: unknown): unknown {
 
 export async function* withStreamingVCR(
   messages: Message[],
+  context: unknown,
   f: () => AsyncGenerator<
     StreamEvent | AssistantMessage | SystemAPIErrorMessage,
     void
@@ -367,7 +376,7 @@ export async function* withStreamingVCR(
       buffer.push(message)
     }
     return buffer
-  })
+  }, context)
 
   if (cachedBuffer.length > 0) {
     yield* cachedBuffer
@@ -380,6 +389,10 @@ export async function* withStreamingVCR(
 export async function withTokenCountVCR(
   messages: unknown[],
   tools: unknown[],
+  context: {
+    model: string
+    route: string
+  },
   f: () => Promise<number | null>,
 ): Promise<number | null> {
   // Dehydrate before hashing so fixture keys survive cwd/config-home/tempdir
@@ -389,7 +402,7 @@ export async function withTokenCountVCR(
   // every test run produces a new hash and fixtures never hit in CI.
   const cwdSlug = getCwd().replace(/[^a-zA-Z0-9]/g, '-')
   const dehydrated = (
-    dehydrateValue(jsonStringify({ messages, tools })) as string
+    dehydrateValue(jsonStringify({ messages, tools, context })) as string
   )
     .replaceAll(cwdSlug, '[CWD_SLUG]')
     .replace(

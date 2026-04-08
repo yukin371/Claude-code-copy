@@ -42,6 +42,7 @@ import {
   getAPIProvider,
   isFirstPartyAnthropicBaseUrl,
 } from './model/providers.js'
+import { resolveTaskRouteNameFromQuerySource } from './model/taskRouting.js'
 import { jsonStringify } from './slowOperations.js'
 import { zodToJsonSchema } from './zodToJsonSchema.js'
 
@@ -122,7 +123,8 @@ export function getAutoToolSearchCharThreshold(model: string): number {
 
 /**
  * Get the total token count for all deferred tools using the token counting API.
- * Memoized by deferred tool names — cache is invalidated when MCP servers connect/disconnect.
+ * Memoized by deferred tool names plus model/route context — cache is invalidated
+ * when MCP servers connect/disconnect.
  * Returns null if the API is unavailable (caller should fall back to char heuristic).
  */
 const getDeferredToolTokenCount = memoize(
@@ -131,6 +133,7 @@ const getDeferredToolTokenCount = memoize(
     getToolPermissionContext: () => Promise<ToolPermissionContext>,
     agents: AgentDefinition[],
     model: string,
+    querySource?: string,
   ): Promise<number | null> => {
     const deferredTools = tools.filter(t => isDeferredTool(t))
     if (deferredTools.length === 0) return 0
@@ -141,6 +144,7 @@ const getDeferredToolTokenCount = memoize(
         getToolPermissionContext,
         { activeAgents: agents, allAgents: agents },
         model,
+        querySource,
       )
       if (total === 0) return null // API unavailable
       return Math.max(0, total - TOOL_TOKEN_COUNT_OVERHEAD)
@@ -148,11 +152,15 @@ const getDeferredToolTokenCount = memoize(
       return null // Fall back to char heuristic
     }
   },
-  (tools: Tools) =>
-    tools
-      .filter(t => isDeferredTool(t))
-      .map(t => t.name)
-      .join(','),
+  (tools: Tools, _getToolPermissionContext, _agents, model, querySource) =>
+    [
+      model,
+      resolveTaskRouteNameFromQuerySource(querySource),
+      tools
+        .filter(t => isDeferredTool(t))
+        .map(t => t.name)
+        .join(','),
+    ].join('|'),
 )
 
 /**
@@ -392,6 +400,7 @@ export async function isToolSearchEnabled(
   getToolPermissionContext: () => Promise<ToolPermissionContext>,
   agents: AgentDefinition[],
   source?: string,
+  querySource?: string,
 ): Promise<boolean> {
   const mcpToolCount = count(tools, t => t.isMcp)
 
@@ -451,6 +460,7 @@ export async function isToolSearchEnabled(
         getToolPermissionContext,
         agents,
         model,
+        querySource,
       )
 
       if (enabled) {
@@ -744,6 +754,7 @@ async function checkAutoThreshold(
   getToolPermissionContext: () => Promise<ToolPermissionContext>,
   agents: AgentDefinition[],
   model: string,
+  querySource?: string,
 ): Promise<{
   enabled: boolean
   debugDescription: string
@@ -755,6 +766,7 @@ async function checkAutoThreshold(
     getToolPermissionContext,
     agents,
     model,
+    querySource,
   )
 
   if (deferredToolTokens !== null) {

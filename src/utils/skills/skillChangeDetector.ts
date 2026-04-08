@@ -19,6 +19,7 @@ import { registerCleanup } from '../cleanupRegistry.js'
 import { logForDebugging } from '../debug.js'
 import { getFsImplementation } from '../fsOperations.js'
 import { executeConfigChangeHooks, hasBlockingResult } from '../hooks.js'
+import { getProjectConfigDirCandidates } from '../projectConfigPathResolution.js'
 import { createSignal } from '../signal.js'
 
 /**
@@ -172,7 +173,7 @@ async function getWatchablePaths(): Promise<string[]> {
   const fs = getFsImplementation()
   const paths: string[] = []
 
-  // User skills directory (~/.claude/skills)
+  // User skills directory (~/.neko-code/skills, with legacy fallback support)
   const userSkillsPath = getSkillsPath('userSettings', 'skills')
   if (userSkillsPath) {
     try {
@@ -194,25 +195,12 @@ async function getWatchablePaths(): Promise<string[]> {
     }
   }
 
-  // Project skills directory (.claude/skills)
-  const projectSkillsPath = getSkillsPath('projectSettings', 'skills')
-  if (projectSkillsPath) {
+  for (const candidate of [
+    ...getProjectConfigDirCandidates(process.cwd(), 'skills'),
+    ...getProjectConfigDirCandidates(process.cwd(), 'commands'),
+  ]) {
     try {
-      // For project settings, resolve to absolute path
-      const absolutePath = platformPath.resolve(projectSkillsPath)
-      await fs.stat(absolutePath)
-      paths.push(absolutePath)
-    } catch {
-      // Path doesn't exist, skip it
-    }
-  }
-
-  // Project commands directory (.claude/commands)
-  const projectCommandsPath = getSkillsPath('projectSettings', 'commands')
-  if (projectCommandsPath) {
-    try {
-      // For project settings, resolve to absolute path
-      const absolutePath = platformPath.resolve(projectCommandsPath)
+      const absolutePath = platformPath.resolve(candidate)
       await fs.stat(absolutePath)
       paths.push(absolutePath)
     } catch {
@@ -222,12 +210,16 @@ async function getWatchablePaths(): Promise<string[]> {
 
   // Additional directories (--add-dir) skills
   for (const dir of getAdditionalDirectoriesForClaudeMd()) {
-    const additionalSkillsPath = platformPath.join(dir, '.claude', 'skills')
-    try {
-      await fs.stat(additionalSkillsPath)
-      paths.push(additionalSkillsPath)
-    } catch {
-      // Path doesn't exist, skip it
+    for (const additionalSkillsPath of getProjectConfigDirCandidates(
+      dir,
+      'skills',
+    )) {
+      try {
+        await fs.stat(additionalSkillsPath)
+        paths.push(additionalSkillsPath)
+      } catch {
+        // Path doesn't exist, skip it
+      }
     }
   }
 

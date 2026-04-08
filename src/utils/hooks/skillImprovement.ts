@@ -13,6 +13,7 @@ import { createAbortController } from '../abortController.js'
 import { count } from '../array.js'
 import { getCwd } from '../cwd.js'
 import { toError } from '../errors.js'
+import { getFsImplementation } from '../fsOperations.js'
 import { logError } from '../log.js'
 import {
   createUserMessage,
@@ -20,6 +21,7 @@ import {
   extractTextContent,
 } from '../messages.js'
 import { getSmallFastModel } from '../model/model.js'
+import { resolveProjectConfigDirPath } from '../projectConfigPathResolution.js'
 import { jsonParse } from '../slowOperations.js'
 import { asSystemPrompt } from '../systemPromptType.js'
 import {
@@ -194,8 +196,12 @@ export async function applySkillImprovement(
   const { join } = await import('path')
   const fs = await import('fs/promises')
 
-  // Skills live at .claude/skills/<name>/SKILL.md relative to CWD
-  const filePath = join(getCwd(), '.claude', 'skills', skillName, 'SKILL.md')
+  const skillsDir = resolveProjectConfigDirPath(
+    getCwd(),
+    'skills',
+    path => getFsImplementation().existsSync(path),
+  )
+  const filePath = join(skillsDir, skillName, 'SKILL.md')
 
   let currentContent: string
   try {
