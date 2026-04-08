@@ -1,0 +1,178 @@
+name: Signed Release Publication
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version to restage
+        required: true
+        type: string
+      release_candidate_run_id:
+        description: Workflow run ID that produced the unsigned release candidate artifact
+        required: true
+        type: string
+      signed_artifact_run_id:
+        description: Workflow run ID that contains the signed exe artifact
+        required: true
+        type: string
+      signed_artifact_name:
+        description: Artifact name that contains the signed exe
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  signed-publication:
+    runs-on: windows-latest
+    env:
+      NEKO_CODE_DISABLED_MCP_SERVERS: serena
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_CANDIDATE_RUN_ID: ${{ inputs.release_candidate_run_id }}
+      SIGNED_ARTIFACT_RUN_ID: ${{ inputs.signed_artifact_run_id }}
+      SIGNED_ARTIFACT_NAME: ${{ inputs.signed_artifact_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.10
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Download unsigned release candidate and signed exe
+        id: materialize
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Download-ArtifactZip {
+            param(
+              [string]$RunId,
+              [string]$ArtifactName,
+              [string]$ZipPath
+            )
+
+            $headers = @{
+              Authorization = "Bearer $env:GITHUB_TOKEN"
+              Accept = 'application/vnd.github+json'
+              'X-GitHub-Api-Version' = '2022-11-28'
+            }
+
+            $artifactsUrl = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/runs/$RunId/artifacts?per_page=100"
+            $response = Invoke-RestMethod -Headers $headers -Uri $artifactsUrl
+            $artifact = $response.artifacts | Where-Object { $_.name -eq $ArtifactName } | Select-Object -First 1
+
+            if (-not $artifact) {
+              throw "Artifact '$ArtifactName' not found in workflow run $RunId"
+            }
+
+            $downloadHeaders = @{
+              Authorization = "Bearer $env:GITHUB_TOKEN"
+              Accept = 'application/octet-stream'
+              'X-GitHub-Api-Version' = '2022-11-28'
+            }
+
+            Invoke-WebRequest -Headers $downloadHeaders -Uri $artifact.archive_download_url -OutFile $ZipPath
+          }
+
+          $artifactRoot = Join-Path $PWD '.github-artifacts'
+          $candidateExtract = Join-Path $artifactRoot 'candidate'
+          $signedExtract = Join-Path $artifactRoot 'signed'
+          New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
+
+          $candidateArtifactName = "neko-code-release-candidate-$env:RELEASE_VERSION-unsigned-win32-x64"
+          $candidateZip = Join-Path $artifactRoot 'candidate.zip'
+          Download-ArtifactZip -RunId $env:RELEASE_CANDIDATE_RUN_ID -ArtifactName $candidateArtifactName -ZipPath $candidateZip
+          Expand-Archive -LiteralPath $candidateZip -DestinationPath $candidateExtract -Force
+
+          $candidateTarget = Join-Path $PWD "dist/release-candidate/$env:RELEASE_VERSION"
+          Remove-Item -LiteralPath $candidateTarget -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $candidateTarget | Out-Null
+          Copy-Item -Path (Join-Path $candidateExtract '*') -Destination $candidateTarget -Recurse -Force
+
+          $signedZip = Join-Path $artifactRoot 'signed.zip'
+          Download-ArtifactZip -RunId $env:SIGNED_ARTIFACT_RUN_ID -ArtifactName $env:SIGNED_ARTIFACT_NAME -ZipPath $signedZip
+          Expand-Archive -LiteralPath $signedZip -DestinationPath $signedExtract -Force
+
+          $signedBinary = Get-ChildItem -Path $signedExtract -Recurse -File -Filter *.exe | Select-Object -ExpandProperty FullName -First 1
+          if (-not $signedBinary) {
+            throw "Artifact '$env:SIGNED_ARTIFACT_NAME' does not contain a signed .exe"
+          }
+
+          "signed_binary=$signedBinary" >> $env:GITHUB_OUTPUT
+
+      - name: Apply signed artifact
+        shell: pwsh
+        run: |
+          bun run scripts/apply-signed-release-artifact.ts --version "$env:RELEASE_VERSION" --signed-binary "${{ steps.materialize.outputs.signed_binary }}"
+
+      - name: Stage release deploy
+        shell: pwsh
+        run: |
+          bun run scripts/stage-release-deploy.ts --skip-stage-publication
+
+      - name: Stage native installer baseline
+        shell: pwsh
+        run: |
+          bun run scripts/stage-native-installer.ts --skip-stage-publication
+
+      - name: Smoke signed publication
+        shell: pwsh
+        run: |
+          bun run scripts/native-installer-release-publication-smoke.ts --skip-stage-publication
+
+      - name: Smoke native installer baseline
+        shell: pwsh
+        run: |
+          bun run scripts/stage-native-installer-smoke.ts --skip-stage-native-installer
+
+      - name: Smoke signed deploy publish
+        shell: pwsh
+        run: |
+          bun run scripts/release-deploy-publish-smoke.ts --skip-stage-deploy
+
+      - name: Smoke signed native update
+        shell: pwsh
+        run: |
+          bun run scripts/native-update-cli-release-deploy-smoke.ts --skip-stage-deploy
+
+      - name: Upload signed release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: neko-code-release-candidate-${{ inputs.version }}-signed-win32-x64
+          path: dist/release-candidate/${{ inputs.version }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload release publication
+        uses: actions/upload-artifact@v4
+        with:
+          name: neko-code-release-publication-${{ inputs.version }}-signed-win32-x64
+          path: dist/release-publication/${{ inputs.version }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload native installer baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: neko-code-native-installer-${{ inputs.version }}-signed-win32-x64
+          path: dist/native-installer/${{ inputs.version }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload release deploy
+        uses: actions/upload-artifact@v4
+        with:
+          name: neko-code-release-deploy-${{ inputs.version }}-signed-win32-x64
+          path: dist/release-deploy/${{ inputs.version }}
+          if-no-files-found: error
+          retention-days: 14

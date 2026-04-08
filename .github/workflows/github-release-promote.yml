@@ -1,0 +1,58 @@
+name: GitHub Release Promote
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version to promote
+        required: true
+        type: string
+      target:
+        description: Promotion target
+        required: true
+        default: stable
+        type: choice
+        options:
+          - draft
+          - prerelease
+          - stable
+
+permissions:
+  contents: write
+
+jobs:
+  promote-github-release:
+    runs-on: windows-latest
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_TARGET: ${{ inputs.target }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.10
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Smoke promotion plan
+        run: bun run scripts/promote-github-release-smoke.ts
+
+      - name: Promote GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bun run scripts/promote-github-release.ts --version "$env:RELEASE_VERSION" --target "$env:RELEASE_TARGET"
+
+      - name: Write promotion summary
+        shell: pwsh
+        run: |
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Promotion"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ""
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Version: $env:RELEASE_VERSION"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Target: $env:RELEASE_TARGET"

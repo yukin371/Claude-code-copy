@@ -110,7 +110,9 @@ export function getPlatform(): string {
 }
 
 export function getBinaryName(platform: string): string {
-  return platform.startsWith('win32') ? 'claude.exe' : 'claude'
+  return platform.startsWith('win32')
+    ? `${CLI_COMMAND_NAME}.exe`
+    : CLI_COMMAND_NAME
 }
 
 function getLauncherName(platform: string): string {
@@ -1510,7 +1512,7 @@ export async function cleanupShellAliases(): Promise<SetupMessage[]> {
       if (hadAlias) {
         await writeFileLines(configFile, filtered)
         messages.push({
-          message: `Removed claude alias from ${configFile}. Run: unalias claude`,
+          message: `Removed legacy claude alias from ${configFile}. Run: unalias claude in any shell sessions that are still open.`,
           userActionRequired: true,
           type: 'alias',
         })

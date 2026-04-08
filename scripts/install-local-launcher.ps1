@@ -73,24 +73,35 @@ if (-not $bun) {
 $installDirResolved = [System.IO.Path]::GetFullPath($InstallDir)
 New-Item -ItemType Directory -Force -Path $installDirResolved | Out-Null
 
-$outFile = Join-Path $installDirResolved ("{0}.exe" -f $CommandName)
+$launcherName = "${CommandName}-launcher.exe"
+$launcherPath = Join-Path $installDirResolved $launcherName
 
-if ((Test-Path $outFile) -and (-not $Force)) {
-  Write-Step "Existing launcher found at $outFile; rebuilding in place."
+if ((Test-Path $launcherPath) -and (-not $Force)) {
+  Write-Step "Existing launcher found at $launcherPath; rebuilding in place."
 }
 
-Write-Step "Compiling local launcher to $outFile"
-& $bun.Source build --compile $launcherSource --outfile $outFile
+Write-Step "Compiling local launcher to $launcherPath"
+& $bun.Source build --compile $launcherSource --outfile $launcherPath
 if ($LASTEXITCODE -ne 0) {
   throw "bun build failed with exit code $LASTEXITCODE"
 }
+
+$nativeSource = Join-Path $repoRootResolved 'dist\neko-code.exe'
+Write-Step "Building native binary"
+& $bun.Source run build:native
+if ($LASTEXITCODE -ne 0) {
+  throw "bun run build:native failed with exit code $LASTEXITCODE"
+}
+$nativeTarget = Join-Path $installDirResolved ("{0}.exe" -f $CommandName)
+Copy-Item -Force $nativeSource $nativeTarget
+Write-Step "Installed native CLI to $nativeTarget"
 
 $pathChanged = $false
 if (-not $SkipPathUpdate) {
   $pathChanged = Add-UserPathEntry -Directory $installDirResolved
 }
 
-Write-Step "Launcher ready: $outFile"
+Write-Step "Launcher ready: $launcherPath"
 if ($SkipPathUpdate) {
   Write-Step 'PATH update skipped by request.'
 } elseif ($pathChanged) {

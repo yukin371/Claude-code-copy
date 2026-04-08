@@ -1,0 +1,161 @@
+name: GitHub Release Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version to publish
+        required: true
+        type: string
+      signed_publication_run_id:
+        description: Workflow run ID from signed publication
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish-github-release:
+    runs-on: windows-latest
+    env:
+      NEKO_CODE_DISABLED_MCP_SERVERS: serena
+      RELEASE_VERSION: ${{ inputs.version }}
+      SIGNED_PUBLICATION_RUN_ID: ${{ inputs.signed_publication_run_id }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.10
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Download signed release artifacts
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Download-ArtifactZip {
+            param(
+              [string]$RunId,
+              [string]$ArtifactName,
+              [string]$ZipPath
+            )
+
+            $headers = @{
+              Authorization = "Bearer $env:GITHUB_TOKEN"
+              Accept = 'application/vnd.github+json'
+              'X-GitHub-Api-Version' = '2022-11-28'
+            }
+
+            $artifactsUrl = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/runs/$RunId/artifacts?per_page=100"
+            $response = Invoke-RestMethod -Headers $headers -Uri $artifactsUrl
+            $artifact = $response.artifacts | Where-Object { $_.name -eq $ArtifactName } | Select-Object -First 1
+
+            if (-not $artifact) {
+              throw "Artifact '$ArtifactName' not found in workflow run $RunId"
+            }
+
+            $downloadHeaders = @{
+              Authorization = "Bearer $env:GITHUB_TOKEN"
+              Accept = 'application/octet-stream'
+              'X-GitHub-Api-Version' = '2022-11-28'
+            }
+
+            Invoke-WebRequest -Headers $downloadHeaders -Uri $artifact.archive_download_url -OutFile $ZipPath
+          }
+
+          $artifactRoot = Join-Path $PWD '.github-artifacts'
+          New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
+
+          $artifactSpecs = @(
+            @{ Name = "neko-code-release-candidate-$env:RELEASE_VERSION-signed-win32-x64"; Target = "dist/release-candidate/$env:RELEASE_VERSION"; Zip = "candidate.zip" },
+            @{ Name = "neko-code-release-publication-$env:RELEASE_VERSION-signed-win32-x64"; Target = "dist/release-publication/$env:RELEASE_VERSION"; Zip = "publication.zip" },
+            @{ Name = "neko-code-release-deploy-$env:RELEASE_VERSION-signed-win32-x64"; Target = "dist/release-deploy/$env:RELEASE_VERSION"; Zip = "deploy.zip" }
+          )
+
+          foreach ($spec in $artifactSpecs) {
+            $zipPath = Join-Path $artifactRoot $spec.Zip
+            $extractPath = Join-Path $artifactRoot ([IO.Path]::GetFileNameWithoutExtension($spec.Zip))
+            Download-ArtifactZip -RunId $env:SIGNED_PUBLICATION_RUN_ID -ArtifactName $spec.Name -ZipPath $zipPath
+            Expand-Archive -LiteralPath $zipPath -DestinationPath $extractPath -Force
+
+            $targetPath = Join-Path $PWD $spec.Target
+            Remove-Item -LiteralPath $targetPath -Recurse -Force -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Force -Path $targetPath | Out-Null
+            Copy-Item -Path (Join-Path $extractPath '*') -Destination $targetPath -Recurse -Force
+          }
+
+      - name: Stage GitHub release assets
+        shell: pwsh
+        run: |
+          bun run scripts/stage-github-release.ts --skip-stage-deploy
+
+      - name: Smoke GitHub release package
+        shell: pwsh
+        run: |
+          bun run scripts/stage-github-release-smoke.ts --skip-signed-workflow --skip-stage-github-release
+
+      - name: Publish draft prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $PWD "dist/github-release/$env:RELEASE_VERSION"
+          $metadata = Get-Content (Join-Path $root 'release-github.json') | ConvertFrom-Json
+          $tag = $metadata.tagName
+          $title = $metadata.releaseName
+          $notes = Join-Path $root $metadata.notesFile
+          $assets = Get-ChildItem -Path (Join-Path $root $metadata.assetsDir) -File | ForEach-Object { $_.FullName }
+          $isDraft = [bool]$metadata.publishPolicy.publishDefaults.draft
+          $isPrerelease = [bool]$metadata.publishPolicy.publishDefaults.prerelease
+          $createArgs = @('release', 'create', $tag, '--title', $title, '--notes-file', $notes)
+          $editArgs = @('release', 'edit', $tag, '--title', $title, '--notes-file', $notes)
+
+          if ($isDraft) {
+            $createArgs += '--draft'
+            $editArgs += '--draft=true'
+          } else {
+            $editArgs += '--draft=false'
+          }
+
+          if ($isPrerelease) {
+            $createArgs += '--prerelease'
+            $editArgs += '--prerelease'
+          }
+
+          $uploadArgs = @('release', 'upload', $tag, '--clobber') + $assets
+
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            & gh @createArgs
+          } else {
+            & gh @editArgs
+            & gh @uploadArgs
+          }
+
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## GitHub Release Package"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ""
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Tag: $tag"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Recommended installer: $($metadata.installerAsset)"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Direct binary: $($metadata.primaryAsset)"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Draft default: $isDraft"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Prerelease default: $isPrerelease"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Asset count: $($metadata.assets.Count)"
+
+      - name: Upload staged GitHub release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: neko-code-github-release-${{ inputs.version }}-win32-x64
+          path: dist/github-release/${{ inputs.version }}
+          if-no-files-found: error
+          retention-days: 14

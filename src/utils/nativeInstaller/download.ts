@@ -26,6 +26,126 @@ const GCS_BUCKET_URL =
   'https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases'
 export const ARTIFACTORY_REGISTRY_URL =
   'https://artifactory.infra.ant.dev/artifactory/api/npm/npm-all/'
+const GITHUB_API_BASE_URL = 'https://api.github.com'
+
+type GitHubReleaseAsset = {
+  name: string
+  browser_download_url: string
+}
+
+type GitHubRelease = {
+  tag_name: string
+  draft: boolean
+  prerelease: boolean
+  assets: GitHubReleaseAsset[]
+}
+
+function getBinaryRepoBaseUrl(): string {
+  const override = process.env.NEKO_CODE_NATIVE_INSTALLER_BASE_URL?.trim()
+  if (override) {
+    return override.replace(/\/+$/, '')
+  }
+
+  return GCS_BUCKET_URL
+}
+
+function getGitHubReleaseRepo(): string | null {
+  const repo = process.env.NEKO_CODE_NATIVE_INSTALLER_GITHUB_REPO?.trim()
+  return repo ? repo.replace(/^\/+|\/+$/g, '') : null
+}
+
+function getGitHubApiBaseUrl(): string {
+  const override = process.env.NEKO_CODE_NATIVE_INSTALLER_GITHUB_API_BASE_URL?.trim()
+  if (override) {
+    return override.replace(/\/+$/, '')
+  }
+
+  return GITHUB_API_BASE_URL
+}
+
+function getGitHubRequestConfig(): {
+  headers: Record<string, string>
+} {
+  const token = process.env.NEKO_CODE_NATIVE_INSTALLER_GITHUB_TOKEN?.trim()
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'neko-code-native-installer',
+  }
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
+  return { headers }
+}
+
+function normalizeGitHubTagToVersion(tagName: string): string {
+  return tagName.startsWith('v') ? tagName.slice(1) : tagName
+}
+
+function getGitHubReleaseBinaryAssetName(version: string, platform: string): string {
+  return `neko-code-${version}-${platform}${platform.startsWith('win32') ? '.exe' : ''}`
+}
+
+function getGitHubReleaseManifestAssetName(
+  version: string,
+  platform: string,
+): string {
+  return `neko-code-${version}-${platform}-manifest.json`
+}
+
+async function getGitHubReleaseByVersion(version: string): Promise<GitHubRelease> {
+  const repo = getGitHubReleaseRepo()
+  if (!repo) {
+    throw new Error('GitHub release repository is not configured')
+  }
+
+  const response = await axios.get<GitHubRelease>(
+    `${getGitHubApiBaseUrl()}/repos/${repo}/releases/tags/v${version}`,
+    {
+      timeout: 30000,
+      responseType: 'json',
+      ...getGitHubRequestConfig(),
+    },
+  )
+
+  return response.data
+}
+
+export async function getLatestVersionFromGitHubRelease(
+  channel: ReleaseChannel = 'latest',
+): Promise<string> {
+  const repo = getGitHubReleaseRepo()
+  if (!repo) {
+    throw new Error('GitHub release repository is not configured')
+  }
+
+  const requestConfig = {
+    timeout: 30000,
+    responseType: 'json' as const,
+    ...getGitHubRequestConfig(),
+  }
+
+  if (channel === 'stable') {
+    const response = await axios.get<GitHubRelease>(
+      `${getGitHubApiBaseUrl()}/repos/${repo}/releases/latest`,
+      requestConfig,
+    )
+    return normalizeGitHubTagToVersion(response.data.tag_name)
+  }
+
+  const response = await axios.get<GitHubRelease[]>(
+    `${getGitHubApiBaseUrl()}/repos/${repo}/releases?per_page=20`,
+    requestConfig,
+  )
+  const release = response.data.find(candidate => !candidate.draft)
+
+  if (!release) {
+    throw new Error(`No published GitHub release found for ${repo}`)
+  }
+
+  return normalizeGitHubTagToVersion(release.tag_name)
+}
 
 export async function getLatestVersionFromArtifactory(
   tag: string = 'latest',
@@ -137,6 +257,16 @@ export async function getLatestVersion(
     )
   }
 
+  const overriddenBinaryRepo = process.env.NEKO_CODE_NATIVE_INSTALLER_BASE_URL?.trim()
+  const githubReleaseRepo = getGitHubReleaseRepo()
+  if (githubReleaseRepo) {
+    return getLatestVersionFromGitHubRelease(channel)
+  }
+
+  if (overriddenBinaryRepo) {
+    return getLatestVersionFromBinaryRepo(channel, getBinaryRepoBaseUrl())
+  }
+
   // Route to appropriate source
   if (process.env.USER_TYPE === 'ant') {
     // Use Artifactory for ant users
@@ -145,7 +275,7 @@ export async function getLatestVersion(
   }
 
   // Use GCS for external users
-  return getLatestVersionFromBinaryRepo(channel, GCS_BUCKET_URL)
+  return getLatestVersionFromBinaryRepo(channel, getBinaryRepoBaseUrl())
 }
 
 export async function downloadVersionFromArtifactory(
@@ -484,6 +614,54 @@ export async function downloadVersionFromBinaryRepo(
   }
 }
 
+export async function downloadVersionFromGitHubRelease(
+  version: string,
+  stagingPath: string,
+) {
+  const fs = getFsImplementation()
+
+  await fs.rm(stagingPath, { recursive: true, force: true })
+
+  const platform = getPlatform()
+  const release = await getGitHubReleaseByVersion(version)
+  const manifestAssetName = getGitHubReleaseManifestAssetName(version, platform)
+  const binaryAssetName = getGitHubReleaseBinaryAssetName(version, platform)
+  const manifestAsset = release.assets.find(asset => asset.name === manifestAssetName)
+  const binaryAsset = release.assets.find(asset => asset.name === binaryAssetName)
+
+  if (!manifestAsset) {
+    throw new Error(`GitHub release asset not found: ${manifestAssetName}`)
+  }
+  if (!binaryAsset) {
+    throw new Error(`GitHub release asset not found: ${binaryAssetName}`)
+  }
+
+  const manifestResponse = await axios.get<{
+    version: string
+    platforms: Record<string, { checksum: string }>
+  }>(manifestAsset.browser_download_url, {
+    timeout: 10000,
+    responseType: 'json',
+    ...getGitHubRequestConfig(),
+  })
+  const expectedChecksum = manifestResponse.data.platforms[platform]?.checksum
+
+  if (!expectedChecksum) {
+    throw new Error(
+      `Platform ${platform} not found in GitHub release manifest for version ${version}`,
+    )
+  }
+
+  await fs.mkdir(stagingPath)
+  const binaryPath = join(stagingPath, getBinaryName(platform))
+  await downloadAndVerifyBinary(
+    binaryAsset.browser_download_url,
+    expectedChecksum,
+    binaryPath,
+    getGitHubRequestConfig(),
+  )
+}
+
 export async function downloadVersion(
   version: string,
   stagingPath: string,
@@ -506,6 +684,22 @@ export async function downloadVersion(
     return 'binary'
   }
 
+  const githubReleaseRepo = getGitHubReleaseRepo()
+  if (githubReleaseRepo) {
+    await downloadVersionFromGitHubRelease(version, stagingPath)
+    return 'binary'
+  }
+
+  const overriddenBinaryRepo = process.env.NEKO_CODE_NATIVE_INSTALLER_BASE_URL?.trim()
+  if (overriddenBinaryRepo) {
+    await downloadVersionFromBinaryRepo(
+      version,
+      stagingPath,
+      getBinaryRepoBaseUrl(),
+    )
+    return 'binary'
+  }
+
   if (process.env.USER_TYPE === 'ant') {
     // Use Artifactory for ant users
     await downloadVersionFromArtifactory(version, stagingPath)
@@ -513,7 +707,11 @@ export async function downloadVersion(
   }
 
   // Use GCS for external users
-  await downloadVersionFromBinaryRepo(version, stagingPath, GCS_BUCKET_URL)
+  await downloadVersionFromBinaryRepo(
+    version,
+    stagingPath,
+    getBinaryRepoBaseUrl(),
+  )
   return 'binary'
 }
 

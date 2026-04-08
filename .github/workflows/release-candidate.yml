@@ -1,0 +1,96 @@
+name: Release Candidate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/release-candidate.yml'
+      - 'package.json'
+      - 'bun.lock'
+      - 'scripts/**'
+      - 'src/**'
+
+jobs:
+  unsigned-release-candidate:
+    runs-on: windows-latest
+    env:
+      NEKO_CODE_DISABLED_MCP_SERVERS: serena
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.10
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Release preflight
+        run: bun run smoke:release-preflight
+
+      - name: Stage unsigned release candidate
+        run: bun run scripts/stage-release-candidate.ts --skip-build
+
+      - name: Stage release publication
+        run: bun run scripts/stage-release-publication.ts --skip-stage-candidate
+
+      - name: Stage native installer baseline
+        run: bun run scripts/stage-native-installer.ts --skip-stage-publication
+
+      - name: Stage release deploy
+        run: bun run scripts/stage-release-deploy.ts --skip-stage-publication
+
+      - name: Read version
+        id: version
+        shell: powershell
+        run: |
+          $pkg = Get-Content package.json | ConvertFrom-Json
+          "version=$($pkg.version)" >> $env:GITHUB_OUTPUT
+
+      - name: Upload unsigned release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: neko-code-release-candidate-${{ steps.version.outputs.version }}-unsigned-win32-x64
+          path: dist/release-candidate/${{ steps.version.outputs.version }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload publish-ready metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: neko-code-release-candidate-${{ steps.version.outputs.version }}-publish-ready
+          path: dist/release-candidate/${{ steps.version.outputs.version }}/publish-ready
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload release publication
+        uses: actions/upload-artifact@v4
+        with:
+          name: neko-code-release-publication-${{ steps.version.outputs.version }}-win32-x64
+          path: dist/release-publication/${{ steps.version.outputs.version }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload native installer baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: neko-code-native-installer-${{ steps.version.outputs.version }}-unsigned-win32-x64
+          path: dist/native-installer/${{ steps.version.outputs.version }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload release deploy
+        uses: actions/upload-artifact@v4
+        with:
+          name: neko-code-release-deploy-${{ steps.version.outputs.version }}-win32-x64
+          path: dist/release-deploy/${{ steps.version.outputs.version }}
+          if-no-files-found: error
+          retention-days: 14
