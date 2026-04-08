@@ -28,6 +28,7 @@ type CollectContextDataInput = {
     agentDefinitions: AgentDefinitionsResult
     customSystemPrompt?: string
     appendSystemPrompt?: string
+    querySource?: ToolUseContext['options']['querySource']
   }
 }
 
@@ -43,6 +44,7 @@ export async function collectContextData(
       agentDefinitions,
       customSystemPrompt,
       appendSystemPrompt,
+      querySource,
     },
   } = context
 
@@ -67,7 +69,7 @@ export async function collectContextData(
     undefined, // terminalWidth
     // analyzeContextUsage only reads options.{customSystemPrompt,appendSystemPrompt}
     // but its signature declares the full Pick<ToolUseContext, 'options'>.
-    { options: { customSystemPrompt, appendSystemPrompt } } as Pick<
+    { options: { customSystemPrompt, appendSystemPrompt, querySource } } as Pick<
       ToolUseContext,
       'options'
     >,

@@ -7,6 +7,12 @@ import { join, normalize, posix, sep } from 'path'
 import { hasAutoMemPathOverride, isAutoMemPath } from 'src/memdir/paths.js'
 import { isAgentMemoryPath } from 'src/tools/AgentTool/agentMemory.js'
 import {
+  GLOBAL_CONFIG_BASENAME,
+  LEGACY_GLOBAL_CONFIG_BASENAME,
+  LEGACY_PROJECT_CONFIG_DIR_NAME,
+  PROJECT_CONFIG_DIR_NAME,
+} from '../../constants/product.js'
+import {
   CLAUDE_FOLDER_PERMISSION_PATTERN,
   FILE_EDIT_TOOL_NAME,
   GLOBAL_CLAUDE_FOLDER_PERMISSION_PATTERN,
@@ -64,7 +70,8 @@ export const DANGEROUS_FILES = [
   '.profile',
   '.ripgreprc',
   '.mcp.json',
-  '.claude.json',
+  `${GLOBAL_CONFIG_BASENAME}.json`,
+  `${LEGACY_GLOBAL_CONFIG_BASENAME}.json`,
 ] as const
 
 /**
@@ -75,7 +82,8 @@ export const DANGEROUS_DIRECTORIES = [
   '.git',
   '.vscode',
   '.idea',
-  '.claude',
+  PROJECT_CONFIG_DIR_NAME,
+  LEGACY_PROJECT_CONFIG_DIR_NAME,
 ] as const
 
 /**
@@ -92,11 +100,11 @@ export function normalizeCaseForComparison(path: string): string {
 }
 
 /**
- * If filePath is inside a .claude/skills/{name}/ directory (project or global),
- * return the skill name and a session-allow pattern scoped to just that skill.
+ * If filePath is inside a project/global skills directory, return the skill
+ * name and a session-allow pattern scoped to just that skill.
  * Used to offer a narrower "allow edits to this skill only" option in the
  * permission dialog and SDK suggestions, so iterating on one skill doesn't
- * require granting session access to all of .claude/ (settings.json, hooks/, etc.).
+ * require granting session access to all of the config directory.
  */
 export function getClaudeSkillScope(
   filePath: string,
@@ -106,12 +114,20 @@ export function getClaudeSkillScope(
 
   const bases = [
     {
-      dir: expandPath(join(getOriginalCwd(), '.claude', 'skills')),
-      prefix: '/.claude/skills/',
+      dir: expandPath(join(getOriginalCwd(), PROJECT_CONFIG_DIR_NAME, 'skills')),
+      prefix: `/${PROJECT_CONFIG_DIR_NAME}/skills/`,
     },
     {
-      dir: expandPath(join(homedir(), '.claude', 'skills')),
-      prefix: '~/.claude/skills/',
+      dir: expandPath(join(getOriginalCwd(), LEGACY_PROJECT_CONFIG_DIR_NAME, 'skills')),
+      prefix: `/${LEGACY_PROJECT_CONFIG_DIR_NAME}/skills/`,
+    },
+    {
+      dir: expandPath(join(getClaudeConfigHomeDir(), 'skills')),
+      prefix: `~/${PROJECT_CONFIG_DIR_NAME}/skills/`,
+    },
+    {
+      dir: expandPath(join(homedir(), LEGACY_PROJECT_CONFIG_DIR_NAME, 'skills')),
+      prefix: `~/${LEGACY_PROJECT_CONFIG_DIR_NAME}/skills/`,
     },
   ]
 
@@ -145,7 +161,7 @@ export function getClaudeSkillScope(
         // Reject glob metacharacters. skillName is interpolated into a
         // gitignore pattern consumed by ignore().add() in matchingRuleForInput
         // at step 1.6. A directory literally named '*' (valid on POSIX) would
-        // produce '/.claude/skills/*/**' which matches ALL skills. Return null
+        // produce '/.neko-code/skills/*/**' which matches ALL skills. Return null
         // to fall through to generateSuggestions() instead.
         if (/[*?[\]]/.test(skillName)) return null
         return { skillName, pattern: prefix + skillName + '/**' }
@@ -208,8 +224,18 @@ export function isClaudeSettingsPath(filePath: string): boolean {
 
   // Use platform separator so endsWith checks work on both Unix (/) and Windows (\)
   if (
-    normalizedPath.endsWith(`${sep}.claude${sep}settings.json`) ||
-    normalizedPath.endsWith(`${sep}.claude${sep}settings.local.json`)
+    normalizedPath.endsWith(
+      `${sep}${normalizeCaseForComparison(PROJECT_CONFIG_DIR_NAME)}${sep}settings.json`,
+    ) ||
+    normalizedPath.endsWith(
+      `${sep}${normalizeCaseForComparison(PROJECT_CONFIG_DIR_NAME)}${sep}settings.local.json`,
+    ) ||
+    normalizedPath.endsWith(
+      `${sep}${normalizeCaseForComparison(LEGACY_PROJECT_CONFIG_DIR_NAME)}${sep}settings.json`,
+    ) ||
+    normalizedPath.endsWith(
+      `${sep}${normalizeCaseForComparison(LEGACY_PROJECT_CONFIG_DIR_NAME)}${sep}settings.local.json`,
+    )
   ) {
     // Include .claude/settings.json even for other projects
     return true
@@ -230,14 +256,23 @@ function isClaudeConfigFilePath(filePath: string): boolean {
   // Check if file is within .claude/commands or .claude/agents directories
   // using proper path segment validation (not string matching with includes())
   // pathInWorkingPath now handles case-insensitive comparison to prevent bypasses
-  const commandsDir = join(getOriginalCwd(), '.claude', 'commands')
-  const agentsDir = join(getOriginalCwd(), '.claude', 'agents')
-  const skillsDir = join(getOriginalCwd(), '.claude', 'skills')
+  const commandsDirs = [
+    join(getOriginalCwd(), PROJECT_CONFIG_DIR_NAME, 'commands'),
+    join(getOriginalCwd(), LEGACY_PROJECT_CONFIG_DIR_NAME, 'commands'),
+  ]
+  const agentsDirs = [
+    join(getOriginalCwd(), PROJECT_CONFIG_DIR_NAME, 'agents'),
+    join(getOriginalCwd(), LEGACY_PROJECT_CONFIG_DIR_NAME, 'agents'),
+  ]
+  const skillsDirs = [
+    join(getOriginalCwd(), PROJECT_CONFIG_DIR_NAME, 'skills'),
+    join(getOriginalCwd(), LEGACY_PROJECT_CONFIG_DIR_NAME, 'skills'),
+  ]
 
   return (
-    pathInWorkingPath(filePath, commandsDir) ||
-    pathInWorkingPath(filePath, agentsDir) ||
-    pathInWorkingPath(filePath, skillsDir)
+    commandsDirs.some(dir => pathInWorkingPath(filePath, dir)) ||
+    agentsDirs.some(dir => pathInWorkingPath(filePath, dir)) ||
+    skillsDirs.some(dir => pathInWorkingPath(filePath, dir))
   )
 }
 
@@ -1274,7 +1309,7 @@ export function checkWritePermissionForTool<Input extends AnyObject>(
   if (claudeFolderAllowRule) {
     // Check if this rule is scoped under .claude/ (project or global).
     // Accepts both the broad patterns ('/.claude/**', '~/.claude/**') and
-    // narrowed ones like '/.claude/skills/my-skill/**' so users can grant
+    // narrowed ones like '/.neko-code/skills/my-skill/**' so users can grant
     // session access to a single skill without also exposing settings.json
     // or hooks/. The rule already matched the path via matchingRuleForInput;
     // this is an additional scope check. Reject '..' to prevent a rule like
@@ -1305,7 +1340,7 @@ export function checkWritePermissionForTool<Input extends AnyObject>(
   // permission to edit protected files
   const safetyCheck = checkPathSafetyForAutoEdit(path, pathsToCheck)
   if (!safetyCheck.safe) {
-    // SDK suggestion: if under .claude/skills/{name}/, emit the narrowed
+    // SDK suggestion: if under .neko-code/skills/{name}/, emit the narrowed
     // session-scoped addRules that step 1.6 will honor on the next call.
     // Everything else (.claude/settings.json, .git/, .vscode/, .idea/) falls
     // back to generateSuggestions — its setMode suggestion doesn't bypass

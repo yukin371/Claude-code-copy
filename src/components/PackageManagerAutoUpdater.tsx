@@ -73,7 +73,8 @@ export function PackageManagerAutoUpdater(t0) {
   if (!updateAvailable) {
     return null;
   }
-  const updateCommand = packageManager === "homebrew" ? "brew upgrade claude-code" : packageManager === "winget" ? "winget upgrade Anthropic.ClaudeCode" : packageManager === "apk" ? "apk upgrade claude-code" : "your package manager update command";
+  const updateHint =
+    'Automated release channels are not configured; rebuild from source or reinstall via the installer.';
   let t4;
   if ($[3] !== verbose) {
     t4 = verbose && <Text dimColor={true} wrap="truncate">currentVersion: {MACRO.VERSION}</Text>;
@@ -83,9 +84,9 @@ export function PackageManagerAutoUpdater(t0) {
     t4 = $[4];
   }
   let t5;
-  if ($[5] !== updateCommand) {
-    t5 = <Text color="warning" wrap="truncate">Update available! Run: <Text bold={true}>{updateCommand}</Text></Text>;
-    $[5] = updateCommand;
+  if ($[5] !== updateHint) {
+    t5 = <Text color="warning" wrap="truncate">A newer version may be available. {updateHint}</Text>;
+    $[5] = updateHint;
     $[6] = t5;
   } else {
     t5 = $[6];

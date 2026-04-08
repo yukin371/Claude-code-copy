@@ -4,6 +4,7 @@ import { homedir } from 'os'
 import { delimiter, join, posix, win32 } from 'path'
 import { checkGlobalInstallPermissions } from './autoUpdater.js'
 import { isInBundledMode } from './bundledMode.js'
+import { CLI_COMMAND_NAME } from '../constants/product.js'
 import {
   formatAutoUpdaterDisabledReason,
   getAutoUpdaterDisabledReason,
@@ -16,6 +17,7 @@ import { execFileNoThrow } from './execFileNoThrow.js'
 import { getFsImplementation } from './fsOperations.js'
 import {
   getShellType,
+  getLocalClaudePath,
   isRunningFromLocalInstallation,
   localInstallationExists,
 } from './localInstaller.js'
@@ -89,10 +91,6 @@ function getNormalizedPaths(): [invokedPath: string, execPath: string] {
 }
 
 export async function getCurrentInstallationType(): Promise<InstallationType> {
-  if (process.env.NODE_ENV === 'development') {
-    return 'development'
-  }
-
   const [invokedPath] = getNormalizedPaths()
 
   // Check if running in bundled mode first
@@ -111,6 +109,10 @@ export async function getCurrentInstallationType(): Promise<InstallationType> {
       return 'package-manager'
     }
     return 'native'
+  }
+
+  if (process.env.NODE_ENV === 'development') {
+    return 'development'
   }
 
   // Check if running from local npm installation
@@ -153,10 +155,6 @@ export async function getCurrentInstallationType(): Promise<InstallationType> {
 }
 
 async function getInstallationPath(): Promise<string> {
-  if (process.env.NODE_ENV === 'development') {
-    return getCwd()
-  }
-
   // For bundled/native builds, show the binary location
   if (isInBundledMode()) {
     // Try to find the actual binary that was invoked
@@ -167,7 +165,7 @@ async function getInstallationPath(): Promise<string> {
     }
 
     try {
-      const path = await which('claude')
+      const path = await which(CLI_COMMAND_NAME)
       if (path) {
         return path
       }
@@ -177,12 +175,18 @@ async function getInstallationPath(): Promise<string> {
 
     // If we can't find it, check common locations
     try {
-      await getFsImplementation().stat(join(homedir(), '.local/bin/claude'))
-      return join(homedir(), '.local/bin/claude')
+      const executableName =
+        getPlatform() === 'windows' ? `${CLI_COMMAND_NAME}.exe` : CLI_COMMAND_NAME
+      await getFsImplementation().stat(join(homedir(), '.local/bin', executableName))
+      return join(homedir(), '.local/bin', executableName)
     } catch {
       // Not found
     }
     return 'native'
+  }
+
+  if (process.env.NODE_ENV === 'development') {
+    return getCwd()
   }
 
   // For npm installations, use the path of the executable
@@ -294,7 +298,9 @@ async function detectMultipleInstallations(): Promise<
   // Check for native installation
 
   // Check common native installation paths
-  const nativeBinPath = join(homedir(), '.local', 'bin', 'claude')
+  const nativeExecutableName =
+    getPlatform() === 'windows' ? `${CLI_COMMAND_NAME}.exe` : CLI_COMMAND_NAME
+  const nativeBinPath = join(homedir(), '.local', 'bin', nativeExecutableName)
   try {
     await fs.stat(nativeBinPath)
     installations.push({ type: 'native', path: nativeBinPath })
@@ -440,14 +446,14 @@ async function detectConfigurationIssues(
     if (type === 'npm-local' && config.installMethod !== 'local') {
       warnings.push({
         issue: `Running from local installation but config install method is '${config.installMethod}'`,
-        fix: 'Consider using native installation: claude install',
+        fix: `Consider using native installation: ${CLI_COMMAND_NAME} install`,
       })
     }
 
     if (type === 'native' && config.installMethod !== 'native') {
       warnings.push({
         issue: `Running native installation but config install method is '${config.installMethod}'`,
-        fix: 'Run claude install to update configuration',
+        fix: `Run ${CLI_COMMAND_NAME} install to update configuration`,
       })
     }
   }
@@ -455,12 +461,15 @@ async function detectConfigurationIssues(
   if (type === 'npm-global' && (await localInstallationExists())) {
     warnings.push({
       issue: 'Local installation exists but not being used',
-      fix: 'Consider using native installation: claude install',
+      fix: `Consider using native installation: ${CLI_COMMAND_NAME} install`,
     })
   }
 
   const existingAlias = await findClaudeAlias()
   const validAlias = await findValidClaudeAlias()
+  const localInstallPath = getLocalClaudePath()
+    .replace(homedir(), '~')
+    .replace(/\\/g, '/')
 
   // Check if running local installation but it's not in PATH
   if (type === 'npm-local') {
@@ -474,13 +483,13 @@ async function detectConfigurationIssues(
         // Alias exists but points to invalid target
         warnings.push({
           issue: 'Local installation not accessible',
-          fix: `Alias exists but points to invalid target: ${existingAlias}. Update alias: alias claude="~/.claude/local/claude"`,
+          fix: `Alias exists but points to invalid target: ${existingAlias}. Update alias: alias ${CLI_COMMAND_NAME}="${localInstallPath}"`,
         })
       } else {
         // No alias exists and not in PATH
         warnings.push({
           issue: 'Local installation not accessible',
-          fix: 'Create alias: alias claude="~/.claude/local/claude"',
+          fix: `Create alias: alias ${CLI_COMMAND_NAME}="${localInstallPath}"`,
         })
       }
     }
@@ -585,7 +594,7 @@ export async function getDoctorDiagnostic(): Promise<DiagnosticInfo> {
     if (!hasUpdatePermissions && !getAutoUpdaterDisabledReason()) {
       warnings.push({
         issue: 'Insufficient permissions for auto-updates',
-        fix: 'Do one of: (1) Re-install node without sudo, or (2) Use `claude install` for native installation',
+        fix: `Do one of: (1) Re-install node without sudo, or (2) Use \`${CLI_COMMAND_NAME} install\` for native installation`,
       })
     }
   }

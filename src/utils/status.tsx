@@ -15,7 +15,7 @@ import { getClaudeAiUserDefaultModelDescription, getMainLoopModel, modelDisplayS
 import { formatProviderTargetLabel, getMainLoopProviderState } from './model/mainProvider.js';
 import { getProviderLoadBalanceConfigSnapshot } from './model/providerMetadata.js';
 import { getAPIProvider } from './model/providers.js';
-import { getTaskRouteDebugSnapshot, getTaskRouteDebugSnapshotFromQuerySource, TASK_ROUTE_NAMES, type TaskRouteName } from './model/taskRouting.js';
+import { getTaskRouteDebugSnapshot, getTaskRouteDebugSnapshotFromQuerySource, TASK_ROUTE_NAMES, TASK_ROUTE_STATUS_QUERY_SOURCE_EXAMPLES, type TaskRouteName } from './model/taskRouting.js';
 import { getMTLSConfig } from './mtls.js';
 import { checkInstall } from './nativeInstaller/index.js';
 import { getProxyUrl } from './proxy.js';
@@ -231,7 +231,7 @@ function buildAdditionalTaskRouteProperties(): Property[] {
     value: routes.map(route => formatSecondaryTaskRouteLine(route))
   }, {
     label: 'Task route hints',
-    value: ['repl_main_thread', 'agent:custom', 'agent:custom:route:frontend', 'agent:builtin:general-purpose:route:review', 'agent:builtin:plan', 'agent:builtin:statusline-setup'].map(querySource => formatQuerySourceRouteLine(querySource))
+    value: TASK_ROUTE_STATUS_QUERY_SOURCE_EXAMPLES.map(querySource => formatQuerySourceRouteLine(querySource))
   }];
 }
 export async function buildInstallationHealthDiagnostics(): Promise<Diagnostic[]> {

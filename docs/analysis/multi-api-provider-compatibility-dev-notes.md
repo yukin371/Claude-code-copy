@@ -20,6 +20,17 @@
 - OpenAI-compatible provider 现在会在同 provider 端点耗尽后，继续按兼容 provider 顺序回退。
 - `sideQuery` 与 token estimation 已接入 route-aware client，不再默认绕回旧的主 client。
 - 状态页已可直接查看非 main 任务路由矩阵，便于核对 `subagent` / `frontend` / `review` 等任务实际落点。
+- route diagnostics / smoke 现已补代表性的 helper `querySource` 样本，包括 `session_search`、`permission_explainer`、`model_validation`、`side_question`、`auto_mode`、`memdir_relevance`、`hook_prompt`、`chrome_mcp`。
+- 带 `querySource` 的 token estimation 调用现已优先跟随 Anthropic 路由任务（例如 `agent:builtin:plan`），避免这些辅助路径继续一律硬绑 `main`；OpenAI-compatible 路由暂仍保守回落到 `main` 计数路径。
+- MCP tool 结果的大输出截断链路现已透传调用侧 `querySource`，例如 `chrome_mcp` 这类 helper 路径在进入 token estimation 时不再丢失来源信息。
+- ToolSearch 的 auto-threshold 计算现已在 `query` / `compact` / context analysis 等带来源上下文的调用面透传 `querySource`，避免 deferred-tools 计数在这些辅助路径里继续无来源运行。
+- SDK `get_context_usage` / 非交互 context analysis 路径现已显式标记为 `sdk`，不再以无来源上下文进入 token / tool-search 相关辅助判断。
+- Doctor 的 MCP context warning 诊断路径现也使用显式内部 source（`doctor_context_warning`），避免继续以未标记来源进入 MCP tool token 估算。
+- ToolSearch deferred-tools token 计数的 memoize key 现已纳入 model / route 维度，不再把不同路由或模型下的阈值判断结果错误复用到同一组工具名上。
+- token-count VCR fixture key 现也纳入 `model` / `route` 维度，避免不同 helper 路由在测试或录制环境里继续共用同一份 token 计数缓存。
+- 通用 API VCR fixture key 现已支持显式上下文维度；`queryModel*` / `queryHaiku` / `queryWithModel` 会把 `systemPrompt`、`model`、`querySource` 带入键，避免相同 prompt 在不同任务路由下误复用旧响应。
+- route diagnostics / status matrix 现已补更多 `queryHaiku` / `queryWithModel` helper source 样本，包括 `mcp_datetime_parse`、`generate_session_title`、`tool_use_summary_generation`、`rename_generate_name`、`feedback`、`agent_creation`、`away_summary`、`teleport_generate_title`。
+- 只读 smoke 与 claude-config smoke 现已额外断言 `mcp_datetime_parse` 在全局 Anthropic gateway 模式下继续沿用主路由，不再只覆盖 `sideQuery` 家族 helper。
 
 ## 仍需推进
 

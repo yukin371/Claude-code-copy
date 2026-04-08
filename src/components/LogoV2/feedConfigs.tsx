@@ -30,7 +30,7 @@ export function createWhatsNewFeed(releaseNotes: string[]): FeedConfig {
       text: note
     };
   });
-  const emptyMessage = 'Check the Claude Code changelog for updates';
+  const emptyMessage = 'Check the Neko Code changelog for updates';
   return {
     title: "What's new",
     lines,
@@ -51,7 +51,7 @@ export function createProjectOnboardingFeed(steps: Step[]): FeedConfig {
       text: `${checkmark}${text}`
     };
   });
-  const warningText = getCwd() === homedir() ? 'Note: You have launched claude in your home directory. For the best experience, launch it in a project directory instead.' : undefined;
+  const warningText = getCwd() === homedir() ? 'Note: You have launched neko in your home directory. For the best experience, launch it in a project directory instead.' : undefined;
   if (warningText) {
     lines.push({
       text: warningText
@@ -64,7 +64,7 @@ export function createProjectOnboardingFeed(steps: Step[]): FeedConfig {
 }
 export function createGuestPassesFeed(): FeedConfig {
   const reward = getCachedReferrerReward();
-  const subtitle = reward ? `Share Claude Code and earn ${formatCreditAmount(reward)} of extra usage` : 'Share Claude Code with friends';
+  const subtitle = reward ? `Share Neko Code and earn ${formatCreditAmount(reward)} of extra usage` : 'Share Neko Code with friends';
   return {
     title: '3 guest passes',
     lines: [],

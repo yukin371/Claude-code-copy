@@ -112,6 +112,15 @@ type ErrorRow = {
   action: ErrorRowAction;
   scope?: string;
 };
+type MarketplaceCatalog = {
+  configuredMarketplaces: Set<string>;
+  loadedMarketplaces: Set<string>;
+  loadedPlugins: Set<string>;
+};
+type ReconciledPluginIssues = {
+  errors: PluginError[];
+  failedMarketplaces: PluginInstallationStatus["marketplaces"];
+};
 
 /**
  * Determine which settings sources define an extraKnownMarketplace entry.
@@ -214,6 +223,79 @@ function getPluginNameFromError(error: PluginError): string | undefined {
   // Fallback: source often contains "pluginName@marketplace"
   if (error.source.includes('@')) return error.source.split('@')[0];
   return undefined;
+}
+function createEmptyMarketplaceCatalog(): MarketplaceCatalog {
+  return {
+    configuredMarketplaces: new Set<string>(),
+    loadedMarketplaces: new Set<string>(),
+    loadedPlugins: new Set<string>()
+  };
+}
+function isReconciliablePluginError(error: PluginError): boolean {
+  return error.type === 'plugin-not-found' || error.type === 'marketplace-not-found' || error.type === 'marketplace-load-failed';
+}
+function isStalePluginError(error: PluginError, catalog: MarketplaceCatalog): boolean {
+  switch (error.type) {
+    case 'plugin-not-found':
+      return catalog.loadedPlugins.has(`${error.pluginId}@${error.marketplace}`);
+    case 'marketplace-not-found':
+      return catalog.configuredMarketplaces.has(error.marketplace);
+    case 'marketplace-load-failed':
+      return catalog.loadedMarketplaces.has(error.marketplace);
+    default:
+      return false;
+  }
+}
+function reconcilePluginIssues(errors: PluginError[], installationStatus: PluginInstallationStatus, catalog: MarketplaceCatalog): ReconciledPluginIssues {
+  return {
+    errors: errors.filter(error => !isStalePluginError(error, catalog)),
+    failedMarketplaces: installationStatus.marketplaces.filter(marketplace => marketplace.status !== 'failed' || !catalog.loadedMarketplaces.has(marketplace.name))
+  };
+}
+function useReconciledPluginIssues(errors: PluginError[], installationStatus: PluginInstallationStatus): ReconciledPluginIssues {
+  const [catalog, setCatalog] = useState<MarketplaceCatalog>(createEmptyMarketplaceCatalog);
+  const hasReconciliableIssues = errors.some(isReconciliablePluginError) || installationStatus.marketplaces.some(marketplace => marketplace.status === 'failed');
+  useEffect(() => {
+    if (!hasReconciliableIssues) {
+      setCatalog(createEmptyMarketplaceCatalog());
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const config = await loadKnownMarketplacesConfig();
+        const {
+          marketplaces
+        } = await loadMarketplacesWithGracefulDegradation(config);
+        if (cancelled) {
+          return;
+        }
+        const nextCatalog: MarketplaceCatalog = {
+          configuredMarketplaces: new Set(Object.keys(config)),
+          loadedMarketplaces: new Set<string>(),
+          loadedPlugins: new Set<string>()
+        };
+        for (const marketplace of marketplaces) {
+          if (!marketplace.data) {
+            continue;
+          }
+          nextCatalog.loadedMarketplaces.add(marketplace.name);
+          for (const plugin of marketplace.data.plugins) {
+            nextCatalog.loadedPlugins.add(`${plugin.name}@${marketplace.name}`);
+          }
+        }
+        setCatalog(nextCatalog);
+      } catch {
+        if (!cancelled) {
+          setCatalog(createEmptyMarketplaceCatalog());
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [errors, hasReconciliableIssues, installationStatus.marketplaces]);
+  return reconcilePluginIssues(errors, installationStatus, catalog);
 }
 function buildErrorRows(failedMarketplaces: Array<{
   name: string;
@@ -364,12 +446,15 @@ function removeExtraMarketplace(name: string, sources: Array<{
 function ErrorsTabContent(t0) {
   const $ = _c(26);
   const {
+    reconciledIssues,
     setViewState,
     setActiveTab,
     markPluginsChanged
   } = t0;
-  const errors = useAppState(_temp2) as PluginError[];
-  const installationStatus = useAppState(_temp3) as PluginInstallationStatus;
+  const {
+    errors,
+    failedMarketplaces
+  } = reconciledIssues;
   const setAppState = useSetAppState();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [actionMessage, setActionMessage] = useState(null);
@@ -403,7 +488,6 @@ function ErrorsTabContent(t0) {
     t3 = $[2];
   }
   useEffect(t2, t3);
-  const failedMarketplaces = installationStatus.marketplaces.filter(_temp4);
   const failedMarketplaceNames = new Set(failedMarketplaces.map(_temp5));
   const transientErrors = errors.filter(isTransientError);
   const extraMarketplaceErrors = errors.filter(e => (e.type === "marketplace-not-found" || e.type === "marketplace-load-failed" || e.type === "marketplace-blocked-by-policy") && !failedMarketplaceNames.has(e.marketplace));
@@ -733,7 +817,7 @@ function getInitialTab(viewState: ViewState): TabId {
   return 'discover';
 }
 export function PluginSettings(t0) {
-  const $ = _c(75);
+  const $ = _c(76);
   const {
     onComplete,
     args,
@@ -768,7 +852,10 @@ export function PluginSettings(t0) {
   const [result, setResult] = useState(null);
   const [childSearchActive, setChildSearchActive] = useState(false);
   const setAppState = useSetAppState();
-  const pluginErrorCount = useAppState(_temp0) as number;
+  const errors = useAppState(_temp2) as PluginError[];
+  const installationStatus = useAppState(_temp3) as PluginInstallationStatus;
+  const reconciledIssues = useReconciledPluginIssues(errors, installationStatus);
+  const pluginErrorCount = reconciledIssues.errors.length + reconciledIssues.failedMarketplaces.length;
   const errorsTabTitle = pluginErrorCount > 0 ? `Errors (${pluginErrorCount})` : "Errors";
   const exitState = useExitOnCtrlCDWithKeybindings();
   const cliMode = parsedCommand.type === "marketplace" && parsedCommand.action === "add" && parsedCommand.target !== undefined;
@@ -1026,35 +1113,36 @@ export function PluginSettings(t0) {
     t24 = $[61];
   }
   let t25;
-  if ($[62] !== markPluginsChanged) {
-    t25 = <ErrorsTabContent setViewState={setViewState} setActiveTab={setActiveTab} markPluginsChanged={markPluginsChanged} />;
+  if ($[62] !== markPluginsChanged || $[63] !== reconciledIssues) {
+    t25 = <ErrorsTabContent reconciledIssues={reconciledIssues} setViewState={setViewState} setActiveTab={setActiveTab} markPluginsChanged={markPluginsChanged} />;
     $[62] = markPluginsChanged;
-    $[63] = t25;
+    $[63] = reconciledIssues;
+    $[64] = t25;
   } else {
-    t25 = $[63];
+    t25 = $[64];
   }
   let t26;
-  if ($[64] !== errorsTabTitle || $[65] !== t25) {
+  if ($[65] !== errorsTabTitle || $[66] !== t25) {
     t26 = <Tab id="errors" title={errorsTabTitle}>{t25}</Tab>;
-    $[64] = errorsTabTitle;
-    $[65] = t25;
-    $[66] = t26;
+    $[65] = errorsTabTitle;
+    $[66] = t25;
+    $[67] = t26;
   } else {
-    t26 = $[66];
+    t26 = $[67];
   }
   let t27;
-  if ($[67] !== activeTab || $[68] !== childSearchActive || $[69] !== t16 || $[70] !== t17 || $[71] !== t21 || $[72] !== t24 || $[73] !== t26) {
+  if ($[68] !== activeTab || $[69] !== childSearchActive || $[70] !== t16 || $[71] !== t17 || $[72] !== t21 || $[73] !== t24 || $[74] !== t26) {
     t27 = <Pane color="suggestion"><Tabs title="Plugins" selectedTab={activeTab} onTabChange={handleTabChange} color="suggestion" disableNavigation={childSearchActive} banner={t16}>{t17}{t21}{t24}{t26}</Tabs></Pane>;
-    $[67] = activeTab;
-    $[68] = childSearchActive;
-    $[69] = t16;
-    $[70] = t17;
-    $[71] = t21;
-    $[72] = t24;
-    $[73] = t26;
-    $[74] = t27;
+    $[68] = activeTab;
+    $[69] = childSearchActive;
+    $[70] = t16;
+    $[71] = t17;
+    $[72] = t21;
+    $[73] = t24;
+    $[74] = t26;
+    $[75] = t27;
   } else {
-    t27 = $[74];
+    t27 = $[75];
   }
   return t27;
 }

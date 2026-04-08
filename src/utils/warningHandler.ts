@@ -3,6 +3,7 @@ import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
   logEvent,
 } from 'src/services/analytics/index.js'
+import { isInBundledMode } from './bundledMode.js'
 import { logForDebugging } from './debug.js'
 import { isEnvTruthy } from './envUtils.js'
 import { getPlatform } from './platform.js'
@@ -69,7 +70,8 @@ export function initializeWarningHandler(): void {
   // Check development mode directly to avoid async call in init
   // This preserves the same logic as getCurrentInstallationType() without async
   const isDevelopment =
-    process.env.NODE_ENV === 'development' || isRunningFromBuildDirectory()
+    (!isInBundledMode() && process.env.NODE_ENV === 'development') ||
+    isRunningFromBuildDirectory()
   if (!isDevelopment) {
     process.removeAllListeners('warning')
   }

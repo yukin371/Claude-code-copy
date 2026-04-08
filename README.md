@@ -53,8 +53,11 @@ Neko Code 是一个从 Claude Code 源码快照反向补全出来的可运行项
 - 使用迁移后的真实 Claude 配置回放 `bun src/entrypoints/cli.tsx -p --max-turns 1 "Reply with exactly OK"` 已可返回 `OK`
 - Bun 工程依赖基线已补齐
 - native build 基线已打通
-  - `bun run build:native` 已可生成 `dist/neko-code.exe`
+- `bun run build:native` 已可生成 `dist/neko-code.exe`
   - 编译产物已通过 `--version`、`--help` 验证
+  - 编译产物在脱离仓库路径的临时目录下，已通过 `-p --max-turns 1 "Reply with exactly OK"` 验证
+- 本地安装/PATH workflow 已通过
+  - 安装脚本产出的 `neko.exe` 已在临时安装目录和真实 PATH 环境中通过 `--version`、`--help` 与 `-p --max-turns 1 "Reply with exactly OK"` 验证
 - `bun run typecheck` 已通过
 - `bun run test:routing` 已通过
 - `bun run smoke:claude-config` 已通过
@@ -95,10 +98,28 @@ bun src/entrypoints/cli.tsx agents --help
 bun src/entrypoints/cli.tsx plugin --help
 bun src/entrypoints/cli.tsx mcp --help
 bun src/entrypoints/cli.tsx doctor --help
+bun src/entrypoints/cli.tsx install --help
+bun src/entrypoints/cli.tsx update --help
+bun run install:local-beta
 bun src/entrypoints/cli.tsx -p --max-turns 1 "Reply with exactly OK"
 bun run scripts/bun-tools.ts routes
 bun run build:native
- bun run smoke:readonly-routing
+bun run build:local-release-bundle
+bun run stage:release-candidate
+bun run stage:release-publication
+bun run stage:release-deploy
+bun run stage:github-release
+bun run release:apply-signed-artifact -- --signed-binary C:\path\to\signed.exe
+bun run smoke:signed-release-publication-workflow
+bun run smoke:stage-github-release
+bun run smoke:native-update-cli-github-release
+bun run smoke:release-deploy-publish
+bun run smoke:native-update-cli-release-deploy
+bun run smoke:readonly-routing
+bun run smoke:distribution-readiness
+bun run smoke:native-installer-local-bundle
+bun run smoke:native-installer-release-publication
+bun run smoke:release-preflight
 bun run typecheck
 bun run test:routing
 bun run smoke:claude-config
@@ -110,6 +131,7 @@ bun run smoke:claude-config
 - CLI 顶层参数解析
 - provider/model 入口参数
 - agents / plugin / mcp / doctor 等顶层命令注册
+- install / update 等分发相关命令帮助入口
 - 真实 `--print` / headless 单轮执行
 - 配置迁移后的真实网关回放
 - 基础任务路由诊断与回归
@@ -117,12 +139,14 @@ bun run smoke:claude-config
 - 只读 routing smoke，可断言 `direct-provider` / `single-upstream gateway` 两种模式
 - 迁移后的隔离配置 smoke 也已覆盖并断言 `direct-provider` / `single-upstream gateway` 两种模式
 - native build 编译与基础 CLI 自检
+- 本地 release bundle 已可生成
+- native installer 已可在隔离环境中从本地 release bundle 下载并安装
+- unsigned release candidate staging 已可生成
 
 需要注意：
 
 - `--print` 已验证主链路可用，但若显式设置过低的 `--max-budget-usd`，仍会因预算上限而退出
 - 这类报错属于预算策略，不再是当前已修复的应用内执行链故障
-- 本轮编译产物 `-p` 烟测遇到 API 连接失败；同一时刻源码模式也出现相同错误，因此暂不判定为 native build 特有问题
 
 ## 预计继续补完
 
@@ -197,7 +221,7 @@ bun src/entrypoints/cli.tsx --version
 bun src/entrypoints/cli.tsx --help
 ```
 
-在 Windows 上安装本地终端 launcher：
+在 Windows 上安装本地终端 launcher（无需 Bun 源码入口）：
 
 ```powershell
 bun run install:local-launcher
@@ -205,15 +229,182 @@ bun run install:local-launcher
 
 该脚本会：
 
-- 使用 `scripts/local-compiled-launcher.ts` 编译本地 launcher
-- 默认安装到 `~/.local/bin/neko.exe`
-- 如有需要，把 `~/.local/bin` 加入用户 PATH
+- 先运行 `bun run build:native` 生成主命令 `dist/neko-code.exe`
+  - 把 `neko-code.exe` 复制为 `~/.local/bin/neko.exe`（可视为真正的 `neko` 命令）
+  - 编译一个辅助 launcher `neko-launcher.exe` 来桥接旧 Bun 入口，PATH 只需包含目录即可调用 `neko.exe`
+- 提示把 `~/.local/bin` 加入 PATH，完成后 `neko` 命令就直接调用复制的 native binary
+
+注意：
+
+- launcher 本身只是辅助进程；主可执行体是 `dist/neko-code.exe`（复制到 `~/.local/bin/neko.exe` 供 PATH 使用）
+- 故整体流程仍不依赖 Bun 或源码入口，只要 PATH 中有 `neko.exe`，即可直接运行
+
+注意：
+
+- 这是“本地发行”的最小可用入口，适合作为 native distribution 的快速验收
+- 生产级发布还需补齐完整安装器、路径注册和签名
 
 注意：
 
 - 这是“本地终端直启”方案，不是完整 native release build
-- 当前 launcher 仍依赖本机已安装 Bun，且依赖当前仓库源码仍存在
+- `neko` 主命令直接运行复制后的 native binary，不再依赖 Bun 或仓库源码路径
+- `neko-launcher.exe` 只是保留的兼容桥接件，不是 PATH 上的主入口
 - PATH 更新后通常需要重新打开一个终端窗口
+
+本地候选发布物预检：
+
+```bash
+bun run smoke:release-preflight
+```
+
+该 gate 会顺序执行：
+
+- `bun run build:native`
+- `bun run smoke:distribution-readiness`
+- `bun run scripts/native-installer-local-bundle-smoke.ts --skip-build`
+- `bun run scripts/stage-native-installer.ts --skip-stage-publication`
+- `bun run scripts/stage-native-installer-smoke.ts --skip-stage-native-installer`
+- 校验 `dist/neko-code.exe` 已生成且非空
+- 校验 `scripts/install-local-launcher.ps1` 仍以 `neko.exe` 作为主安装命令
+- 校验 README 与关键 release-facing 提示未回退到旧 `claude` 主入口
+
+本地 release bundle / installer 烟测：
+
+```bash
+bun run build:local-release-bundle
+bun run smoke:native-installer-local-bundle
+bun run smoke:native-installer-release-publication
+```
+
+这两步会：
+
+- 生成 `dist/release-local/`，写入 `latest` / `stable` channel 文件、`manifest.json` 和当前平台产物
+- 通过 `NEKO_CODE_NATIVE_INSTALLER_BASE_URL` 把 native installer 指向本地临时 HTTP 源
+- 在隔离的 `HOME` / `XDG_*` / `NEKO_CODE_CONFIG_DIR` 环境里真实执行下载、安装和帮助入口验证
+
+其中 `bun run smoke:native-installer-release-publication` 会直接消费 `dist/release-publication/<version>/`，验证 publication 目录已与现有 native installer 下载布局兼容。
+
+unsigned release candidate staging：
+
+```bash
+bun run stage:release-candidate
+```
+
+该命令会生成 `dist/release-candidate/<version>/`，包含：
+
+- `neko-code-<version>-<platform>-unsigned.exe`
+- `bundle/` 下的 channel 文件、manifest 与 installer 输入产物
+- `install-local-launcher.ps1`
+- `release-candidate.json`
+- `SHA256SUMS.txt`
+- `publish-ready/channels/latest.json` 和 `publish-ready/channels/stable.json`（version/platform/artifact/sha256/signed=false）
+- `signing-manifest.json`（声明 unsigned 输入、预期 signed 输出与 sha256）
+
+publication staging：
+
+```bash
+bun run stage:release-publication
+```
+
+该命令会读取 `dist/release-candidate/<version>/`，生成 `dist/release-publication/<version>/`，包含：
+
+- 与 native installer 兼容的发布目录：`latest`、`stable`、`<version>/manifest.json`、`<version>/<platform>/neko(.exe)`
+- `publish-ready/channels/latest.json` 和 `publish-ready/channels/stable.json`
+- `release-publication.json`（记录当前发布目录实际使用的是 signed 还是 unsigned 输入、canonical binary 路径与 sha256）
+
+portable native installer staging：
+
+```bash
+bun run stage:native-installer
+```
+
+该命令会读取 `dist/release-publication/<version>/`，生成 `dist/native-installer/<version>/`，包含：
+
+- `package/neko.exe`
+- `package/install.ps1`
+- `package/install.cmd`
+- `package/installer-manifest.json`
+- `nsis/neko-code-installer.nsi`
+- `nsis/build-installer.ps1`
+- `nsis/nsis-metadata.json`
+- `neko-code-<version>-<platform>-portable-installer.zip`
+- `native-installer.json`
+- `SHA256SUMS.txt`
+
+其中 `bun run smoke:stage-native-installer` 会先解压 `portable-installer.zip`，再在临时目录里真实执行 `install.ps1`，把预编译 `neko.exe` 安装到隔离 `bin/` 后校验 `--version` / `--help` / `update --help`；同时会对 `NSIS` 构建脚本执行 dry-run，确认后续可接 `makensis` 产出真正 setup.exe。
+
+本地 beta 安装（NSIS setup）：
+
+```powershell
+bun run install:local-beta
+```
+
+该命令会：
+
+- 先执行 `stage-native-installer`
+- 调用 `dist/native-installer/<version>/nsis/build-installer.ps1` 真实构建 `setup.exe`
+- 静默卸载旧的 `%LOCALAPPDATA%\\NekoCode\\bin` 安装（如存在）
+- 静默安装新的 beta 版本
+- 自动校验已安装的 `neko.exe --version`、`neko.exe --help`、`neko.exe update --help`
+
+需要注意：
+
+- 这一步依赖本机已安装 `NSIS` / `makensis`
+- 当前得到的是“本机可体验的 unsigned beta 安装包”，不是正式签名发布版
+
+signed artifact 接入口：
+
+```bash
+bun run release:apply-signed-artifact -- --signed-binary C:\path\to\signed.exe
+```
+
+该命令会把外部签名后的 exe 放入 `dist/release-candidate/<version>/signed/` 既定路径，再自动重建 `dist/release-publication/<version>/`。
+如果签名产物存在，publication metadata 与 channel metadata 会自动切到 `signed=true` / `signingStatus=signed`。
+
+deploy staging：
+
+```bash
+bun run stage:release-deploy
+```
+
+该命令会读取 `dist/release-publication/<version>/`，生成 `dist/release-deploy/<version>/`，包含：
+
+- `payload/`：可直接映射到对象存储或下载页根目录的发布内容
+- `upload-manifest.json`：声明每个 payload 文件应该上传到的目标相对路径
+- `release-deploy.json`：说明当前 deploy 目录使用的签名状态、主 binary、payload 指针与上传入口
+
+其中 `bun run smoke:release-deploy-publish` 会严格按 `upload-manifest.json` 把 `payload/` 映射到本地 HTTP 根目录，再让 native installer 真实下载安装，验证 deploy 目录已经足够作为发布上传输入。
+
+其中 `bun run smoke:native-update-cli-release-deploy` 会在隔离环境里先从 deploy 根目录完成 native 安装，再直接执行已安装的 `neko update`，验证 CLI 自身的 native update 路径能消费这套本地发布源。
+
+CI 骨架：
+
+- [release-candidate.yml](.github/workflows/release-candidate.yml)
+- [release-signed-publication.yml](.github/workflows/release-signed-publication.yml)
+- [github-release-publish.yml](.github/workflows/github-release-publish.yml)
+- [github-release-promote.yml](.github/workflows/github-release-promote.yml)
+- 当前会在 `windows-latest` 上执行 `typecheck`、`smoke:release-preflight`、`stage-release-candidate`、`stage-release-publication`、`stage:native-installer`、`stage-release-deploy`
+- 最终上传 unsigned release candidate artifact、`publish-ready` metadata artifact、`release-publication` artifact、`native-installer` artifact，以及 `release-deploy` artifact
+- `release-signed-publication.yml` 可手动输入 version、unsigned RC 所在 run id、signed exe 所在 run id 与 artifact 名称，自动下载两侧 artifact，执行 `apply-signed-release-artifact -> stage:native-installer -> stage-release-deploy`，再跑 signed publication / installer / deploy / native update smoke，并重新上传 signed 版 `release-candidate`、`release-publication`、`native-installer`、`release-deploy`
+- 本地也可先跑 `bun run smoke:signed-release-publication-workflow`，模拟 GitHub 下载 unsigned artifact 与 signed exe 后的整条 signed publication/deploy 流程
+- `stage:github-release` 会把 signed candidate/publication/deploy/native-installer 产物整理成 `dist/github-release/<version>/`，其中包含 `portable-installer.zip`，输出 GitHub Release 可上传资产、checksums 和 release notes
+- `github-release-publish.yml` 可手动输入 version、signed publication run id，以及 `draft` / `prerelease` 开关；它会下载 signed artifacts，执行 `stage:github-release`，校验 `smoke:stage-github-release`，然后创建或更新 `v<version>` GitHub Release
+- `github-release-promote.yml` 可在已有 `v<version>` release 上单独调整 `draft` / `prerelease` / `latest`，把 prerelease 升级为正式 stable，或把草稿 release 发布出去
+- `smoke:native-update-cli-github-release` 会用本地假 GitHub Releases API 校验：已安装的 `neko update` 能直接消费 GitHub Release 资产
+- `smoke:promote-github-release` 会校验 GitHub Release promotion 命令行计划，避免 promote workflow 参数漂移
+
+GitHub Release 作为 native update 源：
+
+- 设置 `NEKO_CODE_NATIVE_INSTALLER_GITHUB_REPO=<owner>/<repo>` 后，native installer 与 `neko update` 会优先从 GitHub Releases 解析版本与资产
+- `stable` 走 GitHub `releases/latest`
+- `latest` 走 Releases 列表里的最新非 draft 发布（允许 prerelease）
+- 如需本地/测试替身，可额外设置 `NEKO_CODE_NATIVE_INSTALLER_GITHUB_API_BASE_URL`
+
+需要注意：
+
+- 该 gate 代表“本地候选发布物已具备基本自检”
+- 它不会把签名服务、NSIS toolchain、发布流水线、真实 auto-update 渠道缺失判成失败
+- 上述几项仍是正式发布前的外部 blocker
 
 构建当前机器可用的 native binary：
 

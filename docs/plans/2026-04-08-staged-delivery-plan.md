@@ -29,6 +29,17 @@
   - 必要的 `README.md`
   - 必要的 plan / ADR / MODULE 文档
 
+## 当前工作区说明
+
+- 当前工作区中的大量 `M` / `??` 文件，来自此前多轮代理连续推进，不是用户手工编辑。
+- 这批改动已经跨越：
+  - Phase 3 状态型 smoke / 系统回归
+  - Phase 4 本地分发、release candidate、publication、deploy、GitHub Release workflow
+  - release-facing 文案、品牌收口、配置路径与 provider/router 辅助修补
+- 因为本计划此前只写阶段目标与 exit conditions，没有同步“文件面触达范围”，所以看起来像 roadmap 没覆盖这些改动。
+- 具体分组说明见：
+  - [2026-04-09-worktree-change-inventory.md](./2026-04-09-worktree-change-inventory.md)
+
 ## Phase Rules
 
 ### 阶段切换规则
@@ -146,7 +157,7 @@
 
 ### Status
 
-- current
+- completed
 
 ### Goal
 
@@ -183,11 +194,19 @@
 - 外部网关与本地 fallback 的职责边界已经稳定
 - 不再因 provider/router 漂移阻塞后续状态型链路验证
 
+### Completion Notes
+
+- 已补齐主查询、`sideQuery`、token estimation、MCP truncation、ToolSearch auto-threshold 等关键辅助路径的 `querySource` / route 透传。
+- 已修补 ToolSearch deferred-tools token 计数缓存、token-count VCR、通用 API VCR 的 route/model/context 维度键，避免不同任务路由误复用旧缓存。
+- route diagnostics、status matrix、只读 smoke、claude-config smoke 现已覆盖 representative helper source，并覆盖 `direct-provider` 与 `single-upstream gateway` 两种模式。
+- 源码模式与编译产物 `-p --max-turns 1 "Reply with exactly OK"` 本轮均已返回 `OK`，Phase 2 所需 headless 对照验证已补齐。
+
 ## Phase 3. 状态型工作流闭环
 
 ### Status
 
-- queued
+- current
+- nearing-exit
 
 ### Goal
 
@@ -218,16 +237,38 @@
 - 新增的 stateful smoke
 - 至少一轮“复制现有 Claude 配置后跑常见工作流”的回归
 
+### Current Progress
+
+- 已新增 `scripts/session-continue-smoke.ts`，在隔离 `workspace/config/plugin-cache` 中真实执行首轮 `-p` 与后续 `-p --continue`
+- 已把 print/headless 的 `continue/resume` 恢复逻辑收敛到共享 helper，并补齐恢复前缓存清理与 worktree 状态恢复
+- 已验证 `bun run smoke:session-continue:no-serena`
+- 已新增 `scripts/plugin-cli-state-smoke.ts`，在隔离 `workspace/config/plugin-cache` 中真实执行 `plugin marketplace add/remove`、`plugin install/uninstall`、`plugin enable/disable`
+- 已把 plugin CLI state smoke 的能力校验收敛到“CLI 写状态 + `refreshActivePlugins()` apply 后断言命令能力变化”，覆盖 Layer 2 写入与 Layer 3 应用的真实闭环
+- 已验证 `bun run smoke:plugin-cli-state:no-serena`
+- 已新增 `scripts/context-compact-smoke.ts`，构造 compact boundary 前后的消息并借助 `getMessagesAfterCompactBoundary()` 断言 post-boundary 视图真正裁掉旧消息、compact summary 顺序稳定、stub collapse 不改变 helper 输出
+- 已验证 `bun run smoke:context-compact:no-serena`
+- 已新增 `scripts/phase3-system-regression-smoke.ts`，依次跑 continue/resume/plugin/context smoke 并汇总各 case 的退出码，形成 Phase 3 的系统回归入口
+- 已验证 `bun run smoke:phase3-system-regression`
+- 已新增 `scripts/migrated-config-system-smoke.ts`，把 `smoke:claude-config:no-serena`、`smoke:mcp-state`、`smoke:plugin-install` 与 `smoke:phase3-system-regression` 串成一轮真实迁移配置下的系统回归
+- 已验证 `bun run smoke:migrated-config-system`
+- 已新增 `scripts/distribution-readiness-smoke.ts`，把 no-serena help 命令、`smoke:migrated-config-system`、`smoke:native-distribution:no-serena` 与 `smoke:native-local-install:no-serena` 串成更接近“正式可用”门槛的聚合回归
+- 已验证 `bun run smoke:distribution-readiness`
+- 已把 `doctor/install/update` 帮助入口纳入 source 与安装版 smoke，同时修补 `src/cli/update.ts`、`src/utils/doctorDiagnostic.ts` 中残留的旧命令提示，避免用户在分发/诊断路径看到 `claude` 入口
+- 已新增 `scripts/session-resume-worktree-smoke.ts`，在隔离 transcript 中写入 `worktree-state` 记录并验证 `loadConversationForResume()` correctly restores the persisted worktree session or records exits
+- 已验证 `bun run smoke:session-resume-worktree:no-serena`
+
 ### Exit Conditions
 
 - 常见状态型工作流不再依赖人工临时修补
+- `smoke:phase3-system-regression`、`smoke:migrated-config-system`、`smoke:distribution-readiness` 至少在当前主配置路径上稳定为绿色
+- 剩余问题集中到少量状态流变体、stale state / 文案尾项，而不是主链能力缺失
 - 迁移现有 Claude 使用方式时，阻塞项已集中到少数明确的未完成功能
 
 ## Phase 4. native build 与本地分发版
 
 ### Status
 
-- queued
+- substantially-delivered-not-active
 
 ### Goal
 
@@ -264,12 +305,29 @@
 
 - 当前机器上已经打通 `bun run build:native`
 - 当前编译产物已验证 `--version`、`--help`
+- 虽然 active phase 仍是 Phase 3，但 Phase 4 的大量基线已经提前完成；剩余主要缺口不再是“能不能本机安装运行”，而是签名、正式发布与 update 源闭环
 - 编译产物 `-p` 单轮回放需在 API 连通状态正常时复验；本轮同一时刻源码模式也出现相同连接失败，不视为 native build 特有回归
+- 已验证：新增 `scripts/native-distribution-smoke.ts`，在脱离仓库源码路径的临时目录中复制 `dist/neko-code.exe` 并分别执行 `--version`、`--help`、`-p --max-turns 1`，同时与 `bun src/entrypoints/cli.tsx -p --max-turns 1` 的输出进行对照，确认分发入口可独立于源码工作区执行
+- 已验证：新增 `scripts/native-local-install-smoke.ts`，在临时 installer/bin 目录里复制并注册 `neko`，通过 PATH 调用后跑 `--version`、`--help`、`-p --max-turns 1 "Reply with exactly OK"`；现在要求安装版与源码版都 `exit 0` 且输出 `OK`，不再接受“同样失败也算一致”的弱校验
+- 已修复 `scripts/install-local-launcher.ps1`，把 `dist/neko-code.exe` 复制成 `~/.local/bin/neko.exe`（真正的主命令），`neko-launcher.exe` 仅作兼容桥接，PATH 只需包含目录，`scripts/native-local-install-smoke.ts` 现在用 `Reply with exactly OK` 的 `-p --max-turns 1` 验证安装版与源码版成功路径完全一致
+- 已验证：`bun run smoke:distribution-readiness` 已把 help 入口、真实迁移配置系统回归、native distribution 与本地 PATH 安装回归收口成单条聚合命令
+- 已验证：新增 `scripts/release-facing-diagnostics-smoke.ts`，在不触发真实升级副作用的前提下锁定 `update` 失败提示与 `doctorDiagnostic` 的本地 alias 建议，`smoke:distribution-readiness` 现已覆盖 release-facing `neko doctor` / `neko install` / `alias neko=...` 文案回归
+- 已验证：新增 `scripts/build-local-release-bundle.ts`，可生成 `dist/release-local/`，写入 `latest` / `stable` channel 文件、`manifest.json` 与当前平台产物，形成本地 installer/pipeline 可消费的 release bundle 格式
+- 已验证：新增 `scripts/native-installer-local-bundle-smoke.ts`，通过 `NEKO_CODE_NATIVE_INSTALLER_BASE_URL` 指向本地临时 HTTP 源，并在隔离 `HOME` / `XDG_*` / `NEKO_CODE_CONFIG_DIR` 下真实执行 native installer 下载、安装与帮助入口验证
+- 已验证：`bun run smoke:native-installer-local-bundle`
+- 已验证：新增 `scripts/stage-release-candidate.ts`，可生成 `dist/release-candidate/<version>/`，收口 unsigned 可上传产物、bundle、安装脚本、metadata 与 `SHA256SUMS.txt`
+- 已落地：新增 `.github/workflows/release-candidate.yml`，在 `windows-latest` 上执行 `typecheck`、`smoke:release-preflight`、`stage-release-candidate`，并上传 unsigned release candidate artifact
+- 已验证：新增 `scripts/release-preflight.ts`，顺序执行 `build:native`、`smoke:distribution-readiness`，并额外校验 `dist/neko-code.exe`、`scripts/install-local-launcher.ps1` 主命令与 README / 关键 release-facing 文本一致性，形成“本地候选发布物 gate”
+- 已验证：`bun run smoke:release-preflight`
+- 已验证：本轮 `dist/neko-code.exe -p --max-turns 1 "echo native smoke"` 会在命中 `max-turns` 限制时退出，并且源码入口 `bun src/entrypoints/cli.tsx -p --max-turns 1 "echo source smoke"` 则抛出完全相同的 `Error: Reached max turns (1)` 结果，说明当前失败属于通用行为而非编译产物里程碑差异
 
 ### Exit Conditions
 
 - 当前机器上已可像普通 CLI 一样安装和启动
 - 不再需要仓库内 launcher 作为主入口
+- 本地候选发布物至少已有 `smoke:release-preflight` 这类固定 gate，而不是只靠手工 spot check
+- native installer 至少已可消费本地 release bundle，不再完全依赖远端发布源才可验证
+- unsigned release candidate 已有固定 staging 输出与 CI 上传入口，剩余主要缺口集中到签名与正式发布
 
 ## Phase 5. 可迁移候选版本
 
@@ -314,7 +372,7 @@
 1. Phase 1 先完成“终端直启最小闭环”
 2. Phase 2 再完成 provider/router 闭环
 3. Phase 3 再补状态型工作流
-4. Phase 4 再推进真正 native build
+4. Phase 4 再把已提前落地的 native build / 本地分发基线正式收口并转成发布闭环
 5. Phase 5 最后做迁移候选版本回归
 
 只有在某阶段 Exit Conditions 满足后，才默认切到下一阶段。
