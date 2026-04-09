@@ -68,6 +68,7 @@ import type { Stream } from 'src/utils/stream.js'
 import { EMPTY_USAGE } from 'src/services/api/logging.js'
 import {
   loadConversationForResume,
+  truncateResumeMessagesAt,
   type TurnInterruptionState,
 } from 'src/utils/conversationRecovery.js'
 import type {
@@ -5151,19 +5152,21 @@ async function loadInitialMessages(
 
       // Handle resumeSessionAt feature
       if (options.resumeSessionAt) {
-        const index = result.messages.findIndex(
-          m => m.uuid === options.resumeSessionAt,
-        )
-        if (index < 0) {
+        try {
+          result.messages = truncateResumeMessagesAt(
+            result.messages,
+            options.resumeSessionAt,
+          )
+        } catch (error) {
           emitLoadError(
-            `No message found with message.uuid of: ${options.resumeSessionAt}`,
+            error instanceof Error
+              ? error.message
+              : 'Failed to apply --resume-session-at',
             options.outputFormat,
           )
           gracefulShutdownSync(1)
           return { messages: [] }
         }
-
-        result.messages = index >= 0 ? result.messages.slice(0, index + 1) : []
       }
 
       return applyPrintResumeResult(

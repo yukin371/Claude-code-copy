@@ -35,8 +35,8 @@
 
 ## 当前改动面说明
 
-- 当前工作区中大量 `M` / `??` 文件，均来自此前多轮代理推进，不是用户手工修改。
-- 这些改动并非单一功能线，而是同时覆盖：
+- 当前这轮已按阶段目标持续收敛；历史上较大的改动面主要来自此前多轮代理推进，不是用户手工修改。
+- 这些历史改动并非单一功能线，而是同时覆盖：
   - Phase 3 状态型 smoke 与系统回归
   - Phase 4 本地分发、release staging、GitHub workflow
   - release-facing 文案、品牌清理、配置路径与 provider/router 收口
@@ -56,16 +56,18 @@
 ## 当前执行阶段
 
 - active phase：
-  - Phase 3. 状态型工作流闭环
+  - Phase 4. native build 与本地分发版
 - 本阶段要解决的问题：
-  - 把 session resume / continue、plugin/MCP 状态写路径、compact/context collapse 等常见状态型工作流继续收口
-  - 在迁移后的真实配置与隔离 smoke 里稳定这些状态流
+  - 把已经提前打通的 native build / 本地安装 / release candidate 基线正式收口成固定发布前流程
+  - 把签名、正式发布源、update workflow 与 release-facing 文案继续推进到可发布状态
 - 当前阶段状态：
-  - Phase 3 已接近收尾：
+  - Phase 3 已完成并切出：
+    - `bun run smoke:session-resume`
+    - `bun run smoke:mcp-state`
     - `bun run smoke:phase3-system-regression`
     - `bun run smoke:migrated-config-system`
     - `bun run smoke:distribution-readiness`
-    - 现阶段剩余工作更偏向“补变体、清 stale state / 文案尾项、维持固定 gate 绿色”，而不是再补主链基础能力
+    - 最后一轮补齐了 `.jsonl path` / `--resume-session-at` 与 MCP 多 scope / fallback 回归，剩余问题已不再是状态流主链能力缺失
   - Phase 2 已完成：
     - `bun run typecheck`
     - `bun run test:routing`
@@ -73,76 +75,68 @@
     - `powershell -ExecutionPolicy Bypass -File scripts/readonly-smoke.ps1 -Workflow routing`
     - `bun src/entrypoints/cli.tsx -p --max-turns 1 "Reply with exactly OK"`
     - `dist/neko-code.exe -p --max-turns 1 "Reply with exactly OK"`
-  - Phase 4 关键基线已提前打通但尚未正式切 phase：
+  - Phase 4 已成为当前主线：
     - 本机 PATH 直启 `neko`
     - `dist/neko-code.exe` 脱离源码路径运行
     - 本地 unsigned beta 安装
     - local bundle / native installer / unsigned release candidate staging
-- 本阶段完成前，不默认切去做：
-  - 发布渠道 / auto-update
-  - 非关键低频功能恢复
-  - 与状态流主路径无关的零散体验优化
 
 ## 当前进行中
 
-### 1. Session / Continue / Resume 状态流
+### 1. Release Candidate 闭环
 
-- 目标：把 `continue`、resume、非交互恢复链路推进到稳定可用，而不是依赖人工修补
+- 目标：把当前本地 build、bundle、installer、release candidate 产物组织成可重复执行的发布前闭环。
 - 当前状态：
-  - session resume 隔离 harness 已收口
-  - session continue 隔离 smoke 已收口
-  - 一批 provider/router 相关来源透传已不再阻塞这些状态流继续验证
+  - native build、local bundle、native installer、本地 PATH 安装与 `smoke:release-preflight` 已经打通
+  - 当前主要缺口已经转成签名、正式发布源与 GitHub Release 资产整理
 - 剩余收口：
-  - 把更多 resume 变体与真实迁移配置继续对齐
-  - 排查仍依赖旧状态假设的恢复链路
+  - 固化 unsigned release candidate 的产物格式、上传流程与校验项
+  - 继续减少只能依赖人工 spot check 的发布前动作
 
-### 2. Plugin / MCP 状态写路径
+### 2. Update / 发布源
 
-- 目标：把 plugin refresh / install / stateful write path，以及 MCP 写配置、刷新、严格校验之外的深链路做稳定化
+- 目标：把 `neko update` 从本地 beta 体验推进到面向真实发布源的可验证流程。
 - 当前状态：
-  - plugin refresh 隔离 smoke 已收口
-  - plugin CLI state 隔离 smoke 已收口
-  - MCP strict-config 隔离 harness 已收口
+  - update 相关提示、diagnostics 与本地 alias 建议已大体切到 `neko`
+  - 真实发布源、channel 切换与发布后验证仍未闭环
 - 剩余收口：
-  - 继续补状态写路径和安装/刷新回归
-  - 把更多真实配置迁移场景纳入验证矩阵
+  - 对接正式发布源
+  - 补正式发布后的升级 / 回滚验证
 
-### 3. Compact / Context Collapse 主路径
+### 3. Release-facing 文案与文档
 
-- 目标：把 compact、context collapse、context analysis 这些会影响长会话稳定性的主链路继续收口
+- 目标：让 README、安装诊断、升级提示与 release-facing 文案持续跟上当前可用形态。
 - 当前状态：
-  - compact / context analysis 的 provider/router 辅助路径已补齐来源透传
-  - native build 与 provider/router 已不再是这一块的主阻塞
+  - 大部分用户可见入口已切到 `Neko Code` / `neko`
+  - 仍需随着 Phase 4 的 installer / update / release 流程继续同步
 - 剩余收口：
-  - 补状态型回归和长会话场景验证
-  - 继续排查 compact 后的状态一致性问题
+  - 清理剩余旧路径兼容尾项
+  - 保持 roadmap / staged plan / README 同步
 
-### 4. Native Build 作为固定验证项
+### 4. 固定 Gate 维护
 
-- 目标：把 `dist/neko-code.exe` 保持为阶段验证手段，而不是每轮重新回到 blocker 摸排
+- 目标：把 `smoke:distribution-readiness`、`smoke:release-preflight` 等 gate 固定维持为绿色，而不是阶段性回看。
 - 当前状态：
-  - 本轮已再次验证源码模式与编译产物 `-p` 单轮回放都返回 `OK`
+  - Phase 3 相关 gate 已经完成收口任务
+  - Phase 4 额外拥有本地候选发布物 gate 作为对照验证
 - 剩余收口：
-  - 后续阶段继续把源码模式与编译产物做必要对照
-  - 真正“不依赖源码路径的完整分发 workflow”仍留在 Phase 4
+  - 继续把签名、发布源和 installer 相关检查并入固定流程
 
 ## 待完成
 
 ### P0
 
-1. 完成 Phase 3 剩余状态流变体回归，而不是只在当前 smoke 集上成立
-2. 继续清理 plugin / MCP / resume 相关 stale state、旧路径兼容尾项和少量品牌残留
-3. 继续验证 compact / context collapse 在更长会话和更多真实配置下的状态一致性
-4. 把 `smoke:migrated-config-system`、`smoke:distribution-readiness`、`smoke:release-preflight` 固定维持为绿色 gate
-5. 同步 roadmap / staged plan / README，让文档状态不再落后于本地 beta 实际能力
+1. 把签名、GitHub Release 资产与正式发布源闭环
+2. 把 `smoke:distribution-readiness`、`smoke:release-preflight` 固定维持为绿色 gate
+3. 继续清理 release-facing 旧路径兼容、安装/升级提示和少量品牌残留
+4. 同步 roadmap / staged plan / README，让文档状态不再落后于本地 beta 实际能力
+5. 把 `neko update` 面向真实发布源的稳定验证与发布流程整理清楚
 
 ### P1
 
-1. 签名、GitHub Release 资产与正式发布源闭环
-2. `neko update` 面向真实发布源的稳定验证与发布流程整理
-3. 更完整的品牌文案清理与旧路径兼容收尾
-4. 更上层的交互式配置入口
-5. 外部网关接入示例、运维约束与观测文档补强
+1. 更完整的品牌文案清理与旧路径兼容收尾
+2. 更上层的交互式配置入口
+3. 外部网关接入示例、运维约束与观测文档补强
 
 ## 最近已验证推进
 
@@ -156,9 +150,11 @@
 - 已验证：session resume 隔离 harness 已收口，并修补了 direct resume metadata 漏传
 - 已验证：`scripts/session-resume-smoke.ts` 现已纳入 `smoke:phase3-system-regression`，补齐 stored session、missing session 与 user-tail sentinel 三类 resume 基础变体
 - 已验证：`scripts/session-resume-smoke.ts` 已补齐 compact 后 resume 的大 transcript 变体，锁定 compact boundary + summary + preserved tail 的恢复链、pre-boundary metadata 回读与 stale usage 清零
+- 已验证：`scripts/session-resume-smoke.ts` 已补齐 `.jsonl path` 与 `--resume-session-at` 变体，锁定 transcript path 恢复、assistant-only truncation 与错误提示分支
 - 已验证：新增 `scripts/session-resume-worktree-smoke.ts`，在隔离 transcript 中注入 `worktree-state` 记录并确认 `loadConversationForResume()` 返回相同 `worktreeSession` 信息与 null 退出态
 - 已验证：新增 `scripts/session-continue-smoke.ts`，可在隔离配置目录中真实执行 `-p --continue` 并断言 transcript 继续追加而非新建会话
 - 已验证：`scripts/session-continue-smoke.ts` 已补齐 compact 后 continue 的大 transcript 变体，锁定 seeded compact boundary transcript 在 `-p --continue` 下仍会追加到原 session，而不是重新建链或丢失 post-compact 对话
+- 已验证：`scripts/session-continue-smoke.ts` 已切到本地 `openai-compatible` mock server，`FIRST` / `SECOND` / `COMPACT` 断言不再依赖外部 provider 配额或网络抖动
 - 已验证：`bun run smoke:session-continue:no-serena` 已通过，测试时可配合 `NEKO_CODE_DISABLED_MCP_SERVERS=serena` 避免无关 MCP server 干扰
 - 已验证：新增 `scripts/plugin-cli-state-smoke.ts`，可在隔离配置目录中真实执行 `plugin marketplace add/remove`、`plugin install/uninstall`、`plugin enable/disable`，并在 `refreshActivePlugins()` 后断言命令能力随状态切换
 - 已验证：`bun run smoke:plugin-cli-state:no-serena` 已通过，测试时可继续配合 `NEKO_CODE_DISABLED_MCP_SERVERS=serena` 避免无关 MCP server 干扰
@@ -178,7 +174,6 @@
 - 已落地：native build blocker 已整理为分类清单与分批顺序，见 [2026-04-08-native-build-blockers.md](../plans/2026-04-08-native-build-blockers.md)
 - 已验证：补齐 compile-safe 缺失模块与依赖基线后，`bun run build:native` 已成功生成 `dist/neko-code.exe`
 - 已验证：编译产物 `dist/neko-code.exe --version`、`dist/neko-code.exe --help` 正常
-- 已确认：本轮编译产物 `-p` 烟测遇到 API 连接失败；同一时刻源码模式 `bun src/entrypoints/cli.tsx -p ...` 也出现相同错误，因此暂不判定为 native build 回归
 - 已验证：`bun run scripts/bun-tools.ts routes` 现已输出可读 route matrix 与 querySource example matrix，便于继续做 provider/router 阶段回归
 - 已验证：route diagnostics / smoke 已补 representative helper `querySource` 覆盖，当前已显式核对 `session_search` 与 `permission_explainer` 在 direct-provider / gateway 两种模式下都沿用 `main` 路由
 - 已验证：带 `querySource` 的 token estimation 现已对 Anthropic helper 路由做 route-aware 选择，不再一律固定走 `main`；对 OpenAI-compatible helper 路由暂保守回落到 `main`
@@ -188,6 +183,7 @@
 - 已验证：`bun run smoke:context-compact:no-serena`
 - 已验证：新增 `scripts/phase3-system-regression-smoke.ts`，顺序调用 continue/resume/plugin/LSP/MCP/context smoke，照会执行结果并输出 PASS/FAIL 汇总
 - 已验证：新增 `scripts/migrated-config-system-smoke.ts`，顺序调用 `smoke:claude-config:no-serena`、`smoke:mcp-state`、`smoke:plugin-install`、`smoke:plugin-state` 与 `smoke:phase3-system-regression`，形成一轮“复制现有 Claude 配置后跑常见工作流”的系统回归入口
+- 已验证：`scripts/mcp-state-smoke.ts` 已扩到 user/project/local 多 scope 写路径、同名 server fallback 与父/子 `.mcp.json` 优先级回落，锁定 persisted config 不携带 scope metadata
 - 已验证：`scripts/plugin-state-smoke.ts` 现已纳入 `smoke:migrated-config-system`，补齐 migrated config 下 plugin enable/disable 与 runtime capability 切换回归
 - 已验证：`bun run smoke:migrated-config-system`
 - 已验证：SDK `get_context_usage` / 非交互 context analysis 路径现已显式透传 `sdk` querySource
@@ -204,6 +200,7 @@
 - 已验证：`dist/neko-code.exe -p --max-turns 1 "echo native smoke"` 会在运行到 `Error: Reached max turns (1)` 时退出（且 `bun src/entrypoints/cli.tsx -p --max-turns 1 "echo source smoke"` 得到相同错误），所以当前失败属于通用 `max-turns` 行为而非编译产物回归
 - 已验证：新增 `scripts/native-distribution-smoke.ts`，将 `dist/neko-code.exe` 复制到完全脱离仓库路径的临时目录，依次执行 `--version`、`--help`、`-p --max-turns 1`，并将 `-p` 输出与源码模式对照，证明编译产物在分发环境下可独立运行
 - 已验证：新增 `scripts/native-local-install-smoke.ts`，模拟在临时目录 installer/bin 下把 `neko` 添加到 PATH，依次运行 `neko --version`、`neko --help`、`neko -p --max-turns 1 "Reply with exactly OK"`；现在要求安装版与源码版都 `exit 0` 且输出 `OK`，不再接受“同样失败也算一致”的弱校验
+- 已验证：`scripts/native-distribution-smoke.ts` 与 `scripts/native-local-install-smoke.ts` 已切到本地 `openai-compatible` mock server，`smoke:distribution-readiness` 不再受外部 provider quota / timeout 干扰
 - 已修复安装脚本 `scripts/install-local-launcher.ps1`，将本地安装产物主命令 `neko.exe` 直接复制自 `dist/neko-code.exe` 并把 launcher 编译为 `neko-launcher.exe`，让 `neko --version` / `--help` 在任何 PATH 中都走原生产物；`scripts/native-local-install-smoke.ts` 现在安装目录内通过 `Reply with exactly OK` 的 `-p --max-turns 1` 断言安装版与源码版的 exit/output 完全一致
 - 已明确：`install-local-launcher` 只把 `dist/neko-code.exe` 复制成 `~/.local/bin/neko.exe`（主命令），`neko-launcher.exe` 只是兼容层，PATH 只需包含目录即可运行；流程仍依赖本地构建二进制，未升级到正式 unsigned installer
 - 已验证：新增 `scripts/distribution-readiness-smoke.ts`，顺序调用 no-serena help 命令、`smoke:migrated-config-system`、`smoke:native-distribution:no-serena` 与 `smoke:native-local-install:no-serena`，形成一条覆盖“帮助入口 + 真实迁移配置 + 本地分发/PATH workflow”的聚合 gate
@@ -248,13 +245,13 @@
 
 ### 当前阶段下一步
 
-1. 继续把 `smoke:migrated-config-system`、`smoke:distribution-readiness` 与 `smoke:release-preflight` 维持为绿色固定 gate
-2. 继续补状态型工作流剩余变体，避免 Phase 3 只在当前 smoke 集上成立
+1. 继续把 `smoke:distribution-readiness` 与 `smoke:release-preflight` 维持为绿色固定 gate
+2. 推进签名、GitHub Release 资产、正式发布源与 `neko update` 的真实闭环
 3. 清理 stale error / 旧路径兼容 / release-facing 文案尾项，减少本地 beta 使用中的误报和混乱
-4. 在不引入 signing 之前，继续把源码模式、分发产物与本地 PATH 安装作为固定对照验证项
+4. 继续把源码模式、分发产物与本地 PATH 安装作为固定对照验证项
 
 ### 下一阶段入口
 
-1. Phase 3 完成后，再切到 Phase 4 的 native build 与本地分发收口
-2. 由于 Phase 4 关键基线已大体具备，切 phase 后主要剩余项将集中到签名、正式发布源与 update workflow
+1. 当前已进入 Phase 4，下一步聚焦签名、正式发布源与 update workflow
+2. Phase 4 收口后，再考虑把更高层的交互式配置入口和运维文档补强提到主线
 3. 后续新增完成项时，直接迁入归档而不是继续膨胀主 roadmap

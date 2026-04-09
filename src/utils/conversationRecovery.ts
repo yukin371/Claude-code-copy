@@ -439,8 +439,32 @@ export function restoreSkillStateFromMessages(messages: Message[]): void {
 export async function loadMessagesFromJsonlPath(path: string): Promise<{
   messages: SerializedMessage[]
   sessionId: UUID | undefined
+  fullPath: string
+  agentName?: string
+  agentColor?: string
+  agentSetting?: string
+  customTitle?: string
+  tag?: string
+  mode?: 'coordinator' | 'normal'
+  worktreeSession?: PersistedWorktreeSession | null
+  prNumber?: number
+  prUrl?: string
+  prRepository?: string
 }> {
-  const { messages: byUuid, leafUuids } = await loadTranscriptFile(path)
+  const {
+    messages: byUuid,
+    leafUuids,
+    customTitles,
+    tags,
+    agentNames,
+    agentColors,
+    agentSettings,
+    prNumbers,
+    prUrls,
+    prRepositories,
+    modes,
+    worktreeStates,
+  } = await loadTranscriptFile(path)
   let tip: (typeof byUuid extends Map<UUID, infer T> ? T : never) | null = null
   let tipTs = 0
   for (const m of byUuid.values()) {
@@ -452,15 +476,54 @@ export async function loadMessagesFromJsonlPath(path: string): Promise<{
       tip = m
     }
   }
-  if (!tip) return { messages: [], sessionId: undefined }
+  if (!tip) {
+    return {
+      messages: [],
+      sessionId: undefined,
+      fullPath: path,
+    }
+  }
+  const sessionId = tip.sessionId as UUID | undefined
   const chain = buildConversationChain(byUuid, tip)
   return {
     messages: removeExtraFields(chain),
     // Leaf's sessionId — forked sessions copy chain[0] from the source
     // transcript, so the root retains the source session's ID. Matches
     // loadFullLog's mostRecentLeaf.sessionId.
-    sessionId: tip.sessionId as UUID | undefined,
+    sessionId,
+    fullPath: path,
+    agentName: sessionId ? agentNames.get(sessionId) : undefined,
+    agentColor: sessionId ? agentColors.get(sessionId) : undefined,
+    agentSetting: sessionId ? agentSettings.get(sessionId) : undefined,
+    customTitle: sessionId ? customTitles.get(sessionId) : undefined,
+    tag: sessionId ? tags.get(sessionId) : undefined,
+    mode: sessionId
+      ? (modes.get(sessionId) as 'coordinator' | 'normal' | undefined)
+      : undefined,
+    worktreeSession: sessionId ? worktreeStates.get(sessionId) : undefined,
+    prNumber: sessionId ? prNumbers.get(sessionId) : undefined,
+    prUrl: sessionId ? prUrls.get(sessionId) : undefined,
+    prRepository: sessionId ? prRepositories.get(sessionId) : undefined,
   }
+}
+
+export function truncateResumeMessagesAt(
+  messages: Message[],
+  resumeSessionAt: UUID | string,
+): Message[] {
+  const index = messages.findIndex(m => m.uuid === resumeSessionAt)
+  if (index < 0) {
+    throw new Error(`No message found with message.uuid of: ${resumeSessionAt}`)
+  }
+
+  const target = messages[index]
+  if (target?.type !== 'assistant') {
+    throw new Error(
+      `Message ${resumeSessionAt} is not an assistant message and cannot be used with --resume-session-at`,
+    )
+  }
+
+  return messages.slice(0, index + 1)
 }
 
 function isNonInteractiveLiveSession(
@@ -544,6 +607,17 @@ export async function loadConversationForResume(
     let log: LogOption | null = null
     let messages: Message[] | null = null
     let sessionId: UUID | undefined
+    let agentName: string | undefined
+    let agentColor: string | undefined
+    let agentSetting: string | undefined
+    let customTitle: string | undefined
+    let tag: string | undefined
+    let mode: 'coordinator' | 'normal' | undefined
+    let worktreeSession: PersistedWorktreeSession | null | undefined
+    let prNumber: number | undefined
+    let prUrl: string | undefined
+    let prRepository: string | undefined
+    let fullPath: string | undefined
 
     if (source === undefined) {
       // --continue: most recent session, skipping live --bg/daemon sessions
@@ -566,6 +640,17 @@ export async function loadConversationForResume(
       const loaded = await loadMessagesFromJsonlPath(sourceJsonlFile)
       messages = loaded.messages
       sessionId = loaded.sessionId
+      agentName = loaded.agentName
+      agentColor = loaded.agentColor
+      agentSetting = loaded.agentSetting
+      customTitle = loaded.customTitle
+      tag = loaded.tag
+      mode = loaded.mode
+      worktreeSession = loaded.worktreeSession
+      prNumber = loaded.prNumber
+      prUrl = loaded.prUrl
+      prRepository = loaded.prRepository
+      fullPath = loaded.fullPath
     } else if (typeof source === 'string') {
       // Load specific session by ID
       log = await getLastSessionLog(source as UUID)
@@ -626,18 +711,21 @@ export async function loadConversationForResume(
       contextCollapseSnapshot: log?.contextCollapseSnapshot,
       sessionId,
       // Include session metadata for restoring agent context on resume
-      agentName: log?.agentName,
-      agentColor: log?.agentColor,
-      agentSetting: log?.agentSetting,
-      customTitle: log?.customTitle,
-      tag: log?.tag,
-      mode: log?.mode,
-      worktreeSession: log?.worktreeSession,
-      prNumber: log?.prNumber,
-      prUrl: log?.prUrl,
-      prRepository: log?.prRepository,
+      agentName: log?.agentName ?? agentName,
+      agentColor: log?.agentColor ?? agentColor,
+      agentSetting: log?.agentSetting ?? agentSetting,
+      customTitle: log?.customTitle ?? customTitle,
+      tag: log?.tag ?? tag,
+      mode: log?.mode ?? mode,
+      worktreeSession:
+        log?.worktreeSession !== undefined
+          ? log.worktreeSession
+          : worktreeSession,
+      prNumber: log?.prNumber ?? prNumber,
+      prUrl: log?.prUrl ?? prUrl,
+      prRepository: log?.prRepository ?? prRepository,
       // Include full path for cross-directory resume
-      fullPath: log?.fullPath,
+      fullPath: log?.fullPath ?? fullPath,
     }
   } catch (error) {
     logError(error as Error)

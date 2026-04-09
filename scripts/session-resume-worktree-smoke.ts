@@ -59,6 +59,28 @@ async function writeSessionFile({
   )
 }
 
+function serializeTranscriptMessage<T extends { uuid: UUID | string; timestamp: string }>(
+  message: T,
+  {
+    sessionId,
+    cwd,
+    parentUuid,
+  }: {
+    sessionId: string
+    cwd: string
+    parentUuid: UUID | null
+  },
+) {
+  return {
+    ...message,
+    parentUuid,
+    cwd,
+    userType: 'external',
+    sessionId,
+    version: 'session-resume-worktree-smoke',
+  }
+}
+
 function buildMessages({
   sessionId,
   cwd,
@@ -66,8 +88,32 @@ function buildMessages({
   sessionId: UUID
   cwd: string
 }) {
-  const user = createUserMessage({ content: 'resume smoke question', uuid: '44444444-4444-4444-8444-444444444444' as UUID, timestamp: '2026-04-08T12:00:00.000Z' })
-  const assistant = createAssistantMessage({ content: 'resume smoke answer' })
+  const userUuid = '44444444-4444-4444-8444-444444444444' as UUID
+  const assistantUuid = '55555555-5555-4555-8555-555555555555' as UUID
+  const user = serializeTranscriptMessage(
+    createUserMessage({
+      content: 'resume smoke question',
+      uuid: userUuid,
+      timestamp: '2026-04-08T12:00:00.000Z',
+    }),
+    {
+      sessionId,
+      cwd,
+      parentUuid: null,
+    },
+  )
+  const assistant = serializeTranscriptMessage(
+    {
+      ...createAssistantMessage({ content: 'resume smoke answer' }),
+      uuid: assistantUuid,
+      timestamp: '2026-04-08T12:00:01.000Z',
+    },
+    {
+      sessionId,
+      cwd,
+      parentUuid: userUuid,
+    },
+  )
   return [user, assistant]
 }
 

@@ -17,6 +17,7 @@ type EnvKey =
 type SmokeEnvironment = {
   tempRoot: string
   workspaceDir: string
+  nestedWorkspaceDir: string
   configDir: string
   pluginCacheDir: string
 }
@@ -112,19 +113,91 @@ function writeMergedGlobalConfig(
 async function createEnvironment(): Promise<SmokeEnvironment> {
   const tempRoot = await mkdtemp(join(tmpdir(), 'neko-mcp-state-smoke-'))
   const workspaceDir = join(tempRoot, 'workspace')
+  const nestedWorkspaceDir = join(workspaceDir, 'nested', 'child')
   const configDir = join(tempRoot, 'config')
   const pluginCacheDir = join(tempRoot, 'plugin-cache')
 
   mkdirSync(workspaceDir, { recursive: true })
+  mkdirSync(nestedWorkspaceDir, { recursive: true })
   mkdirSync(configDir, { recursive: true })
   mkdirSync(pluginCacheDir, { recursive: true })
 
   return {
     tempRoot,
     workspaceDir,
+    nestedWorkspaceDir,
     configDir,
     pluginCacheDir,
   }
+}
+
+function readJsonFile(path: string): Record<string, unknown> {
+  return JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+}
+
+function createCommandServer(marker: string) {
+  return {
+    command: 'node',
+    args: ['-e', `process.stdout.write("${marker}")`],
+    env: {},
+  }
+}
+
+function writeProjectMcpFile(
+  path: string,
+  servers: Record<
+    string,
+    {
+      command: string
+      args: string[]
+      env: Record<string, string>
+    }
+  >,
+): void {
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(
+    path,
+    `${JSON.stringify({ mcpServers: servers }, null, 2)}\n`,
+    'utf8',
+  )
+}
+
+function getServerMarker(
+  server:
+    | {
+        args?: string[]
+        command?: string
+      }
+    | null
+    | undefined,
+): string {
+  if (!server) {
+    return '(missing)'
+  }
+  return server.args?.join(' ') ?? server.command ?? '[no-command]'
+}
+
+function assertResolvedServer(
+  label: string,
+  server:
+    | {
+        scope?: string
+        args?: string[]
+        command?: string
+      }
+    | null,
+  expectedScope: 'user' | 'project' | 'local',
+  expectedMarker: string,
+): void {
+  assert(server, `Expected ${label} server to resolve, but it was missing`)
+  assert(
+    server.scope === expectedScope,
+    `Expected ${label} scope ${expectedScope}, got ${server.scope ?? '(none)'}`,
+  )
+  assert(
+    getServerMarker(server).includes(expectedMarker),
+    `Expected ${label} marker ${expectedMarker}, got ${getServerMarker(server)}`,
+  )
 }
 
 const keepTemp = process.argv.includes('--keep-temp')
@@ -164,15 +237,18 @@ try {
   process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR = environment.pluginCacheDir
   delete process.env.CLAUDE_CODE_SIMPLE
 
-  process.chdir(environment.workspaceDir)
-  setOriginalCwd(environment.workspaceDir)
-  setCwdState(environment.workspaceDir)
+  process.chdir(environment.nestedWorkspaceDir)
+  setOriginalCwd(environment.nestedWorkspaceDir)
+  setCwdState(environment.nestedWorkspaceDir)
 
-  const { enableConfigs } = await import('../src/utils/config.js')
+  const { enableConfigs, getProjectPathForConfig } = await import(
+    '../src/utils/config.js'
+  )
   enableConfigs()
 
   const {
     addMcpConfig,
+    getMcpConfigByName,
     removeMcpConfig,
     getMcpConfigsByScope,
   } = await import('../src/services/mcp/config.js')
@@ -192,6 +268,15 @@ try {
     args: ['-e', 'process.stdout.write("smoke")'],
     env: {},
   }
+  const fallbackServerName = 'smoke_scope_shadow_server'
+  const userFallbackConfig = createCommandServer('user')
+  const projectFallbackConfig = createCommandServer('project')
+  const localFallbackConfig = createCommandServer('local')
+  const projectMcpJsonPath = join(environment.nestedWorkspaceDir, '.mcp.json')
+  const parentProjectServerName = 'smoke_project_parent_fallback_server'
+  const parentMcpJsonPath = join(environment.workspaceDir, '.mcp.json')
+  const parentProjectConfig = createCommandServer('parent')
+  const childProjectConfig = createCommandServer('child')
 
   await addMcpConfig(tempServerName, tempServerConfig, 'user')
   const afterAdd = getMcpConfigsByScope('user')
@@ -209,6 +294,124 @@ try {
     `Expected ${tempServerName} command to be preserved after add`,
   )
 
+  await addMcpConfig(fallbackServerName, userFallbackConfig, 'user')
+  assert(
+    getMcpConfigByName(fallbackServerName)?.scope === 'user',
+    'Expected user scope to provide the effective MCP config before narrower overrides are added',
+  )
+
+  await addMcpConfig(fallbackServerName, projectFallbackConfig, 'project')
+  const projectScoped = getMcpConfigsByScope('project')
+  assert(
+    projectScoped.servers[fallbackServerName]?.scope === 'project',
+    'Expected project-scoped MCP server to be readable after add',
+  )
+  assert(
+    getMcpConfigByName(fallbackServerName)?.scope === 'project',
+    'Expected project scope to override the user-scoped MCP config',
+  )
+
+  const projectFile = readJsonFile(projectMcpJsonPath)
+  const projectMcpServers =
+    projectFile.mcpServers &&
+    typeof projectFile.mcpServers === 'object' &&
+    !Array.isArray(projectFile.mcpServers)
+      ? (projectFile.mcpServers as Record<string, Record<string, unknown>>)
+      : null
+  assert(projectMcpServers, 'Expected .mcp.json to contain an mcpServers object')
+  assert(
+    projectMcpServers[fallbackServerName]?.command === 'node',
+    'Expected project-scoped MCP server to be written into .mcp.json',
+  )
+  assert(
+    !('scope' in projectMcpServers[fallbackServerName]!),
+    'Expected .mcp.json to persist raw MCP config without scope metadata',
+  )
+
+  await addMcpConfig(fallbackServerName, localFallbackConfig, 'local')
+  const localScoped = getMcpConfigsByScope('local')
+  assert(
+    localScoped.servers[fallbackServerName]?.scope === 'local',
+    'Expected local-scoped MCP server to be readable after add',
+  )
+  assert(
+    getMcpConfigByName(fallbackServerName)?.scope === 'local',
+    'Expected local scope to override project/user MCP configs of the same name',
+  )
+
+  const globalConfigAfterLocalAdd = readJsonFile(targetGlobalConfigPath)
+  const currentProjectConfigKey = getProjectPathForConfig()
+  const projectEntries =
+    globalConfigAfterLocalAdd.projects &&
+    typeof globalConfigAfterLocalAdd.projects === 'object' &&
+    !Array.isArray(globalConfigAfterLocalAdd.projects)
+      ? (globalConfigAfterLocalAdd.projects as Record<string, Record<string, unknown>>)
+      : {}
+  const projectEntry =
+    projectEntries[currentProjectConfigKey] ??
+    Object.values(projectEntries).find(entry => {
+      const servers =
+        entry?.mcpServers &&
+        typeof entry.mcpServers === 'object' &&
+        !Array.isArray(entry.mcpServers)
+          ? (entry.mcpServers as Record<string, unknown>)
+          : null
+      return Boolean(servers?.[fallbackServerName])
+    }) ??
+    null
+  const localMcpServers =
+    projectEntry?.mcpServers &&
+    typeof projectEntry.mcpServers === 'object' &&
+    !Array.isArray(projectEntry.mcpServers)
+      ? (projectEntry.mcpServers as Record<string, Record<string, unknown>>)
+      : null
+  assert(
+    localMcpServers?.[fallbackServerName]?.command === 'node',
+    'Expected local-scoped MCP server to be persisted under the current project config',
+  )
+  assert(
+    !('scope' in (localMcpServers?.[fallbackServerName] ?? {})),
+    'Expected local-scoped MCP server persistence to omit scope metadata',
+  )
+
+  await removeMcpConfig(fallbackServerName, 'local')
+  assert(
+    !getMcpConfigsByScope('local').servers[fallbackServerName],
+    'Expected local-scoped MCP server to be removed from project-local config',
+  )
+  assert(
+    getMcpConfigByName(fallbackServerName)?.scope === 'project',
+    'Expected project scope to take over after removing the local override',
+  )
+
+  await removeMcpConfig(fallbackServerName, 'project')
+  const afterProjectRemove = getMcpConfigsByScope('project')
+  assert(
+    !afterProjectRemove.servers[fallbackServerName],
+    'Expected project-scoped MCP server to be removed from .mcp.json',
+  )
+  const projectFileAfterRemove = readJsonFile(projectMcpJsonPath)
+  const projectServersAfterRemove =
+    projectFileAfterRemove.mcpServers &&
+    typeof projectFileAfterRemove.mcpServers === 'object' &&
+    !Array.isArray(projectFileAfterRemove.mcpServers)
+      ? (projectFileAfterRemove.mcpServers as Record<string, unknown>)
+      : {}
+  assert(
+    projectServersAfterRemove[fallbackServerName] === undefined,
+    'Expected .mcp.json removal to drop the project-scoped server entry',
+  )
+  assert(
+    getMcpConfigByName(fallbackServerName)?.scope === 'user',
+    'Expected user scope to take over after removing the project override',
+  )
+
+  await removeMcpConfig(fallbackServerName, 'user')
+  assert(
+    getMcpConfigByName(fallbackServerName) === null,
+    'Expected no effective MCP config to remain after removing all scope overrides',
+  )
+
   await removeMcpConfig(tempServerName, 'user')
   const afterRemove = getMcpConfigsByScope('user')
   const afterRemoveNames = Object.keys(afterRemove.servers).sort((left, right) =>
@@ -224,9 +427,53 @@ try {
     'Expected user MCP server set after remove to match migrated baseline',
   )
 
+  writeFileSync(
+    parentMcpJsonPath,
+    `${JSON.stringify(
+      {
+        mcpServers: {
+          [parentProjectServerName]: parentProjectConfig,
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  )
+
+  const inheritedParent = getMcpConfigByName(parentProjectServerName)
+  assert(
+    inheritedParent?.scope === 'project' &&
+      'args' in inheritedParent &&
+      JSON.stringify(inheritedParent.args) ===
+        JSON.stringify(parentProjectConfig.args),
+    `Expected parent project config to be visible from nested cwd, got ${JSON.stringify(inheritedParent)}`,
+  )
+
+  await addMcpConfig(parentProjectServerName, childProjectConfig, 'project')
+  const overriddenProject = getMcpConfigByName(parentProjectServerName)
+  assert(
+    overriddenProject?.scope === 'project' &&
+      'args' in overriddenProject &&
+      JSON.stringify(overriddenProject.args) ===
+        JSON.stringify(childProjectConfig.args),
+    `Expected child .mcp.json to override parent config, got ${JSON.stringify(overriddenProject)}`,
+  )
+
+  await removeMcpConfig(parentProjectServerName, 'project')
+  const fallbackParentAgain = getMcpConfigByName(parentProjectServerName)
+  assert(
+    fallbackParentAgain?.scope === 'project' &&
+      'args' in fallbackParentAgain &&
+      JSON.stringify(fallbackParentAgain.args) ===
+        JSON.stringify(parentProjectConfig.args),
+    `Expected removing child override to fall back to parent .mcp.json, got ${JSON.stringify(fallbackParentAgain)}`,
+  )
+
   console.log(`Source dir: ${sourceDir}`)
   console.log(`Temp root: ${environment.tempRoot}`)
   console.log(`Workspace: ${environment.workspaceDir}`)
+  console.log(`Nested workspace: ${environment.nestedWorkspaceDir}`)
   console.log(`Config dir: ${environment.configDir}`)
   console.log(`Plugin cache dir: ${environment.pluginCacheDir}`)
   console.log(`Merged global config: ${migrationResult.mergedGlobalConfig}`)
@@ -250,10 +497,15 @@ try {
   console.log(
     `[PASS] add user MCP server -> ${afterAddNames.length} (${formatListPreview(afterAddNames)})`,
   )
+  console.log('[PASS] same-name MCP config falls back user -> project -> local')
+  console.log('[PASS] removing overrides falls back local -> project -> user')
+  console.log('[PASS] .mcp.json stores project-scoped MCP config without scope metadata')
+  console.log('[PASS] local MCP config persists under the current project settings entry')
   console.log(
     `[PASS] remove user MCP server -> ${afterRemoveNames.length} (${formatListPreview(afterRemoveNames)})`,
   )
-  console.log('[PASS] user-scoped MCP add/remove matches migrated baseline')
+  console.log('[PASS] multi-scope MCP add/remove matches migrated baseline')
+  console.log('[PASS] parent project .mcp.json fallback restores after child override removal')
 } finally {
   process.chdir(previousCwd)
 

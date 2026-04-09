@@ -4,6 +4,10 @@ import { existsSync } from 'node:fs'
 import { copyFile, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import {
+  createOpenAICompatibleSmokeEnv,
+  startOpenAICompatibleSmokeServer,
+} from './openai-compatible-smoke-server.js'
 
 type CommandResult = {
   args: string[]
@@ -123,55 +127,68 @@ async function main(): Promise<void> {
 
   console.log(`[INFO] Copied binary to temp dir ${tempDir}`)
 
-  const childEnv = { ...baseEnv }
+  const mockServer = startOpenAICompatibleSmokeServer({ defaultReply: 'OK' })
 
-  const versionResult = await runCommand([stagedBinary, '--version'], tempDir, childEnv)
-  if (versionResult.exitCode !== 0) {
-    throw new Error(`--version failed: ${normalize(versionResult.stderr || versionResult.stdout)}`)
-  }
+  try {
+    const childEnv = createOpenAICompatibleSmokeEnv({ ...baseEnv }, mockServer.baseUrl)
 
-  const helpResult = await runCommand([stagedBinary, '--help'], tempDir, childEnv)
-  if (helpResult.exitCode !== 0) {
-    throw new Error(`--help failed: ${normalize(helpResult.stderr || helpResult.stdout)}`)
-  }
+    const versionResult = await runCommand([stagedBinary, '--version'], tempDir, childEnv)
+    if (versionResult.exitCode !== 0) {
+      throw new Error(`--version failed: ${normalize(versionResult.stderr || versionResult.stdout)}`)
+    }
 
-  const smokePrompt = 'Reply with exactly OK'
-  const nativeSmokeArgs = [stagedBinary, '-p', '--max-turns', '1', smokePrompt]
-  const sourceSmokeArgs = [bunPath, 'src/entrypoints/cli.tsx', '-p', '--max-turns', '1', smokePrompt]
+    const helpResult = await runCommand([stagedBinary, '--help'], tempDir, childEnv)
+    if (helpResult.exitCode !== 0) {
+      throw new Error(`--help failed: ${normalize(helpResult.stderr || helpResult.stdout)}`)
+    }
 
-  const nativeSmoke = await runCommand(nativeSmokeArgs, tempDir, childEnv)
-  const sourceSmoke = await runCommand(sourceSmokeArgs, repoRoot, childEnv)
+    const smokePrompt = 'Reply with exactly OK'
+    const nativeSmokeArgs = [stagedBinary, '-p', '--max-turns', '1', smokePrompt]
+    const sourceSmokeArgs = [
+      bunPath,
+      'src/entrypoints/cli.tsx',
+      '-p',
+      '--max-turns',
+      '1',
+      smokePrompt,
+    ]
 
-  assertZeroExit(nativeSmoke, 'native (-p)')
-  assertZeroExit(sourceSmoke, 'source (-p)')
+    const nativeSmoke = await runCommand(nativeSmokeArgs, tempDir, childEnv)
+    const sourceSmoke = await runCommand(sourceSmokeArgs, repoRoot, childEnv)
 
-  const nativeOutput = normalize(nativeSmoke.stdout)
-  const sourceOutput = normalize(sourceSmoke.stdout)
-  const expectedSmokeOutput = 'OK'
+    assertZeroExit(nativeSmoke, 'native (-p)')
+    assertZeroExit(sourceSmoke, 'source (-p)')
 
-  if (nativeOutput !== expectedSmokeOutput || sourceOutput !== expectedSmokeOutput) {
-    throw new Error(
-      `Smoke output mismatch:\n  native=${nativeOutput}\n  source=${sourceOutput}\n  expected=${expectedSmokeOutput}`,
-    )
-  }
+    const nativeOutput = normalize(nativeSmoke.stdout)
+    const sourceOutput = normalize(sourceSmoke.stdout)
+    const expectedSmokeOutput = 'OK'
 
-  if (nativeOutput !== sourceOutput) {
-    throw new Error(
-      `Native (-p) output mismatch:\n  native: ${nativeOutput}\n  source: ${sourceOutput}`,
-    )
-  }
+    if (nativeOutput !== expectedSmokeOutput || sourceOutput !== expectedSmokeOutput) {
+      throw new Error(
+        `Smoke output mismatch:\n  native=${nativeOutput}\n  source=${sourceOutput}\n  expected=${expectedSmokeOutput}`,
+      )
+    }
 
-  console.log('[PASS] native-distribution-smoke')
-  console.log(`  tempDir=${tempDir}`)
-  console.log(`  version=${normalize(versionResult.stdout)}`)
-  console.log(`  help=${normalize(helpResult.stdout.split('\n')[0] ?? '')}`)
-  console.log(`  nativeExit=${nativeSmoke.exitCode}`)
-  console.log(`  nativeOutput=${nativeOutput}`)
-  console.log(`  sourceExit=${sourceSmoke.exitCode}`)
-  console.log(`  sourceOutput=${sourceOutput}`)
+    if (nativeOutput !== sourceOutput) {
+      throw new Error(
+        `Native (-p) output mismatch:\n  native: ${nativeOutput}\n  source: ${sourceOutput}`,
+      )
+    }
 
-  if (!keepTemp) {
-    await rm(tempDir, { recursive: true, force: true })
+    console.log('[PASS] native-distribution-smoke')
+    console.log(`  tempDir=${tempDir}`)
+    console.log(`  version=${normalize(versionResult.stdout)}`)
+    console.log(`  help=${normalize(helpResult.stdout.split('\n')[0] ?? '')}`)
+    console.log(`  nativeExit=${nativeSmoke.exitCode}`)
+    console.log(`  nativeOutput=${nativeOutput}`)
+    console.log(`  sourceExit=${sourceSmoke.exitCode}`)
+    console.log(`  sourceOutput=${sourceOutput}`)
+  } finally {
+    mockServer.stop()
+
+    if (!keepTemp) {
+      await rm(tempDir, { recursive: true, force: true })
+    }
   }
 }
 

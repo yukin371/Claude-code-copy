@@ -3,6 +3,10 @@
 import { mkdtemp, mkdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, delimiter } from 'node:path'
+import {
+  createOpenAICompatibleSmokeEnv,
+  startOpenAICompatibleSmokeServer,
+} from './openai-compatible-smoke-server.js'
 
 type CommandResult = {
   args: string[]
@@ -134,118 +138,120 @@ async function main(): Promise<void> {
   const installDir = join(tempRoot, 'bin')
 
   await mkdir(installDir, { recursive: true })
+  const mockServer = startOpenAICompatibleSmokeServer({ defaultReply: 'OK' })
 
-  const installScript = join(repoRoot, 'scripts', 'install-local-launcher.ps1')
-  const installResult = await runCommand(
-    [
-      'powershell',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-File',
-      installScript,
-      '-InstallDir',
-      installDir,
-      '-SkipPathUpdate',
-      '-Force',
-    '-RepoRoot',
-    repoRoot,
-  ],
-  repoRoot,
-  baseEnv,
-)
-  assertZeroExit(installResult, 'install-local-launcher')
-
-  const pathEnv = process.env.PATH ?? process.env.Path ?? ''
-  const pathWithInstall = `${installDir}${delimiter}${pathEnv}`
-  const childEnv = { ...baseEnv, PATH: pathWithInstall, Path: pathWithInstall }
-
-  const versionResult = await runCommand(['neko', '--version'], tempRoot, childEnv)
-  assertZeroExit(versionResult, '--version')
-
-  const helpResult = await runCommand(['neko', '--help'], tempRoot, childEnv)
-  assertZeroExit(helpResult, '--help')
-  assertOutputContains(helpResult, '--help', 'Usage: neko')
-
-  const doctorHelpResult = await runCommand(
-    ['neko', 'doctor', '--help'],
-    tempRoot,
-    childEnv,
-  )
-  assertZeroExit(doctorHelpResult, 'doctor --help')
-  assertOutputContains(doctorHelpResult, 'doctor --help', 'doctor')
-
-  const installHelpResult = await runCommand(
-    ['neko', 'install', '--help'],
-    tempRoot,
-    childEnv,
-  )
-  assertZeroExit(installHelpResult, 'install --help')
-  assertOutputContains(installHelpResult, 'install --help', 'install')
-
-  const updateHelpResult = await runCommand(
-    ['neko', 'update', '--help'],
-    tempRoot,
-    childEnv,
-  )
-  assertZeroExit(updateHelpResult, 'update --help')
-  assertOutputContains(updateHelpResult, 'update --help', 'update')
-
-  const smokePrompt = 'Reply with exactly OK'
-  const nativeSmokeArgs = [
-    'neko',
-    '-p',
-    '--max-turns',
-    '1',
-    smokePrompt,
-  ]
-  const sourceSmokeArgs = [
-    bunPath,
-    'src/entrypoints/cli.tsx',
-    '-p',
-    '--max-turns',
-    '1',
-    smokePrompt,
-  ]
-
-  const nativeSmoke = await runCommand(nativeSmokeArgs, tempRoot, childEnv)
-  const sourceSmoke = await runCommand(sourceSmokeArgs, repoRoot, childEnv)
-
-  const nativeOutput = normalize(nativeSmoke.stdout)
-  const sourceOutput = normalize(sourceSmoke.stdout)
-
-  assertZeroExit(nativeSmoke, 'installed (-p)')
-  assertZeroExit(sourceSmoke, 'source (-p)')
-  assertExactOutput(nativeSmoke, 'installed (-p)', 'OK')
-  assertExactOutput(sourceSmoke, 'source (-p)', 'OK')
-
-  if (nativeSmoke.exitCode !== sourceSmoke.exitCode) {
-    throw new Error(
-      `Installed (-p) exit ${nativeSmoke.exitCode} differs from source ${sourceSmoke.exitCode}`,
+  try {
+    const installScript = join(repoRoot, 'scripts', 'install-local-launcher.ps1')
+    const installResult = await runCommand(
+      [
+        'powershell',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        installScript,
+        '-InstallDir',
+        installDir,
+        '-SkipPathUpdate',
+        '-Force',
+        '-RepoRoot',
+        repoRoot,
+      ],
+      repoRoot,
+      baseEnv,
     )
-  }
+    assertZeroExit(installResult, 'install-local-launcher')
 
-  if (nativeOutput !== sourceOutput) {
-    throw new Error(
-      `Installed (-p) output mismatch:\n  native: ${nativeOutput}\n  source: ${sourceOutput}`,
+    const pathEnv = process.env.PATH ?? process.env.Path ?? ''
+    const pathWithInstall = `${installDir}${delimiter}${pathEnv}`
+    const childEnv = createOpenAICompatibleSmokeEnv(
+      { ...baseEnv, PATH: pathWithInstall, Path: pathWithInstall },
+      mockServer.baseUrl,
     )
-  }
 
-  console.log('[PASS] native-local-install-smoke')
-  console.log(`  installDir=${installDir}`)
-  console.log(`  version=${normalize(versionResult.stdout)}`)
-  console.log(`  help=${normalize(helpResult.stdout.split('\n')[0] ?? '')}`)
-  console.log(
-    `  commandHelp=doctor:${normalize(doctorHelpResult.stdout.split('\n')[0] ?? '')} | install:${normalize(installHelpResult.stdout.split('\n')[0] ?? '')} | update:${normalize(updateHelpResult.stdout.split('\n')[0] ?? '')}`,
-  )
-  console.log(`  nativeExit=${nativeSmoke.exitCode}`)
-  console.log(`  nativeOutput=${nativeOutput}`)
-  console.log(`  sourceExit=${sourceSmoke.exitCode}`)
-  console.log(`  sourceOutput=${sourceOutput}`)
+    const versionResult = await runCommand(['neko', '--version'], tempRoot, childEnv)
+    assertZeroExit(versionResult, '--version')
 
-  if (!keepTemp) {
-    await rm(tempRoot, { recursive: true, force: true })
-  } else {
-    console.log(`[INFO] temp install preserved at ${tempRoot}`)
+    const helpResult = await runCommand(['neko', '--help'], tempRoot, childEnv)
+    assertZeroExit(helpResult, '--help')
+    assertOutputContains(helpResult, '--help', 'Usage: neko')
+
+    const doctorHelpResult = await runCommand(
+      ['neko', 'doctor', '--help'],
+      tempRoot,
+      childEnv,
+    )
+    assertZeroExit(doctorHelpResult, 'doctor --help')
+    assertOutputContains(doctorHelpResult, 'doctor --help', 'doctor')
+
+    const installHelpResult = await runCommand(
+      ['neko', 'install', '--help'],
+      tempRoot,
+      childEnv,
+    )
+    assertZeroExit(installHelpResult, 'install --help')
+    assertOutputContains(installHelpResult, 'install --help', 'install')
+
+    const updateHelpResult = await runCommand(
+      ['neko', 'update', '--help'],
+      tempRoot,
+      childEnv,
+    )
+    assertZeroExit(updateHelpResult, 'update --help')
+    assertOutputContains(updateHelpResult, 'update --help', 'update')
+
+    const smokePrompt = 'Reply with exactly OK'
+    const nativeSmokeArgs = ['neko', '-p', '--max-turns', '1', smokePrompt]
+    const sourceSmokeArgs = [
+      bunPath,
+      'src/entrypoints/cli.tsx',
+      '-p',
+      '--max-turns',
+      '1',
+      smokePrompt,
+    ]
+
+    const nativeSmoke = await runCommand(nativeSmokeArgs, tempRoot, childEnv)
+    const sourceSmoke = await runCommand(sourceSmokeArgs, repoRoot, childEnv)
+
+    const nativeOutput = normalize(nativeSmoke.stdout)
+    const sourceOutput = normalize(sourceSmoke.stdout)
+
+    assertZeroExit(nativeSmoke, 'installed (-p)')
+    assertZeroExit(sourceSmoke, 'source (-p)')
+    assertExactOutput(nativeSmoke, 'installed (-p)', 'OK')
+    assertExactOutput(sourceSmoke, 'source (-p)', 'OK')
+
+    if (nativeSmoke.exitCode !== sourceSmoke.exitCode) {
+      throw new Error(
+        `Installed (-p) exit ${nativeSmoke.exitCode} differs from source ${sourceSmoke.exitCode}`,
+      )
+    }
+
+    if (nativeOutput !== sourceOutput) {
+      throw new Error(
+        `Installed (-p) output mismatch:\n  native: ${nativeOutput}\n  source: ${sourceOutput}`,
+      )
+    }
+
+    console.log('[PASS] native-local-install-smoke')
+    console.log(`  installDir=${installDir}`)
+    console.log(`  version=${normalize(versionResult.stdout)}`)
+    console.log(`  help=${normalize(helpResult.stdout.split('\n')[0] ?? '')}`)
+    console.log(
+      `  commandHelp=doctor:${normalize(doctorHelpResult.stdout.split('\n')[0] ?? '')} | install:${normalize(installHelpResult.stdout.split('\n')[0] ?? '')} | update:${normalize(updateHelpResult.stdout.split('\n')[0] ?? '')}`,
+    )
+    console.log(`  nativeExit=${nativeSmoke.exitCode}`)
+    console.log(`  nativeOutput=${nativeOutput}`)
+    console.log(`  sourceExit=${sourceSmoke.exitCode}`)
+    console.log(`  sourceOutput=${sourceOutput}`)
+  } finally {
+    mockServer.stop()
+
+    if (!keepTemp) {
+      await rm(tempRoot, { recursive: true, force: true })
+    } else {
+      console.log(`[INFO] temp install preserved at ${tempRoot}`)
+    }
   }
 }
 

@@ -205,8 +205,7 @@
 
 ### Status
 
-- current
-- nearing-exit
+- completed
 
 ### Goal
 
@@ -242,6 +241,7 @@
 - 已新增 `scripts/session-continue-smoke.ts`，在隔离 `workspace/config/plugin-cache` 中真实执行首轮 `-p` 与后续 `-p --continue`
 - 已把 print/headless 的 `continue/resume` 恢复逻辑收敛到共享 helper，并补齐恢复前缓存清理与 worktree 状态恢复
 - 已把 `scripts/session-continue-smoke.ts` 扩到 compact 后的大 transcript continue 变体，锁定 seeded compact boundary transcript 在 `-p --continue` 下仍会追加到原 session，而不是重新建链或丢失 post-compact 对话
+- 已把 `scripts/session-continue-smoke.ts` 切到本地 `openai-compatible` mock server，`FIRST` / `SECOND` / `COMPACT` 断言不再依赖外部 provider quota / timeout
 - 已验证 `bun run smoke:session-continue:no-serena`
 - 已新增 `scripts/plugin-cli-state-smoke.ts`，在隔离 `workspace/config/plugin-cache` 中真实执行 `plugin marketplace add/remove`、`plugin install/uninstall`、`plugin enable/disable`
 - 已把 plugin CLI state smoke 的能力校验收敛到“CLI 写状态 + `refreshActivePlugins()` apply 后断言命令能力变化”，覆盖 Layer 2 写入与 Layer 3 应用的真实闭环
@@ -252,6 +252,7 @@
 - 已新增 `scripts/phase3-system-regression-smoke.ts`，依次跑 continue/resume/plugin/LSP/MCP/context smoke 并汇总各 case 的退出码，形成 Phase 3 的系统回归入口
 - 已把 `scripts/session-resume-smoke.ts` 接入 `smoke:phase3-system-regression`，补齐 stored session、missing session 与 user-tail sentinel 三类 resume 基础变体
 - 已把 `scripts/session-resume-smoke.ts` 扩到 compact 后的大 transcript resume 变体，锁定 compact boundary + summary + preserved tail 的恢复链、pre-boundary metadata 回读与 preserved assistant stale usage 清零
+- 已把 `scripts/session-resume-smoke.ts` 扩到 `.jsonl path` 与 `--resume-session-at` 变体，锁定 cross-path transcript 恢复、assistant-only truncation 与错误提示分支
 - 已验证 `bun run smoke:phase3-system-regression`
 - 已新增 `scripts/migrated-config-system-smoke.ts`，把 `smoke:claude-config:no-serena`、`smoke:mcp-state`、`smoke:plugin-install`、`smoke:plugin-state` 与 `smoke:phase3-system-regression` 串成一轮真实迁移配置下的系统回归
 - 已把 `scripts/plugin-state-smoke.ts` 接入 `smoke:migrated-config-system`，补齐 migrated config 下 plugin enable/disable 与 runtime capability 切换回归
@@ -259,6 +260,7 @@
 - 已验证 `bun run smoke:migrated-config-system`
 - 已新增 `scripts/distribution-readiness-smoke.ts`，把 no-serena help 命令、`smoke:migrated-config-system`、`smoke:native-distribution:no-serena` 与 `smoke:native-local-install:no-serena` 串成更接近“正式可用”门槛的聚合回归
 - 已验证 `bun run smoke:distribution-readiness`
+- 已把 `scripts/mcp-state-smoke.ts` 扩到 user/project/local 多 scope 写路径、同名 server fallback 与父/子 `.mcp.json` 优先级回落，锁定 persisted config 不携带 scope metadata
 - 已把 `doctor/install/update` 帮助入口纳入 source 与安装版 smoke，同时修补 `src/cli/update.ts`、`src/utils/doctorDiagnostic.ts` 中残留的旧命令提示，避免用户在分发/诊断路径看到 `claude` 入口
 - 已补齐 `scripts/analyze-text-hygiene.ts` / `scripts/check-text-hygiene.ts`，让 release-facing 文本卫生检查不再是悬空脚本，并可固定检查旧 `claude ...` 主入口提示是否回退
 - 已继续收口 bridge / auth 的用户可见旧命令提示，并把 Remote Control / auth status 的旧 `claude` 入口指导纳入文本卫生规则
@@ -280,7 +282,7 @@
 
 ### Status
 
-- substantially-delivered-not-active
+- current
 
 ### Goal
 
@@ -317,11 +319,12 @@
 
 - 当前机器上已经打通 `bun run build:native`
 - 当前编译产物已验证 `--version`、`--help`
-- 虽然 active phase 仍是 Phase 3，但 Phase 4 的大量基线已经提前完成；剩余主要缺口不再是“能不能本机安装运行”，而是签名、正式发布与 update 源闭环
-- 编译产物 `-p` 单轮回放需在 API 连通状态正常时复验；本轮同一时刻源码模式也出现相同连接失败，不视为 native build 特有回归
+- 随着 Phase 3 状态流闭环完成，当前主线已切到 Phase 4；剩余主要缺口不再是“能不能本机安装运行”，而是签名、正式发布与 update 源闭环
+- 编译产物与源码模式的 `-p` 对照 smoke 现已统一切到本地 `openai-compatible` mock server，当前验证不再依赖外部 provider 配额或网络状态
 - 已验证：新增 `scripts/native-distribution-smoke.ts`，在脱离仓库源码路径的临时目录中复制 `dist/neko-code.exe` 并分别执行 `--version`、`--help`、`-p --max-turns 1`，同时与 `bun src/entrypoints/cli.tsx -p --max-turns 1` 的输出进行对照，确认分发入口可独立于源码工作区执行
 - 已验证：新增 `scripts/native-local-install-smoke.ts`，在临时 installer/bin 目录里复制并注册 `neko`，通过 PATH 调用后跑 `--version`、`--help`、`-p --max-turns 1 "Reply with exactly OK"`；现在要求安装版与源码版都 `exit 0` 且输出 `OK`，不再接受“同样失败也算一致”的弱校验
 - 已修复 `scripts/install-local-launcher.ps1`，把 `dist/neko-code.exe` 复制成 `~/.local/bin/neko.exe`（真正的主命令），`neko-launcher.exe` 仅作兼容桥接，PATH 只需包含目录，`scripts/native-local-install-smoke.ts` 现在用 `Reply with exactly OK` 的 `-p --max-turns 1` 验证安装版与源码版成功路径完全一致
+- 已把 `scripts/native-distribution-smoke.ts` 与 `scripts/native-local-install-smoke.ts` 切到本地 `openai-compatible` mock server，`smoke:distribution-readiness` 不再受外部 provider quota / timeout 干扰
 - 已验证：`bun run smoke:distribution-readiness` 已把 help 入口、真实迁移配置系统回归、native distribution 与本地 PATH 安装回归收口成单条聚合命令
 - 已验证：新增 `scripts/release-facing-diagnostics-smoke.ts`，在不触发真实升级副作用的前提下锁定 `update` 失败提示与 `doctorDiagnostic` 的本地 alias 建议，`smoke:distribution-readiness` 现已覆盖 release-facing `neko doctor` / `neko install` / `alias neko=...` 文案回归
 - 已验证：新增 `scripts/build-local-release-bundle.ts`，可生成 `dist/release-local/`，写入 `latest` / `stable` channel 文件、`manifest.json` 与当前平台产物，形成本地 installer/pipeline 可消费的 release bundle 格式

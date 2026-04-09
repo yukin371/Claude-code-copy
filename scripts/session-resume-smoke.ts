@@ -9,8 +9,13 @@ import {
   createCompactBoundaryMessage,
   createUserMessage,
 } from '../src/utils/messages.js'
-import { loadConversationForResume } from '../src/utils/conversationRecovery.js'
+import type { PersistedWorktreeSession } from '../src/types/logs.js'
+import {
+  loadConversationForResume,
+  truncateResumeMessagesAt,
+} from '../src/utils/conversationRecovery.js'
 import { getProjectDir } from '../src/utils/sessionStorage.js'
+import { parseSessionIdentifier } from '../src/utils/sessionUrl.js'
 import { SKIP_PRECOMPACT_THRESHOLD } from '../src/utils/sessionStoragePortable.js'
 import { setCwdState, setOriginalCwd } from '../src/bootstrap/state.js'
 
@@ -27,6 +32,8 @@ type ResumeRun = {
   customTitle?: string
   mode?: string
   agentSetting?: string
+  fullPath?: string
+  note?: string
 }
 
 const keepTemp = process.argv.includes('--keep-temp')
@@ -214,6 +221,141 @@ async function runStoredSessionCase(
     customTitle: result.customTitle,
     mode: result.mode,
     agentSetting: result.agentSetting,
+  }
+}
+
+async function runJsonlPathCase(
+  workspaceDir: string,
+  sessionId: UUID,
+): Promise<ResumeRun> {
+  const userUuid = '23232323-2323-4232-8232-232323232323' as UUID
+  const assistantUuid = '24242424-2424-4242-8242-242424242424' as UUID
+  const worktreeSession: PersistedWorktreeSession = {
+    originalCwd: workspaceDir,
+    worktreePath: join(workspaceDir, '.worktrees', 'resume'),
+    worktreeName: 'resume-worktree',
+    worktreeBranch: 'resume-branch',
+    originalBranch: 'main',
+    originalHeadCommit: 'abc123',
+    sessionId,
+    tmuxSessionName: undefined,
+    hookBased: false,
+  }
+
+  const transcriptPath = join(dirname(workspaceDir), 'external-jsonl', `${sessionId}.jsonl`)
+  await mkdir(dirname(transcriptPath), { recursive: true })
+  await writeFile(
+    transcriptPath,
+    `${[
+      createSerializedUserMessage({
+        sessionId,
+        cwd: workspaceDir,
+        uuid: userUuid,
+        timestamp: '2026-04-07T10:20:00.000Z',
+        content: 'Resume this transcript from a jsonl path',
+        parentUuid: null,
+      }),
+      createSerializedAssistantMessage({
+        sessionId,
+        cwd: workspaceDir,
+        uuid: assistantUuid,
+        timestamp: '2026-04-07T10:20:01.000Z',
+        content: 'Jsonl path resume response',
+        parentUuid: userUuid,
+      }),
+      {
+        type: 'custom-title',
+        sessionId,
+        customTitle: 'Jsonl Resume Session',
+      },
+      {
+        type: 'agent-setting',
+        sessionId,
+        agentSetting: 'jsonl-agent',
+      },
+      {
+        type: 'mode',
+        sessionId,
+        mode: 'coordinator',
+      },
+      {
+        type: 'worktree-state',
+        sessionId,
+        worktreeSession,
+      },
+      {
+        type: 'pr-link',
+        sessionId,
+        prNumber: 42,
+        prUrl: 'https://example.com/pr/42',
+        prRepository: 'owner/repo',
+      },
+    ]
+      .map(line => JSON.stringify(line))
+      .join('\n')}\n`,
+    'utf8',
+  )
+
+  const parsed = parseSessionIdentifier(transcriptPath)
+  assert(parsed, 'Expected jsonl transcript path to parse as a resume target')
+  assert(parsed.isJsonlFile, 'Expected transcript path to be treated as jsonl')
+  assert(
+    parsed.jsonlFile === transcriptPath,
+    `Expected parsed jsonl path to round-trip, got ${parsed.jsonlFile ?? '(none)'}`,
+  )
+  assert(
+    parsed.sessionId !== sessionId,
+    'Expected jsonl path parsing to use a synthetic sessionId before transcript load',
+  )
+
+  const result = await loadConversationForResume(
+    parsed.sessionId,
+    parsed.jsonlFile || undefined,
+  )
+  assert(result, 'Expected jsonl path resume to load a session')
+  assert(
+    result.sessionId === sessionId,
+    `Expected jsonl path resume to restore sessionId ${sessionId}, got ${result.sessionId ?? '(none)'}`,
+  )
+  assert(
+    result.fullPath === transcriptPath,
+    `Expected jsonl path resume to preserve fullPath ${transcriptPath}, got ${result.fullPath ?? '(none)'}`,
+  )
+  assert(
+    result.customTitle === 'Jsonl Resume Session',
+    `Expected jsonl path resume title to round-trip, got ${result.customTitle ?? '(none)'}`,
+  )
+  assert(
+    result.agentSetting === 'jsonl-agent',
+    `Expected jsonl path resume agent setting to round-trip, got ${result.agentSetting ?? '(none)'}`,
+  )
+  assert(
+    result.mode === 'coordinator',
+    `Expected jsonl path resume mode to round-trip, got ${result.mode ?? '(none)'}`,
+  )
+  assert(
+    result.worktreeSession?.worktreeName === worktreeSession.worktreeName,
+    `Expected jsonl path resume worktree to round-trip, got ${result.worktreeSession?.worktreeName ?? '(none)'}`,
+  )
+  assert(
+    result.prNumber === 42 &&
+      result.prUrl === 'https://example.com/pr/42' &&
+      result.prRepository === 'owner/repo',
+    `Expected jsonl path resume PR metadata to round-trip, got ${JSON.stringify({
+      prNumber: result.prNumber,
+      prUrl: result.prUrl,
+      prRepository: result.prRepository,
+    })}`,
+  )
+
+  return {
+    label: 'jsonl-path-session',
+    sessionId,
+    messageTypes: result.messages.map(message => message.type),
+    customTitle: result.customTitle,
+    mode: result.mode,
+    agentSetting: result.agentSetting,
+    fullPath: result.fullPath,
   }
 }
 
@@ -492,6 +634,100 @@ async function runUserTailCase(
   }
 }
 
+async function runResumeSessionAtCase(
+  workspaceDir: string,
+  sessionId: UUID,
+): Promise<ResumeRun> {
+  const firstUserUuid = '25252525-2525-4252-8252-252525252525' as UUID
+  const firstAssistantUuid = '26262626-2626-4262-8262-262626262626' as UUID
+  const secondUserUuid = '27272727-2727-4272-8272-272727272727' as UUID
+  const secondAssistantUuid = '28282828-2828-4282-8282-282828282828' as UUID
+
+  await writeSessionFile({
+    workspaceDir,
+    sessionId,
+    lines: [
+      createSerializedUserMessage({
+        sessionId,
+        cwd: workspaceDir,
+        uuid: firstUserUuid,
+        timestamp: '2026-04-07T10:30:00.000Z',
+        content: 'First turn',
+        parentUuid: null,
+      }),
+      createSerializedAssistantMessage({
+        sessionId,
+        cwd: workspaceDir,
+        uuid: firstAssistantUuid,
+        timestamp: '2026-04-07T10:30:01.000Z',
+        content: 'First answer',
+        parentUuid: firstUserUuid,
+      }),
+      createSerializedUserMessage({
+        sessionId,
+        cwd: workspaceDir,
+        uuid: secondUserUuid,
+        timestamp: '2026-04-07T10:31:00.000Z',
+        content: 'Second turn',
+        parentUuid: firstAssistantUuid,
+      }),
+      createSerializedAssistantMessage({
+        sessionId,
+        cwd: workspaceDir,
+        uuid: secondAssistantUuid,
+        timestamp: '2026-04-07T10:31:01.000Z',
+        content: 'Second answer',
+        parentUuid: secondUserUuid,
+      }),
+    ],
+  })
+
+  const result = await loadConversationForResume(sessionId, undefined)
+  assert(result, 'Expected resume-session-at smoke session to load')
+
+  const truncated = truncateResumeMessagesAt(result.messages, firstAssistantUuid)
+  assert(
+    truncated.map(message => message.type).join(',') === 'user,assistant',
+    `Expected resume-session-at to truncate at assistant boundary, got ${truncated.map(message => message.type).join(',')}`,
+  )
+  assert(
+    truncated.at(-1)?.uuid === firstAssistantUuid,
+    `Expected resume-session-at to keep assistant ${firstAssistantUuid}, got ${truncated.at(-1)?.uuid ?? '(none)'}`,
+  )
+
+  let nonAssistantError: string | undefined
+  try {
+    truncateResumeMessagesAt(result.messages, firstUserUuid)
+  } catch (error) {
+    nonAssistantError = error instanceof Error ? error.message : String(error)
+  }
+  assert(
+    nonAssistantError?.includes('not an assistant message'),
+    `Expected user UUID to be rejected for resume-session-at, got ${nonAssistantError ?? '(none)'}`,
+  )
+
+  let missingError: string | undefined
+  try {
+    truncateResumeMessagesAt(
+      result.messages,
+      '29292929-2929-4292-8292-292929292929' as UUID,
+    )
+  } catch (error) {
+    missingError = error instanceof Error ? error.message : String(error)
+  }
+  assert(
+    missingError?.includes('No message found with message.uuid'),
+    `Expected missing UUID to be rejected for resume-session-at, got ${missingError ?? '(none)'}`,
+  )
+
+  return {
+    label: 'resume-session-at',
+    sessionId,
+    messageTypes: truncated.map(message => message.type),
+    note: 'assistant-only truncation and missing-id errors verified',
+  }
+}
+
 function formatRun(run: ResumeRun): string[] {
   return [
     `[PASS] ${run.label}`,
@@ -505,6 +741,8 @@ function formatRun(run: ResumeRun): string[] {
     ...(run.customTitle ? [`  customTitle=${run.customTitle}`] : []),
     ...(run.agentSetting ? [`  agentSetting=${run.agentSetting}`] : []),
     ...(run.mode ? [`  mode=${run.mode}`] : []),
+    ...(run.fullPath ? [`  fullPath=${run.fullPath}`] : []),
+    ...(run.note ? [`  note=${run.note}`] : []),
   ]
 }
 
@@ -546,6 +784,10 @@ try {
       workspaceDir,
       'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' as UUID,
     ),
+    await runJsonlPathCase(
+      workspaceDir,
+      'bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc' as UUID,
+    ),
     await runCompactedLargeSessionCase(
       workspaceDir,
       'abababab-abab-4bab-8bab-abababababab' as UUID,
@@ -553,6 +795,10 @@ try {
     await runUserTailCase(
       workspaceDir,
       'cccccccc-cccc-4ccc-8ccc-cccccccccccc' as UUID,
+    ),
+    await runResumeSessionAtCase(
+      workspaceDir,
+      'cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd' as UUID,
     ),
   ]
 
