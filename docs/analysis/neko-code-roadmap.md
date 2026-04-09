@@ -222,6 +222,8 @@
 - 已收口：`scripts/release-deploy-publish.ts` 现已对 source / destination 做根目录边界校验，不再允许篡改 `upload-manifest.json` 后越过 deploy payload 或 publish target 根目录
 - 已验证：`scripts/release-deploy-publish-smoke.ts` 现会逐项比对 `upload-manifest.json` 的 source/destination 内容；`scripts/native-update-cli-release-deploy-smoke.ts` 与 `scripts/native-update-cli-github-release-smoke.ts` 现会注入合成的 `0.1.1` 发布物，真实断言 `neko update` 完成升级而不是只看到 “No newer update”
 - 已验证：新增 `scripts/publish-github-release.ts` 与 `scripts/publish-github-release-smoke.ts`，GitHub Release 创建/更新命令已统一收口到脚本与 workflow，不再在 workflow 里手写拼接发布命令
+- 已收口：`scripts/promote-github-release.ts` 已从 `gh release edit` 切到显式 `gh api PATCH`，直接更新 `draft` / `prerelease` / `make_latest`，避免 promote 继续依赖 CLI flag 的隐式行为
+- 已验证：`scripts/promote-github-release-smoke.ts` 现已覆盖 `draft` / `prerelease` / `stable` 三种 promote target 与手工布尔参数组合；`smoke:release-preflight` 也已纳入 promote smoke
 - 已落地：补齐 `scripts/analyze-text-hygiene.ts`、`scripts/check-text-hygiene.ts` 与共享规则库，避免 `package.json` 中的文本卫生入口继续悬空
 - 已收口：bridge / auth 路径里的旧 `claude` 命令提示，并把 Remote Control / auth status 的旧入口指导纳入文本卫生规则，避免 bridge 尾路径回退到错误命令
 - 已收口：`Doctor` dismiss 提示、通知标题、permission/hooks/trust dialog/memory/worktree/plugin/session-start UI 路径提示、`/insights` 命令描述、REPL 默认标题/挂起提示、keybindings schema 与 SDK settings source 描述等用户可见文案已改为 `Neko Code` / `.neko-code` 路径，不再继续直露 `Claude Code` / `.claude`

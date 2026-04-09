@@ -115,6 +115,7 @@ bun run release:apply-signed-artifact -- --signed-binary C:\path\to\signed.exe
 bun run smoke:signed-release-publication-workflow
 bun run smoke:stage-github-release
 bun run smoke:publish-github-release
+bun run smoke:promote-github-release
 bun run smoke:native-update-cli-github-release
 bun run smoke:release-deploy-publish
 bun run smoke:native-update-cli-release-deploy
@@ -404,6 +405,7 @@ CI 骨架：
 - `github-release-publish.yml` 可手动输入 version 与 signed publication run id；它会下载 signed artifacts，执行 `stage:github-release`，校验 `smoke:stage-github-release` / `smoke:publish-github-release`，然后创建或更新 `v<version>` GitHub Release
 - `scripts/publish-github-release.ts` 负责真正的 GitHub Release 发布命令拼装；首次创建 release 时会连同所有 staged assets 一起上传，不会出现“创建成功但没有资产”的空 release
 - `github-release-promote.yml` 可在已有 `v<version>` release 上单独调整 `draft` / `prerelease` / `latest`，把 prerelease 升级为正式 stable，或把草稿 release 发布出去
+- `scripts/promote-github-release.ts` 现在通过 `gh api` 显式 PATCH `draft` / `prerelease` / `make_latest`，避免 promotion 继续依赖 `gh release edit` 的隐式 flag 行为
 - `smoke:native-update-cli-github-release` 会用本地假 GitHub Releases API 校验：已安装的 `neko update` 能直接消费 GitHub Release 资产
 - `smoke:promote-github-release` 会校验 GitHub Release promotion 命令行计划，避免 promote workflow 参数漂移
 

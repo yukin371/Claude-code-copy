@@ -340,6 +340,8 @@
 - 已继续收口 `release-deploy-publish` 安全边界：source / destination 现在都要求留在 deploy payload 与 publish target 根目录内，不再接受被篡改 manifest 的跨目录读写
 - 已把 `release-deploy-publish` / `native-update-cli-release-deploy` / `native-update-cli-github-release` smoke 从“只检查版本探测还活着”升级为“真实注入下一版本并断言 upgrade 成功”，同时补齐 publish manifest 全量映射校验
 - 已新增 `scripts/publish-github-release.ts` 与 `scripts/publish-github-release-smoke.ts`；GitHub Release 的 create/edit/upload 命令拼装已从 workflow 抽到脚本，避免 workflow 与 staged metadata 漂移
+- 已把 `scripts/promote-github-release.ts` 改为通过 `gh api PATCH` 显式更新 `draft` / `prerelease` / `make_latest`，不再依赖 `gh release edit` 的隐式 flag 行为；对应 smoke 现已覆盖 `draft` / `prerelease` / `stable` 与手工布尔参数组合
+- 已把 `smoke:promote-github-release` 并入 `smoke:release-preflight`，让 GitHub Release promotion 也进入本地候选发布物固定 gate
 - 当前 Phase 4 的本地候选发布物链已经覆盖：`release-deploy-publish`、`publish-github-release`、deploy source native update、GitHub Release native update；剩余主缺口已收敛到 signed artifact、签名流程和真实外部发布凭据/环境
 - 已验证：本轮 `dist/neko-code.exe -p --max-turns 1 "echo native smoke"` 会在命中 `max-turns` 限制时退出，并且源码入口 `bun src/entrypoints/cli.tsx -p --max-turns 1 "echo source smoke"` 则抛出完全相同的 `Error: Reached max turns (1)` 结果，说明当前失败属于通用行为而非编译产物里程碑差异
 

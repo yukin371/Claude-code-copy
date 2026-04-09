@@ -9,6 +9,12 @@ type PromoteOptions = {
   dryRun: boolean
 }
 
+type CommandOutput = {
+  exitCode: number
+  stdout: string
+  stderr: string
+}
+
 const promoteTargets = {
   draft: {
     draft: true,
@@ -145,22 +151,49 @@ async function runCommand(args: string[], cwd: string): Promise<void> {
   }
 }
 
+async function runCommandCapture(
+  args: string[],
+  cwd: string,
+): Promise<CommandOutput> {
+  const child = Bun.spawn(args, {
+    cwd,
+    env: process.env,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ])
+
+  return {
+    exitCode,
+    stdout,
+    stderr,
+  }
+}
+
 async function main(): Promise<void> {
   const repoRoot = process.cwd()
   const options = parseArgs(process.argv.slice(2))
   const tag = `v${options.version}`
-  const args = [
+  const readEndpoint = `repos/{owner}/{repo}/releases/tags/${tag}`
+  const patchEndpoint = 'repos/{owner}/{repo}/releases/<release-id-from-tag>'
+  const patchArgs = [
     'gh',
-    'release',
-    'edit',
-    tag,
-    `--draft=${options.draft ? 'true' : 'false'}`,
-    `--latest=${options.latest ? 'true' : 'false'}`,
+    'api',
+    '--method',
+    'PATCH',
+    patchEndpoint,
+    '-F',
+    `draft=${options.draft ? 'true' : 'false'}`,
+    '-F',
+    `prerelease=${options.prerelease ? 'true' : 'false'}`,
+    '-F',
+    `make_latest=${options.latest ? 'true' : 'false'}`,
   ]
-
-  if (options.prerelease) {
-    args.push('--prerelease')
-  }
 
   if (options.dryRun) {
     console.log('[PLAN] promote-github-release')
@@ -169,14 +202,45 @@ async function main(): Promise<void> {
     console.log(`draft=${options.draft}`)
     console.log(`prerelease=${options.prerelease}`)
     console.log(`latest=${options.latest}`)
-    console.log(`command=${args.join(' ')}`)
+    console.log(`readEndpoint=${readEndpoint}`)
+    console.log(`patchEndpoint=${patchEndpoint}`)
+    console.log(`command=${patchArgs.join(' ')}`)
     return
   }
 
-  await runCommand(args, repoRoot)
+  const resolveReleaseId = await runCommandCapture(
+    ['gh', 'api', readEndpoint, '--jq', '.id'],
+    repoRoot,
+  )
+  if (resolveReleaseId.exitCode !== 0) {
+    throw new Error(resolveReleaseId.stderr || resolveReleaseId.stdout)
+  }
+
+  const releaseId = resolveReleaseId.stdout.trim()
+  if (!/^\d+$/.test(releaseId)) {
+    throw new Error(`Unexpected GitHub release id for ${tag}: ${releaseId}`)
+  }
+
+  await runCommand(
+    [
+      'gh',
+      'api',
+      '--method',
+      'PATCH',
+      `repos/{owner}/{repo}/releases/${releaseId}`,
+      '-F',
+      `draft=${options.draft ? 'true' : 'false'}`,
+      '-F',
+      `prerelease=${options.prerelease ? 'true' : 'false'}`,
+      '-F',
+      `make_latest=${options.latest ? 'true' : 'false'}`,
+    ],
+    repoRoot,
+  )
 
   console.log('[PASS] promote-github-release')
   console.log(`  tag=${tag}`)
+  console.log(`  releaseId=${releaseId}`)
   console.log(`  target=${options.target}`)
   console.log(`  draft=${options.draft}`)
   console.log(`  prerelease=${options.prerelease}`)

@@ -73,6 +73,10 @@ const commandSteps: Step[] = [
     args: ['bun', 'run', 'scripts/publish-github-release-smoke.ts', '--skip-stage-github-release'],
   },
   {
+    label: 'promote-github-release',
+    args: ['bun', 'run', 'scripts/promote-github-release-smoke.ts'],
+  },
+  {
     label: 'native-update-cli-github-release',
     args: ['bun', 'run', 'scripts/native-update-cli-github-release-smoke.ts', '--skip-stage-github-release'],
   },
@@ -85,6 +89,7 @@ const readmeChecks = {
     'bun run smoke:stage-native-installer',
     'bun run smoke:distribution-readiness',
     'bun run smoke:release-preflight',
+    'bun run smoke:promote-github-release',
     'dist/neko-code.exe',
     'neko.exe',
   ],
