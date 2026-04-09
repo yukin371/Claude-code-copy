@@ -150,6 +150,18 @@ const RULES: Rule[] = [
     label: 'statusline setup prompt uses legacy user settings path',
     needle: 'Update the user\'s ~/.claude/settings.json with:',
   },
+  {
+    label: 'insights command uses stale product name',
+    needle: 'Generate a report analyzing your Claude Code sessions',
+  },
+  {
+    label: 'repl terminal title uses stale product name',
+    needle: "?? 'Claude Code'",
+  },
+  {
+    label: 'repl suspend message uses stale product name',
+    needle: 'Claude Code has been suspended. Run `fg` to bring Claude Code back.',
+  },
 ]
 
 async function collectFiles(dir: string): Promise<string[]> {
