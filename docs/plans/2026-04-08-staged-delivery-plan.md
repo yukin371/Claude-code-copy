@@ -241,6 +241,7 @@
 
 - 已新增 `scripts/session-continue-smoke.ts`，在隔离 `workspace/config/plugin-cache` 中真实执行首轮 `-p` 与后续 `-p --continue`
 - 已把 print/headless 的 `continue/resume` 恢复逻辑收敛到共享 helper，并补齐恢复前缓存清理与 worktree 状态恢复
+- 已把 `scripts/session-continue-smoke.ts` 扩到 compact 后的大 transcript continue 变体，锁定 seeded compact boundary transcript 在 `-p --continue` 下仍会追加到原 session，而不是重新建链或丢失 post-compact 对话
 - 已验证 `bun run smoke:session-continue:no-serena`
 - 已新增 `scripts/plugin-cli-state-smoke.ts`，在隔离 `workspace/config/plugin-cache` 中真实执行 `plugin marketplace add/remove`、`plugin install/uninstall`、`plugin enable/disable`
 - 已把 plugin CLI state smoke 的能力校验收敛到“CLI 写状态 + `refreshActivePlugins()` apply 后断言命令能力变化”，覆盖 Layer 2 写入与 Layer 3 应用的真实闭环
@@ -254,6 +255,7 @@
 - 已验证 `bun run smoke:phase3-system-regression`
 - 已新增 `scripts/migrated-config-system-smoke.ts`，把 `smoke:claude-config:no-serena`、`smoke:mcp-state`、`smoke:plugin-install`、`smoke:plugin-state` 与 `smoke:phase3-system-regression` 串成一轮真实迁移配置下的系统回归
 - 已把 `scripts/plugin-state-smoke.ts` 接入 `smoke:migrated-config-system`，补齐 migrated config 下 plugin enable/disable 与 runtime capability 切换回归
+- 已把 `scripts/plugin-state-smoke.ts` 改成真实 stateful refresh 序列，锁定 disable/reenable 后 commands/agents/hooks 与 reconnect state 的 stale cleanup，不再被“每轮从默认 app state 重置”掩盖
 - 已验证 `bun run smoke:migrated-config-system`
 - 已新增 `scripts/distribution-readiness-smoke.ts`，把 no-serena help 命令、`smoke:migrated-config-system`、`smoke:native-distribution:no-serena` 与 `smoke:native-local-install:no-serena` 串成更接近“正式可用”门槛的聚合回归
 - 已验证 `bun run smoke:distribution-readiness`

@@ -2,7 +2,7 @@ import { feature } from 'bun:bundle'
 import { randomUUID } from 'crypto'
 import { hostname, tmpdir } from 'os'
 import { basename, join, resolve } from 'path'
-import { getRemoteSessionUrl } from '../constants/product.js'
+import { CLI_COMMAND_NAME, getRemoteSessionUrl } from '../constants/product.js'
 import { checkGate_CACHED_OR_BLOCKING } from '../services/analytics/growthbook.js'
 import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
@@ -1817,7 +1817,7 @@ export function parseArgs(args: string[]): ParsedArgs {
       createSessionInDir = false
     } else {
       return makeError(
-        `Unknown argument: ${arg}\nRun 'claude remote-control --help' for usage.`,
+        `Unknown argument: ${arg}\nRun '${CLI_COMMAND_NAME} remote-control --help' for usage.`,
       )
     }
   }
@@ -1884,6 +1884,7 @@ export function parseArgs(args: string[]): ParsedArgs {
 }
 
 async function printHelp(): Promise<void> {
+  const remoteControlCommand = `${CLI_COMMAND_NAME} remote-control`
   // Use EXTERNAL_PERMISSION_MODES for help text — internal modes (bubble)
   // are ant-only and auto is feature-gated; they're still accepted by validation.
   const { EXTERNAL_PERMISSION_MODES } = await import('../types/permissions.js')

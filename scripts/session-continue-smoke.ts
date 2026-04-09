@@ -1,13 +1,20 @@
 #!/usr/bin/env bun
 
+import type { UUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileSuffixForOauthConfig } from '../src/constants/oauth.js'
 import { GLOBAL_CONFIG_BASENAME } from '../src/constants/product.js'
 import { migrateClaudeConfigDirectory } from '../src/migrations/migrateClaudeConfigToNekoHome.js'
+import {
+  createAssistantMessage,
+  createCompactBoundaryMessage,
+  createUserMessage,
+} from '../src/utils/messages.js'
 import { getProjectDir } from '../src/utils/sessionStorage.js'
+import { SKIP_PRECOMPACT_THRESHOLD } from '../src/utils/sessionStoragePortable.js'
 
 type EnvKey =
   | 'NEKO_CODE_CONFIG_DIR'
@@ -46,6 +53,7 @@ const repoRoot = process.cwd()
 const cliEntrypoint = join(repoRoot, 'src/entrypoints/cli.tsx')
 const firstPrompt = 'Reply with exactly FIRST'
 const secondPrompt = 'Reply with exactly SECOND'
+const compactedContinuePrompt = 'Reply with exactly COMPACT'
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -264,6 +272,219 @@ async function runCommand(
   }
 }
 
+function serializeTranscriptMessage<T extends { uuid: UUID | string; timestamp: string }>(
+  message: T,
+  {
+    sessionId,
+    cwd,
+    parentUuid,
+  }: {
+    sessionId: string
+    cwd: string
+    parentUuid: UUID | null
+  },
+) {
+  return {
+    ...message,
+    parentUuid,
+    cwd,
+    userType: 'external',
+    sessionId,
+    version: 'session-continue-smoke',
+  }
+}
+
+function createSerializedUserMessage({
+  sessionId,
+  cwd,
+  uuid,
+  timestamp,
+  content,
+  parentUuid,
+  isCompactSummary,
+}: {
+  sessionId: string
+  cwd: string
+  uuid: UUID
+  timestamp: string
+  content: string
+  parentUuid: UUID | null
+  isCompactSummary?: true
+}) {
+  const message = createUserMessage({
+    content,
+    uuid,
+    timestamp,
+    ...(isCompactSummary ? { isCompactSummary: true } : {}),
+  })
+  return serializeTranscriptMessage(message, { sessionId, cwd, parentUuid })
+}
+
+function createSerializedAssistantMessage({
+  sessionId,
+  cwd,
+  uuid,
+  timestamp,
+  content,
+  parentUuid,
+  usage,
+}: {
+  sessionId: string
+  cwd: string
+  uuid: UUID
+  timestamp: string
+  content: string
+  parentUuid: UUID
+  usage?: Parameters<typeof createAssistantMessage>[0]['usage']
+}) {
+  const message = createAssistantMessage({ content, usage })
+  return serializeTranscriptMessage(
+    { ...message, uuid, timestamp },
+    { sessionId, cwd, parentUuid },
+  )
+}
+
+async function seedCompactedTranscript(workspaceDir: string): Promise<{
+  transcriptPath: string
+  initialLineCount: number
+}> {
+  const sessionId = 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0' as UUID
+  const introUserUuid = '16161616-1616-4616-8616-161616161616' as UUID
+  const introAssistantUuid = '17171717-1717-4717-8717-171717171717' as UUID
+  const preservedUserUuid = '18181818-1818-4818-8818-181818181818' as UUID
+  const preservedAssistantUuid = '19191919-1919-4919-8919-191919191919' as UUID
+  const summaryUuid = '20202020-2020-4020-8020-202020202020' as UUID
+  const postUserUuid = '21212121-2121-4121-8121-212121212121' as UUID
+  const postAssistantUuid = '22222222-2222-4222-8222-222222222222' as UUID
+  const projectDir = getProjectDir(workspaceDir)
+  const transcriptPath = join(projectDir, `${sessionId}.jsonl`)
+  const largePreCompactText = 'legacy compact context '.repeat(
+    Math.ceil(
+      (SKIP_PRECOMPACT_THRESHOLD + 2048) / 'legacy compact context '.length,
+    ),
+  )
+  const boundary = createCompactBoundaryMessage(
+    'manual',
+    6_144,
+    preservedAssistantUuid,
+    'Preserve only the latest exchange before continue.',
+    4,
+  )
+  boundary.timestamp = '2026-04-09T08:09:00.000Z'
+  boundary.compactMetadata = {
+    ...boundary.compactMetadata,
+    preservedSegment: {
+      headUuid: preservedUserUuid,
+      anchorUuid: summaryUuid,
+      tailUuid: preservedAssistantUuid,
+    },
+  }
+
+  const lines = [
+    createSerializedUserMessage({
+      sessionId,
+      cwd: workspaceDir,
+      uuid: introUserUuid,
+      timestamp: '2026-04-09T08:00:00.000Z',
+      content: 'Pre-compact continue prompt',
+      parentUuid: null,
+    }),
+    createSerializedAssistantMessage({
+      sessionId,
+      cwd: workspaceDir,
+      uuid: introAssistantUuid,
+      timestamp: '2026-04-09T08:00:01.000Z',
+      content: largePreCompactText,
+      parentUuid: introUserUuid,
+    }),
+    createSerializedUserMessage({
+      sessionId,
+      cwd: workspaceDir,
+      uuid: preservedUserUuid,
+      timestamp: '2026-04-09T08:05:00.000Z',
+      content: 'Keep this latest user exchange before continue',
+      parentUuid: introAssistantUuid,
+    }),
+    createSerializedAssistantMessage({
+      sessionId,
+      cwd: workspaceDir,
+      uuid: preservedAssistantUuid,
+      timestamp: '2026-04-09T08:05:01.000Z',
+      content: 'Keep this latest assistant exchange before continue',
+      parentUuid: preservedUserUuid,
+      usage: {
+        input_tokens: 190_000,
+        output_tokens: 512,
+        cache_creation_input_tokens: 17,
+        cache_read_input_tokens: 33,
+      },
+    }),
+    {
+      type: 'custom-title',
+      sessionId,
+      customTitle: 'Compacted Continue Session',
+    },
+    {
+      type: 'agent-setting',
+      sessionId,
+      agentSetting: 'compact-continue-agent',
+    },
+    {
+      type: 'mode',
+      sessionId,
+      mode: 'normal',
+    },
+    serializeTranscriptMessage(boundary, {
+      sessionId,
+      cwd: workspaceDir,
+      parentUuid: null,
+    }),
+    createSerializedUserMessage({
+      sessionId,
+      cwd: workspaceDir,
+      uuid: summaryUuid,
+      timestamp: '2026-04-09T08:09:01.000Z',
+      content: 'Compact summary: preserved the latest exchange for continue.',
+      parentUuid: boundary.uuid,
+      isCompactSummary: true,
+    }),
+    createSerializedUserMessage({
+      sessionId,
+      cwd: workspaceDir,
+      uuid: postUserUuid,
+      timestamp: '2026-04-09T08:10:00.000Z',
+      content: 'Ask one more thing after compaction.',
+      parentUuid: preservedAssistantUuid,
+    }),
+    createSerializedAssistantMessage({
+      sessionId,
+      cwd: workspaceDir,
+      uuid: postAssistantUuid,
+      timestamp: '2026-04-09T08:10:01.000Z',
+      content: 'Here is the post-compact answer before continue.',
+      parentUuid: postUserUuid,
+    }),
+  ]
+
+  mkdirSync(projectDir, { recursive: true })
+  await writeFile(
+    transcriptPath,
+    `${lines.map(line => JSON.stringify(line)).join('\n')}\n`,
+    'utf8',
+  )
+
+  const transcriptStats = await stat(transcriptPath)
+  assert(
+    transcriptStats.size > SKIP_PRECOMPACT_THRESHOLD,
+    `Expected compacted continue transcript to exceed ${SKIP_PRECOMPACT_THRESHOLD} bytes, got ${transcriptStats.size}`,
+  )
+
+  return {
+    transcriptPath,
+    initialLineCount: lines.length,
+  }
+}
+
 const options = parseArgs(process.argv.slice(2))
 assert(
   existsSync(options.sourceDir),
@@ -298,7 +519,7 @@ try {
   }
 
   const childEnv = { ...process.env }
-  const projectDir = getProjectDir(environment.workspaceDir)
+  const liveProjectDir = getProjectDir(environment.workspaceDir)
 
   const firstRun = await runCommand(
     [cliEntrypoint, '-p', '--max-turns', '1', firstPrompt],
@@ -312,13 +533,13 @@ try {
     `Expected first run stdout FIRST, got ${normalizeOutput(firstRun.stdout) || '[empty]'}`,
   )
 
-  const transcriptsAfterFirst = await listTranscriptFiles(projectDir)
+  const transcriptsAfterFirst = await listTranscriptFiles(liveProjectDir)
   assert(
     transcriptsAfterFirst.length === 1,
     `Expected exactly one transcript after first run, found ${transcriptsAfterFirst.length}`,
   )
-  const transcriptPath = transcriptsAfterFirst[0]!
-  const firstLineCount = await countTranscriptLines(transcriptPath)
+  const liveTranscriptPath = transcriptsAfterFirst[0]!
+  const liveFirstLineCount = await countTranscriptLines(liveTranscriptPath)
 
   const secondRun = await runCommand(
     [cliEntrypoint, '-p', '--continue', '--max-turns', '1', secondPrompt],
@@ -332,31 +553,70 @@ try {
     `Expected continue run stdout SECOND, got ${normalizeOutput(secondRun.stdout) || '[empty]'}`,
   )
 
-  const transcriptsAfterSecond = await listTranscriptFiles(projectDir)
+  const transcriptsAfterSecond = await listTranscriptFiles(liveProjectDir)
   assert(
     transcriptsAfterSecond.length === 1,
     `Expected exactly one transcript after continue run, found ${transcriptsAfterSecond.length}`,
   )
   assert(
-    transcriptsAfterSecond[0] === transcriptPath,
+    transcriptsAfterSecond[0] === liveTranscriptPath,
     'Expected --continue to append to the existing transcript instead of creating a new one',
   )
 
-  const secondLineCount = await countTranscriptLines(transcriptPath)
+  const liveSecondLineCount = await countTranscriptLines(liveTranscriptPath)
   assert(
-    secondLineCount > firstLineCount,
-    `Expected transcript line count to increase after --continue (${firstLineCount} -> ${secondLineCount})`,
+    liveSecondLineCount > liveFirstLineCount,
+    `Expected transcript line count to increase after --continue (${liveFirstLineCount} -> ${liveSecondLineCount})`,
+  )
+
+  const compactedWorkspaceDir = join(environment.tempRoot, 'workspace-compacted')
+  mkdirSync(compactedWorkspaceDir, { recursive: true })
+  const compactedProjectDir = getProjectDir(compactedWorkspaceDir)
+  const {
+    transcriptPath: compactedTranscriptPath,
+    initialLineCount: compactedFirstLineCount,
+  } = await seedCompactedTranscript(compactedWorkspaceDir)
+  const compactedRun = await runCommand(
+    [cliEntrypoint, '-p', '--continue', '--max-turns', '1', compactedContinuePrompt],
+    childEnv,
+    compactedWorkspaceDir,
+  )
+  printCommandResult('compacted-continue-run', compactedRun)
+  assert(compactedRun.exitCode === 0, 'Compacted continue print run failed')
+  assert(
+    normalizeOutput(compactedRun.stdout) === 'COMPACT',
+    `Expected compacted continue stdout COMPACT, got ${normalizeOutput(compactedRun.stdout) || '[empty]'}`,
+  )
+
+  const compactedTranscriptsAfter = await listTranscriptFiles(compactedProjectDir)
+  assert(
+    compactedTranscriptsAfter.length === 1,
+    `Expected exactly one transcript after compacted continue run, found ${compactedTranscriptsAfter.length}`,
+  )
+  assert(
+    compactedTranscriptsAfter[0] === compactedTranscriptPath,
+    'Expected compacted --continue to append to the seeded transcript instead of creating a new one',
+  )
+  const compactedSecondLineCount = await countTranscriptLines(compactedTranscriptPath)
+  assert(
+    compactedSecondLineCount > compactedFirstLineCount,
+    `Expected compacted transcript line count to increase after --continue (${compactedFirstLineCount} -> ${compactedSecondLineCount})`,
   )
 
   console.log('')
   console.log(`[PASS] session-continue-smoke`)
   console.log(`  tempRoot=${environment.tempRoot}`)
-  console.log(`  projectDir=${projectDir}`)
-  console.log(`  transcript=${relative(environment.tempRoot, transcriptPath)}`)
-  console.log(`  transcriptLines=${firstLineCount} -> ${secondLineCount}`)
+  console.log(`  liveProjectDir=${liveProjectDir}`)
+  console.log(`  liveTranscript=${relative(environment.tempRoot, liveTranscriptPath)}`)
+  console.log(`  liveTranscriptLines=${liveFirstLineCount} -> ${liveSecondLineCount}`)
+  console.log(`  compactedProjectDir=${compactedProjectDir}`)
   console.log(
-    `  disabledMcpServers=${options.disableMcpServers ?? '(none)'}`,
+    `  compactedTranscript=${relative(environment.tempRoot, compactedTranscriptPath)}`,
   )
+  console.log(
+    `  compactedTranscriptLines=${compactedFirstLineCount} -> ${compactedSecondLineCount}`,
+  )
+  console.log(`  disabledMcpServers=${options.disableMcpServers ?? '(none)'}`)
 } finally {
   for (const key of trackedEnvVars) {
     const value = oldEnv.get(key)

@@ -6,6 +6,7 @@ import { logError } from 'src/utils/log.js';
 import { useInterval } from 'usehooks-ts';
 import { useUpdateNotification } from '../hooks/useUpdateNotification.js';
 import { Box, Text } from '../ink.js';
+import { CLI_COMMAND_NAME } from '../constants/product.js';
 import type { AutoUpdaterResult } from '../utils/autoUpdater.js';
 import { getMaxVersion, getMaxVersionMessage } from '../utils/autoUpdater.js';
 import { isAutoUpdaterDisabled } from '../utils/config.js';
@@ -187,7 +188,7 @@ export function NativeAutoUpdater({
         </Text>}
       {maxVersionIssue && process.env.USER_TYPE === 'ant' && <Text color="warning">
           ⚠ Known issue: {maxVersionIssue} &middot; Run{' '}
-          <Text bold>claude rollback --safe</Text> to downgrade
+          <Text bold>{CLI_COMMAND_NAME} rollback --safe</Text> to downgrade
         </Text>}
     </Box>;
 }

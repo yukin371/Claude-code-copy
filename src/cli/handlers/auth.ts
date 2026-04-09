@@ -20,6 +20,7 @@ import {
 import { getOauthProfileFromOauthToken } from '../../services/oauth/getOauthProfile.js'
 import { OAuthService } from '../../services/oauth/index.js'
 import type { OAuthTokens } from '../../services/oauth/types.js'
+import { CLI_COMMAND_NAME } from '../../constants/product.js'
 import {
   clearOAuthTokenCache,
   getAnthropicApiKeyWithSource,
@@ -287,7 +288,7 @@ export async function authStatus(opts: {
     }
     if (!loggedIn) {
       process.stdout.write(
-        'Not logged in. Run claude auth login to authenticate.\n',
+        `Not logged in. Run ${CLI_COMMAND_NAME} auth login to authenticate.\n`,
       )
     }
   } else {

@@ -158,10 +158,12 @@
 - 已验证：`scripts/session-resume-smoke.ts` 已补齐 compact 后 resume 的大 transcript 变体，锁定 compact boundary + summary + preserved tail 的恢复链、pre-boundary metadata 回读与 stale usage 清零
 - 已验证：新增 `scripts/session-resume-worktree-smoke.ts`，在隔离 transcript 中注入 `worktree-state` 记录并确认 `loadConversationForResume()` 返回相同 `worktreeSession` 信息与 null 退出态
 - 已验证：新增 `scripts/session-continue-smoke.ts`，可在隔离配置目录中真实执行 `-p --continue` 并断言 transcript 继续追加而非新建会话
+- 已验证：`scripts/session-continue-smoke.ts` 已补齐 compact 后 continue 的大 transcript 变体，锁定 seeded compact boundary transcript 在 `-p --continue` 下仍会追加到原 session，而不是重新建链或丢失 post-compact 对话
 - 已验证：`bun run smoke:session-continue:no-serena` 已通过，测试时可配合 `NEKO_CODE_DISABLED_MCP_SERVERS=serena` 避免无关 MCP server 干扰
 - 已验证：新增 `scripts/plugin-cli-state-smoke.ts`，可在隔离配置目录中真实执行 `plugin marketplace add/remove`、`plugin install/uninstall`、`plugin enable/disable`，并在 `refreshActivePlugins()` 后断言命令能力随状态切换
 - 已验证：`bun run smoke:plugin-cli-state:no-serena` 已通过，测试时可继续配合 `NEKO_CODE_DISABLED_MCP_SERVERS=serena` 避免无关 MCP server 干扰
 - 已验证：`scripts/plugin-refresh-smoke.ts`、`scripts/lsp-refresh-smoke.ts` 与 `scripts/mcp-strict-config-smoke.ts` 现已纳入 `smoke:phase3-system-regression`，补齐 inline plugin refresh、LSP manager refresh 与 strict MCP config 三类隔离状态变体
+- 已验证：`scripts/plugin-state-smoke.ts` 已改为真实 stateful refresh 序列，锁定 disable/reenable 过程中 commands/agents/hooks 与 reconnect state 的同步收敛，不再用每轮重置的默认 app state 掩盖 stale cleanup 问题
 - 已验证：MCP strict-config 隔离 harness 已收口
 - 已验证：修补了 `--print` headless 入口未等待 `runHeadless(...)` 的收口问题，避免非交互执行链提前退出
 - 已验证：源码模式下补齐 `MACRO` bootstrap 与关键热路径兜底，`--print` / headless 主链已不再因 `MACRO is not defined` 在启动阶段中断

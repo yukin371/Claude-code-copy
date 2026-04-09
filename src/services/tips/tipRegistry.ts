@@ -10,6 +10,7 @@ import { shouldOfferTerminalSetup } from '../../commands/terminalSetup/terminalS
 import { getDesktopUpsellConfig } from '../../components/DesktopUpsell/DesktopUpsellStartup.js'
 import { color } from '../../components/design-system/color.js'
 import { shouldShowOverageCreditUpsell } from '../../components/LogoV2/OverageCreditUpsell.js'
+import { CLI_COMMAND_NAME } from '../../constants/product.js'
 import { getShortcutDisplay } from '../../keybindings/shortcutFormat.js'
 import { isKairosCronEnabled } from '../../tools/ScheduleCronTool/prompt.js'
 import { is1PApiCustomer } from '../../utils/auth.js'
@@ -378,7 +379,7 @@ const externalTips: Tip[] = [
   {
     id: 'continue',
     content: async () =>
-      'Run claude --continue or claude --resume to resume a conversation',
+      `Run ${CLI_COMMAND_NAME} --continue or ${CLI_COMMAND_NAME} --resume to resume a conversation`,
     cooldownSessions: 10,
     isRelevant: async () => true,
   },
