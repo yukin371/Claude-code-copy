@@ -18,6 +18,32 @@ const RULES: Rule[] = [
     needle: 'Run `claude update` to update.',
   },
   {
+    label: 'bridge login guidance uses legacy CLI auth command',
+    needle:
+      'Run `claude auth login` to sign in with your claude.ai account.',
+  },
+  {
+    label: 'bridge profile-scope guidance uses legacy setup-token command',
+    needle: 'Long-lived tokens (from `claude setup-token` or CLAUDE_CODE_OAUTH_TOKEN)',
+  },
+  {
+    label: 'bridge resume guidance uses legacy remote-control command',
+    needle: 'Resume this session by running `claude remote-control --continue`',
+  },
+  {
+    label: 'bridge trust guidance uses legacy main command',
+    needle: 'Please run `claude` in ',
+  },
+  {
+    label: 'bridge missing-session guidance uses legacy remote-control command',
+    needle:
+      'Run `claude remote-control` to start a new one.',
+  },
+  {
+    label: 'bridge expired-session guidance uses legacy login command',
+    needle: '(run `claude /login`).',
+  },
+  {
     label: 'bridge status prompt uses legacy CLI command',
     needle: 'run `claude update` to upgrade',
   },
@@ -161,6 +187,10 @@ const RULES: Rule[] = [
   {
     label: 'repl suspend message uses stale product name',
     needle: 'Claude Code has been suspended. Run `fg` to bring Claude Code back.',
+  },
+  {
+    label: 'auth status logged-out guidance uses legacy CLI auth command',
+    needle: 'Not logged in. Run claude auth login to authenticate.',
   },
 ]
 

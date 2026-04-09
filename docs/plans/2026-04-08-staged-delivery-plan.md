@@ -261,6 +261,7 @@
 - 已验证 `bun run smoke:distribution-readiness`
 - 已把 `doctor/install/update` 帮助入口纳入 source 与安装版 smoke，同时修补 `src/cli/update.ts`、`src/utils/doctorDiagnostic.ts` 中残留的旧命令提示，避免用户在分发/诊断路径看到 `claude` 入口
 - 已补齐 `scripts/analyze-text-hygiene.ts` / `scripts/check-text-hygiene.ts`，让 release-facing 文本卫生检查不再是悬空脚本，并可固定检查旧 `claude ...` 主入口提示是否回退
+- 已继续收口 bridge / auth 的用户可见旧命令提示，并把 Remote Control / auth status 的旧 `claude` 入口指导纳入文本卫生规则
 - 已继续收口用户可见品牌/路径尾项：`Doctor` dismiss 提示、通知标题、permission/hooks/trust dialog/memory/worktree/plugin/session-start UI 路径提示、`/insights` 命令描述、REPL 默认标题/挂起提示、keybindings schema 与 SDK settings source 描述均已切到 `Neko Code` / `.neko-code`
 - 已验证 `bun run analyze:text-hygiene`
 - 已验证 `bun run check:text-hygiene`
