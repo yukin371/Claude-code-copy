@@ -1,12 +1,17 @@
 #!/usr/bin/env bun
 
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { UUID } from 'node:crypto'
-import { createAssistantMessage, createUserMessage } from '../src/utils/messages.js'
+import {
+  createAssistantMessage,
+  createCompactBoundaryMessage,
+  createUserMessage,
+} from '../src/utils/messages.js'
 import { loadConversationForResume } from '../src/utils/conversationRecovery.js'
 import { getProjectDir } from '../src/utils/sessionStorage.js'
+import { SKIP_PRECOMPACT_THRESHOLD } from '../src/utils/sessionStoragePortable.js'
 import { setCwdState, setOriginalCwd } from '../src/bootstrap/state.js'
 
 type EnvKey =
@@ -18,6 +23,7 @@ type ResumeRun = {
   label: string
   sessionId: string
   messageTypes?: string[]
+  messageKinds?: string[]
   customTitle?: string
   mode?: string
   agentSetting?: string
@@ -31,22 +37,18 @@ function assert(condition: unknown, message: string): asserts condition {
   }
 }
 
-function createSerializedUserMessage({
-  sessionId,
-  cwd,
-  uuid,
-  timestamp,
-  content,
-  parentUuid,
-}: {
-  sessionId: string
-  cwd: string
-  uuid: UUID
-  timestamp: string
-  content: string
-  parentUuid: UUID | null
-}) {
-  const message = createUserMessage({ content, uuid, timestamp })
+function serializeTranscriptMessage<T extends { uuid: UUID | string; timestamp: string }>(
+  message: T,
+  {
+    sessionId,
+    cwd,
+    parentUuid,
+  }: {
+    sessionId: string
+    cwd: string
+    parentUuid: UUID | null
+  },
+) {
   return {
     ...message,
     parentUuid,
@@ -57,6 +59,32 @@ function createSerializedUserMessage({
   }
 }
 
+function createSerializedUserMessage({
+  sessionId,
+  cwd,
+  uuid,
+  timestamp,
+  content,
+  parentUuid,
+  isCompactSummary,
+}: {
+  sessionId: string
+  cwd: string
+  uuid: UUID
+  timestamp: string
+  content: string
+  parentUuid: UUID | null
+  isCompactSummary?: true
+}) {
+  const message = createUserMessage({
+    content,
+    uuid,
+    timestamp,
+    ...(isCompactSummary ? { isCompactSummary: true } : {}),
+  })
+  return serializeTranscriptMessage(message, { sessionId, cwd, parentUuid })
+}
+
 function createSerializedAssistantMessage({
   sessionId,
   cwd,
@@ -64,6 +92,7 @@ function createSerializedAssistantMessage({
   timestamp,
   content,
   parentUuid,
+  usage,
 }: {
   sessionId: string
   cwd: string
@@ -71,18 +100,13 @@ function createSerializedAssistantMessage({
   timestamp: string
   content: string
   parentUuid: UUID
+  usage?: Parameters<typeof createAssistantMessage>[0]['usage']
 }) {
-  const message = createAssistantMessage({ content })
-  return {
-    ...message,
-    uuid,
-    timestamp,
-    parentUuid,
-    cwd,
-    userType: 'external',
-    sessionId,
-    version: 'session-smoke',
-  }
+  const message = createAssistantMessage({ content, usage })
+  return serializeTranscriptMessage(
+    { ...message, uuid, timestamp },
+    { sessionId, cwd, parentUuid },
+  )
 }
 
 async function writeSessionFile({
@@ -193,6 +217,243 @@ async function runStoredSessionCase(
   }
 }
 
+function formatMessageKind(
+  message: NonNullable<Awaited<ReturnType<typeof loadConversationForResume>>>['messages'][number],
+): string {
+  if (message.type === 'system') {
+    return `system:${message.subtype}`
+  }
+  if (message.type === 'user' && message.isCompactSummary) {
+    return 'user:compact_summary'
+  }
+  return message.type
+}
+
+function flattenMessageText(
+  message: NonNullable<Awaited<ReturnType<typeof loadConversationForResume>>>['messages'][number],
+): string {
+  if (message.type === 'system') {
+    return typeof message.content === 'string' ? message.content : ''
+  }
+  const content = message.message.content
+  if (typeof content === 'string') {
+    return content
+  }
+  return content
+    .map(block => {
+      if (typeof block === 'string') {
+        return block
+      }
+      if (typeof block.text === 'string') {
+        return block.text
+      }
+      if ('summary' in block && typeof block.summary === 'string') {
+        return block.summary
+      }
+      return ''
+    })
+    .join('\n')
+}
+
+async function runCompactedLargeSessionCase(
+  workspaceDir: string,
+  sessionId: UUID,
+): Promise<ResumeRun> {
+  const introUserUuid = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' as UUID
+  const introAssistantUuid = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee' as UUID
+  const preservedUserUuid = 'ffffffff-ffff-4fff-8fff-ffffffffffff' as UUID
+  const preservedAssistantUuid = '12121212-1212-4212-8212-121212121212' as UUID
+  const summaryUuid = '13131313-1313-4313-8313-131313131313' as UUID
+  const postUserUuid = '14141414-1414-4414-8414-141414141414' as UUID
+  const postAssistantUuid = '15151515-1515-4515-8515-151515151515' as UUID
+  const largePreCompactText = 'legacy context '.repeat(
+    Math.ceil((SKIP_PRECOMPACT_THRESHOLD + 2048) / 'legacy context '.length),
+  )
+  const boundary = createCompactBoundaryMessage(
+    'manual',
+    6_144,
+    preservedAssistantUuid,
+    'Keep the latest exchange only.',
+    4,
+  )
+  boundary.timestamp = '2026-04-07T10:09:00.000Z'
+  boundary.compactMetadata = {
+    ...boundary.compactMetadata,
+    preservedSegment: {
+      headUuid: preservedUserUuid,
+      anchorUuid: summaryUuid,
+      tailUuid: preservedAssistantUuid,
+    },
+  }
+
+  const transcriptPath = await writeSessionFile({
+    workspaceDir,
+    sessionId,
+    lines: [
+      createSerializedUserMessage({
+        sessionId,
+        cwd: workspaceDir,
+        uuid: introUserUuid,
+        timestamp: '2026-04-07T10:00:00.000Z',
+        content: 'Pre-compact intro prompt',
+        parentUuid: null,
+      }),
+      createSerializedAssistantMessage({
+        sessionId,
+        cwd: workspaceDir,
+        uuid: introAssistantUuid,
+        timestamp: '2026-04-07T10:00:01.000Z',
+        content: largePreCompactText,
+        parentUuid: introUserUuid,
+      }),
+      createSerializedUserMessage({
+        sessionId,
+        cwd: workspaceDir,
+        uuid: preservedUserUuid,
+        timestamp: '2026-04-07T10:05:00.000Z',
+        content: 'Keep this latest user turn',
+        parentUuid: introAssistantUuid,
+      }),
+      createSerializedAssistantMessage({
+        sessionId,
+        cwd: workspaceDir,
+        uuid: preservedAssistantUuid,
+        timestamp: '2026-04-07T10:05:01.000Z',
+        content: 'Keep this latest assistant turn',
+        parentUuid: preservedUserUuid,
+        usage: {
+          input_tokens: 190_000,
+          output_tokens: 400,
+          cache_creation_input_tokens: 11,
+          cache_read_input_tokens: 29,
+        },
+      }),
+      {
+        type: 'custom-title',
+        sessionId,
+        customTitle: 'Compacted Resume Session',
+      },
+      {
+        type: 'agent-setting',
+        sessionId,
+        agentSetting: 'compact-agent',
+      },
+      {
+        type: 'mode',
+        sessionId,
+        mode: 'normal',
+      },
+      serializeTranscriptMessage(boundary, {
+        sessionId,
+        cwd: workspaceDir,
+        parentUuid: null,
+      }),
+      createSerializedUserMessage({
+        sessionId,
+        cwd: workspaceDir,
+        uuid: summaryUuid,
+        timestamp: '2026-04-07T10:09:01.000Z',
+        content: 'Compact summary: preserved latest exchange.',
+        parentUuid: boundary.uuid,
+        isCompactSummary: true,
+      }),
+      createSerializedUserMessage({
+        sessionId,
+        cwd: workspaceDir,
+        uuid: postUserUuid,
+        timestamp: '2026-04-07T10:10:00.000Z',
+        content: 'Continue after compact',
+        parentUuid: preservedAssistantUuid,
+      }),
+      createSerializedAssistantMessage({
+        sessionId,
+        cwd: workspaceDir,
+        uuid: postAssistantUuid,
+        timestamp: '2026-04-07T10:10:01.000Z',
+        content: 'Post-compact reply',
+        parentUuid: postUserUuid,
+      }),
+    ],
+  })
+
+  const transcriptStats = await stat(transcriptPath)
+  assert(
+    transcriptStats.size > SKIP_PRECOMPACT_THRESHOLD,
+    `Expected compacted smoke transcript to exceed ${SKIP_PRECOMPACT_THRESHOLD} bytes, got ${transcriptStats.size}`,
+  )
+
+  const result = await loadConversationForResume(sessionId, undefined)
+  assert(result, 'Expected compacted session lookup to return a session')
+  assert(
+    result.customTitle === 'Compacted Resume Session',
+    `Expected compacted session title to round-trip, got ${result.customTitle ?? '(none)'}`,
+  )
+  assert(
+    result.agentSetting === 'compact-agent',
+    `Expected compacted session agent setting to round-trip, got ${result.agentSetting ?? '(none)'}`,
+  )
+  assert(
+    result.mode === 'normal',
+    `Expected compacted session mode to round-trip, got ${result.mode ?? '(none)'}`,
+  )
+
+  const expectedUuids = [
+    boundary.uuid,
+    summaryUuid,
+    preservedUserUuid,
+    preservedAssistantUuid,
+    postUserUuid,
+    postAssistantUuid,
+  ]
+  const resumedChain = result.messages.filter(message =>
+    expectedUuids.includes(message.uuid as UUID),
+  )
+  const resumedKinds = resumedChain.map(formatMessageKind)
+  assert(
+    resumedKinds.join(',') ===
+      'system:compact_boundary,user:compact_summary,user,assistant,user,assistant',
+    `Expected compacted resume chain to start at boundary, got ${resumedKinds.join(',')}`,
+  )
+  assert(
+    !result.messages.some(
+      message =>
+        message.uuid === introUserUuid || message.uuid === introAssistantUuid,
+    ),
+    'Expected pre-compact messages to stay pruned after resume',
+  )
+
+  const resumedText = result.messages.map(flattenMessageText).join('\n')
+  assert(
+    !resumedText.includes('Pre-compact intro prompt'),
+    'Expected pre-compact prompt text to stay pruned after resume',
+  )
+
+  const preservedAssistant = result.messages.find(
+    message => message.uuid === preservedAssistantUuid,
+  )
+  assert(
+    preservedAssistant?.type === 'assistant',
+    'Expected preserved assistant message to survive compact resume',
+  )
+  const usage = preservedAssistant.message.usage ?? {}
+  assert(
+    usage.input_tokens === 0 &&
+      usage.output_tokens === 0 &&
+      usage.cache_creation_input_tokens === 0 &&
+      usage.cache_read_input_tokens === 0,
+    `Expected preserved assistant usage to be zeroed after compact resume, got ${JSON.stringify(usage)}`,
+  )
+
+  return {
+    label: 'compacted-large-session',
+    sessionId,
+    messageKinds: resumedKinds,
+    customTitle: result.customTitle,
+    mode: result.mode,
+    agentSetting: result.agentSetting,
+  }
+}
+
 async function runUserTailCase(
   workspaceDir: string,
   sessionId: UUID,
@@ -238,6 +499,9 @@ function formatRun(run: ResumeRun): string[] {
     ...(run.messageTypes
       ? [`  messageTypes=${run.messageTypes.join(',')}`]
       : []),
+    ...(run.messageKinds
+      ? [`  messageKinds=${run.messageKinds.join(',')}`]
+      : []),
     ...(run.customTitle ? [`  customTitle=${run.customTitle}`] : []),
     ...(run.agentSetting ? [`  agentSetting=${run.agentSetting}`] : []),
     ...(run.mode ? [`  mode=${run.mode}`] : []),
@@ -281,6 +545,10 @@ try {
     await runStoredSessionCase(
       workspaceDir,
       'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' as UUID,
+    ),
+    await runCompactedLargeSessionCase(
+      workspaceDir,
+      'abababab-abab-4bab-8bab-abababababab' as UUID,
     ),
     await runUserTailCase(
       workspaceDir,

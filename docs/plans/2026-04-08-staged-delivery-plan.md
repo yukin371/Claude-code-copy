@@ -250,6 +250,7 @@
 - 已验证 `bun run smoke:context-compact:no-serena`
 - 已新增 `scripts/phase3-system-regression-smoke.ts`，依次跑 continue/resume/plugin/LSP/MCP/context smoke 并汇总各 case 的退出码，形成 Phase 3 的系统回归入口
 - 已把 `scripts/session-resume-smoke.ts` 接入 `smoke:phase3-system-regression`，补齐 stored session、missing session 与 user-tail sentinel 三类 resume 基础变体
+- 已把 `scripts/session-resume-smoke.ts` 扩到 compact 后的大 transcript resume 变体，锁定 compact boundary + summary + preserved tail 的恢复链、pre-boundary metadata 回读与 preserved assistant stale usage 清零
 - 已验证 `bun run smoke:phase3-system-regression`
 - 已新增 `scripts/migrated-config-system-smoke.ts`，把 `smoke:claude-config:no-serena`、`smoke:mcp-state`、`smoke:plugin-install`、`smoke:plugin-state` 与 `smoke:phase3-system-regression` 串成一轮真实迁移配置下的系统回归
 - 已把 `scripts/plugin-state-smoke.ts` 接入 `smoke:migrated-config-system`，补齐 migrated config 下 plugin enable/disable 与 runtime capability 切换回归
