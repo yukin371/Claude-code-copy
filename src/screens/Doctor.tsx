@@ -24,6 +24,7 @@ import { type ContextWarnings, checkContextWarnings } from '../utils/doctorConte
 import { type DiagnosticInfo, getDoctorDiagnostic } from '../utils/doctorDiagnostic.js';
 import { validateBoundedIntEnvVar } from '../utils/envValidation.js';
 import { pathExists } from '../utils/file.js';
+import { PRODUCT_NAME } from '../constants/product.js';
 import { cleanupStaleLocks, getAllLockInfo, isPidBasedLockingEnabled, type LockInfo } from '../utils/nativeInstaller/pidLock.js';
 import { getInitialSettings } from '../utils/settings/settings.js';
 import { BASH_MAX_OUTPUT_DEFAULT, BASH_MAX_OUTPUT_UPPER_LIMIT } from '../utils/shell/outputLimits.js';
@@ -251,7 +252,7 @@ export function Doctor(t0) {
   let t7;
   if ($[11] !== onDone) {
     t7 = () => {
-      onDone("Claude Code diagnostics dismissed", {
+      onDone(`${PRODUCT_NAME} diagnostics dismissed`, {
         display: "system"
       });
     };

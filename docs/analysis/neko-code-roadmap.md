@@ -154,11 +154,13 @@
 - 已验证：plugin refresh 隔离 smoke 已收口
 - 已验证：LSP refresh 隔离 smoke 已收口，并修补了重复 scope 回归
 - 已验证：session resume 隔离 harness 已收口，并修补了 direct resume metadata 漏传
+- 已验证：`scripts/session-resume-smoke.ts` 现已纳入 `smoke:phase3-system-regression`，补齐 stored session、missing session 与 user-tail sentinel 三类 resume 基础变体
 - 已验证：新增 `scripts/session-resume-worktree-smoke.ts`，在隔离 transcript 中注入 `worktree-state` 记录并确认 `loadConversationForResume()` 返回相同 `worktreeSession` 信息与 null 退出态
 - 已验证：新增 `scripts/session-continue-smoke.ts`，可在隔离配置目录中真实执行 `-p --continue` 并断言 transcript 继续追加而非新建会话
 - 已验证：`bun run smoke:session-continue:no-serena` 已通过，测试时可配合 `NEKO_CODE_DISABLED_MCP_SERVERS=serena` 避免无关 MCP server 干扰
 - 已验证：新增 `scripts/plugin-cli-state-smoke.ts`，可在隔离配置目录中真实执行 `plugin marketplace add/remove`、`plugin install/uninstall`、`plugin enable/disable`，并在 `refreshActivePlugins()` 后断言命令能力随状态切换
 - 已验证：`bun run smoke:plugin-cli-state:no-serena` 已通过，测试时可继续配合 `NEKO_CODE_DISABLED_MCP_SERVERS=serena` 避免无关 MCP server 干扰
+- 已验证：`scripts/plugin-refresh-smoke.ts`、`scripts/lsp-refresh-smoke.ts` 与 `scripts/mcp-strict-config-smoke.ts` 现已纳入 `smoke:phase3-system-regression`，补齐 inline plugin refresh、LSP manager refresh 与 strict MCP config 三类隔离状态变体
 - 已验证：MCP strict-config 隔离 harness 已收口
 - 已验证：修补了 `--print` headless 入口未等待 `runHeadless(...)` 的收口问题，避免非交互执行链提前退出
 - 已验证：源码模式下补齐 `MACRO` bootstrap 与关键热路径兜底，`--print` / headless 主链已不再因 `MACRO is not defined` 在启动阶段中断
@@ -181,8 +183,9 @@
 - 已验证：ToolSearch auto-threshold 计算现已在 `query` / `compact` / context analysis 等路径透传 `querySource`
 - 已验证：新增 `scripts/context-compact-smoke.ts`，构造 compact boundary 前后的消息并借助 `getMessagesAfterCompactBoundary()` 验证 post-boundary 视图真正裁掉旧消息、compact summary 保持可见，stub collapse 不改变 helper 输出
 - 已验证：`bun run smoke:context-compact:no-serena`
-- 已验证：新增 `scripts/phase3-system-regression-smoke.ts`，顺序调用 continue/resume/plugin/context smoke，照会执行结果并输出 PASS/FAIL 汇总
-- 已验证：新增 `scripts/migrated-config-system-smoke.ts`，顺序调用 `smoke:claude-config:no-serena`、`smoke:mcp-state`、`smoke:plugin-install` 与 `smoke:phase3-system-regression`，形成一轮“复制现有 Claude 配置后跑常见工作流”的系统回归入口
+- 已验证：新增 `scripts/phase3-system-regression-smoke.ts`，顺序调用 continue/resume/plugin/LSP/MCP/context smoke，照会执行结果并输出 PASS/FAIL 汇总
+- 已验证：新增 `scripts/migrated-config-system-smoke.ts`，顺序调用 `smoke:claude-config:no-serena`、`smoke:mcp-state`、`smoke:plugin-install`、`smoke:plugin-state` 与 `smoke:phase3-system-regression`，形成一轮“复制现有 Claude 配置后跑常见工作流”的系统回归入口
+- 已验证：`scripts/plugin-state-smoke.ts` 现已纳入 `smoke:migrated-config-system`，补齐 migrated config 下 plugin enable/disable 与 runtime capability 切换回归
 - 已验证：`bun run smoke:migrated-config-system`
 - 已验证：SDK `get_context_usage` / 非交互 context analysis 路径现已显式透传 `sdk` querySource
 - 已验证：Doctor 的 MCP context warning 诊断路径现已使用显式内部 source（`doctor_context_warning`）
@@ -211,6 +214,12 @@
 - 已落地：新增 `.github/workflows/release-candidate.yml`，在 `windows-latest` 上执行 `typecheck`、`smoke:release-preflight`、`stage-release-candidate`，并上传 unsigned release candidate artifact
 - 已验证：新增 `scripts/release-preflight.ts`，顺序执行 `bun run build:native`、`bun run smoke:distribution-readiness`，再校验 `dist/neko-code.exe`、`scripts/install-local-launcher.ps1` 主命令和 README / 关键 release-facing 文本一致性，形成“本地候选发布物 gate”
 - 已验证：`bun run smoke:release-preflight`
+- 已落地：补齐 `scripts/analyze-text-hygiene.ts`、`scripts/check-text-hygiene.ts` 与共享规则库，避免 `package.json` 中的文本卫生入口继续悬空
+- 已收口：`Doctor` dismiss 提示、通知标题、permission/hooks/trust dialog/memory/worktree/plugin/session-start UI 路径提示、keybindings schema 与 SDK settings source 描述等用户可见文案已改为 `Neko Code` / `.neko-code` 路径，不再继续直露 `Claude Code` / `.claude`
+- 已验证：`bun run analyze:text-hygiene`
+- 已验证：`bun run check:text-hygiene`
+- 已验证：本轮再次通过 `bun run smoke:distribution-readiness` 与 `bun run smoke:release-preflight`
+- 已验证：本轮再次通过 `bun run typecheck`
 
 更多已确认完成项见归档文档，不再在主 roadmap 中重复展开。
 

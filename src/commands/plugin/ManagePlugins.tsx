@@ -23,6 +23,7 @@ import type { MCPServerConnection, McpClaudeAIProxyServerConfig, McpHTTPServerCo
 import { filterToolsByServer } from '../../services/mcp/utils.js';
 import { disablePluginOp, enablePluginOp, getPluginInstallationFromV2, isInstallableScope, isPluginEnabledAtProjectScope, uninstallPluginOp, updatePluginOp } from '../../services/plugins/pluginOperations.js';
 import { useAppState } from '../../state/AppState.js';
+import { PROJECT_CONFIG_DIR_NAME } from '../../constants/product.js';
 import type { Tool } from '../../Tool.js';
 import type { LoadedPlugin, PluginError } from '../../types/plugin.js';
 import { count } from '../../utils/array.js';
@@ -1043,7 +1044,7 @@ export function ManagePlugins({
           {
             if (isBuiltin) break; // guarded above; narrows pluginScope
             if (!isInstallableScope(pluginScope)) break;
-            // If the plugin is enabled in .claude/settings.json (shared with the
+            // If the plugin is enabled in .neko-code/settings.json (shared with the
             // team), divert to a confirmation dialog that offers to disable in
             // settings.local.json instead. Check the settings file directly —
             // `pluginScope` (from installed_plugins.json) can be 'user' even when
@@ -1523,7 +1524,7 @@ export function ManagePlugins({
         return;
       }
       clearAllCaches();
-      setResult(`✓ Disabled ${selectedPlugin.plugin.name} in .claude/settings.local.json. Run /reload-plugins to apply.`);
+      setResult(`✓ Disabled ${selectedPlugin.plugin.name} in .neko-code/settings.local.json. Run /reload-plugins to apply.`);
       if (onManageComplete) void onManageComplete();
       setParentViewState({
         type: 'menu'
@@ -1762,11 +1763,11 @@ export function ManagePlugins({
   if (viewState === 'confirm-project-uninstall' && selectedPlugin) {
     return <Box flexDirection="column">
         <Text bold color="warning">
-          {selectedPlugin.plugin.name} is enabled in .claude/settings.json
+          {selectedPlugin.plugin.name} is enabled in {PROJECT_CONFIG_DIR_NAME}/settings.json
           (shared with your team)
         </Text>
         <Box marginTop={1} flexDirection="column">
-          <Text>Disable it just for you in .claude/settings.local.json?</Text>
+          <Text>Disable it just for you in {PROJECT_CONFIG_DIR_NAME}/settings.local.json?</Text>
           <Text dimColor>
             This has the same effect as uninstalling, without affecting other
             contributors.

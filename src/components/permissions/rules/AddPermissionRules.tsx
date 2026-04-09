@@ -2,6 +2,7 @@ import { c as _c } from "react/compiler-runtime";
 import * as React from 'react';
 import { useCallback } from 'react';
 import { Select } from '../../../components/CustomSelect/select.js';
+import { PROJECT_CONFIG_DIR_NAME } from '../../../constants/product.js';
 import { Box, Text } from '../../../ink.js';
 import type { ToolPermissionContext } from '../../../Tool.js';
 import type { PermissionBehavior, PermissionRule, PermissionRuleValue } from '../../../utils/permissions/PermissionRule.js';
@@ -32,7 +33,7 @@ export function optionForPermissionSaveDestination(saveDestination: EditableSett
     case 'userSettings':
       return {
         label: 'User settings',
-        description: `Saved in at ~/.claude/settings.json`,
+        description: `Saved in ~/${PROJECT_CONFIG_DIR_NAME}/settings.json`,
         value: saveDestination
       };
   }

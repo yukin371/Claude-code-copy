@@ -6,6 +6,7 @@
 import figures from 'figures'
 import { basename, dirname } from 'path'
 import { setUseCoworkPlugins } from '../../bootstrap/state.js'
+import { CLI_COMMAND_NAME } from '../../constants/product.js'
 import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_PII_TAGGED,
@@ -352,7 +353,7 @@ export async function pluginListHandler(options: {
     // through to the session section so the failure is visible.
     if (inlineLoadErrors.length === 0) {
       cliOk(
-        'No plugins installed. Use `claude plugin install` to install a plugin.',
+        `No plugins installed. Use \`${CLI_COMMAND_NAME} plugin install\` to install a plugin.`,
       )
     }
   }

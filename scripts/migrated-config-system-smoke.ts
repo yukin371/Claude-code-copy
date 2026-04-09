@@ -33,6 +33,10 @@ const commands = [
     args: ['bun', 'run', 'smoke:plugin-install'],
   },
   {
+    label: 'plugin-state',
+    args: ['bun', 'run', 'smoke:plugin-state'],
+  },
+  {
     label: 'phase3-system-regression',
     args: ['bun', 'run', 'smoke:phase3-system-regression'],
   },

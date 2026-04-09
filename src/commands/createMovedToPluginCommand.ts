@@ -1,6 +1,7 @@
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.js'
 import type { Command } from '../commands.js'
 import type { ToolUseContext } from '../Tool.js'
+import { CLI_COMMAND_NAME } from '../constants/product.js'
 
 type Options = {
   name: string
@@ -48,7 +49,7 @@ export function createMovedToPluginCommand({
             text: `This command has been moved to a plugin. Tell the user:
 
 1. To install the plugin, run:
-   claude plugin install ${pluginName}@claude-code-marketplace
+   ${CLI_COMMAND_NAME} plugin install ${pluginName}@claude-code-marketplace
 
 2. After installation, use /${pluginName}:${pluginCommand} to run this command
 

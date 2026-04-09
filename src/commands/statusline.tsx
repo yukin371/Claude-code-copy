@@ -1,5 +1,6 @@
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/index.mjs';
 import type { Command } from '../commands.js';
+import { PROJECT_CONFIG_DIR_NAME } from '../constants/product.js';
 import { AGENT_TOOL_NAME } from '../tools/AgentTool/constants.js';
 const statusline = {
   type: 'prompt',
@@ -9,7 +10,7 @@ const statusline = {
   aliases: [],
   name: 'statusline',
   progressMessage: 'setting up statusLine',
-  allowedTools: [AGENT_TOOL_NAME, 'Read(~/**)', 'Edit(~/.claude/settings.json)'],
+  allowedTools: [AGENT_TOOL_NAME, 'Read(~/**)', `Edit(~/${PROJECT_CONFIG_DIR_NAME}/settings.json)`],
   source: 'builtin',
   disableNonInteractive: true,
   async getPromptForCommand(args): Promise<ContentBlockParam[]> {

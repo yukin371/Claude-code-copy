@@ -3,6 +3,7 @@ import { constants as fsConstants } from 'fs'
 import { access, writeFile } from 'fs/promises'
 import { homedir } from 'os'
 import { join } from 'path'
+import { CLI_COMMAND_NAME, PRODUCT_NAME } from 'src/constants/product.js'
 import { getDynamicConfig_BLOCKS_ON_INIT } from 'src/services/analytics/growthbook.js'
 import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
@@ -104,11 +105,11 @@ export async function assertMinVersion(): Promise<void> {
     ) {
       // biome-ignore lint/suspicious/noConsole:: intentional console output
       console.error(`
-It looks like your version of Claude Code (${currentVersion}) needs an update.
+It looks like your version of ${PRODUCT_NAME} (${currentVersion}) needs an update.
 A newer version (${versionConfig.minVersion} or higher) is required to continue.
 
 To update, please run:
-    claude update
+    ${CLI_COMMAND_NAME} update
 
 This will ensure you have access to the latest features and improvements.
 `)
@@ -521,13 +522,13 @@ export async function installGlobalPackage(
       console.error(`
 Error: Windows NPM detected in WSL
 
-You're running Claude Code in WSL but using the Windows NPM installation from /mnt/c/.
+You're running ${PRODUCT_NAME} in WSL but using the Windows NPM installation from /mnt/c/.
 This configuration is not supported for updates.
 
 To fix this issue:
   1. Install Node.js within your Linux distribution: e.g. sudo apt install nodejs npm
   2. Make sure Linux NPM is in your PATH before the Windows version
-  3. Try updating again with 'claude update'
+  3. Try updating again with '${CLI_COMMAND_NAME} update'
 `)
       return 'install_failed'
     }

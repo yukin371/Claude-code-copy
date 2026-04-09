@@ -120,6 +120,8 @@ bun run smoke:distribution-readiness
 bun run smoke:native-installer-local-bundle
 bun run smoke:native-installer-release-publication
 bun run smoke:release-preflight
+bun run analyze:text-hygiene
+bun run check:text-hygiene
 bun run typecheck
 bun run test:routing
 bun run smoke:claude-config

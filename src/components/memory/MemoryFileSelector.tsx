@@ -6,6 +6,7 @@ import { join } from 'path';
 import * as React from 'react';
 import { use, useEffect, useState } from 'react';
 import { getOriginalCwd } from '../../bootstrap/state.js';
+import { PROJECT_CONFIG_DIR_NAME } from '../../constants/product.js';
 import { useExitOnCtrlCDWithKeybindings } from '../../hooks/useExitOnCtrlCDWithKeybindings.js';
 import { Box, Text } from '../../ink.js';
 import { useKeybinding } from '../../keybindings/useKeybinding.js';
@@ -88,7 +89,7 @@ export function MemoryFileSelector(t0) {
     let description;
     const isGit = projectIsInGitRepo(getOriginalCwd());
     if (file.type === "User" && !file.isNested) {
-      description = "Saved in ~/.claude/CLAUDE.md";
+      description = `Saved in ~/${PROJECT_CONFIG_DIR_NAME}/CLAUDE.md`;
     } else {
       if (file.type === "Project" && !file.isNested && file.path === projectMemoryPath) {
         description = `${isGit ? "Checked in at" : "Saved in"} ./CLAUDE.md`;

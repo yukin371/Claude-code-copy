@@ -4,8 +4,12 @@ import { spawn } from 'bun'
 
 const commands = [
   { label: 'session-continue', args: ['bun', 'run', 'smoke:session-continue:no-serena'] },
+  { label: 'session-resume', args: ['bun', 'run', 'smoke:session-resume'] },
   { label: 'session-resume-worktree', args: ['bun', 'run', 'smoke:session-resume-worktree:no-serena'] },
+  { label: 'plugin-refresh', args: ['bun', 'run', 'smoke:plugin-refresh'] },
   { label: 'plugin-cli-state', args: ['bun', 'run', 'smoke:plugin-cli-state:no-serena'] },
+  { label: 'lsp-refresh', args: ['bun', 'run', 'smoke:lsp-refresh'] },
+  { label: 'mcp-strict-config', args: ['bun', 'run', 'smoke:mcp-strict-config'] },
   { label: 'context-compact', args: ['bun', 'run', 'smoke:context-compact:no-serena'] },
 ]
 

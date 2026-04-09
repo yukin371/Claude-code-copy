@@ -245,15 +245,23 @@
 - 已新增 `scripts/plugin-cli-state-smoke.ts`，在隔离 `workspace/config/plugin-cache` 中真实执行 `plugin marketplace add/remove`、`plugin install/uninstall`、`plugin enable/disable`
 - 已把 plugin CLI state smoke 的能力校验收敛到“CLI 写状态 + `refreshActivePlugins()` apply 后断言命令能力变化”，覆盖 Layer 2 写入与 Layer 3 应用的真实闭环
 - 已验证 `bun run smoke:plugin-cli-state:no-serena`
+- 已把 `scripts/plugin-refresh-smoke.ts`、`scripts/lsp-refresh-smoke.ts` 与 `scripts/mcp-strict-config-smoke.ts` 接入 `smoke:phase3-system-regression`，补齐 inline plugin refresh、LSP manager refresh 与 strict MCP config 三类隔离状态变体
 - 已新增 `scripts/context-compact-smoke.ts`，构造 compact boundary 前后的消息并借助 `getMessagesAfterCompactBoundary()` 断言 post-boundary 视图真正裁掉旧消息、compact summary 顺序稳定、stub collapse 不改变 helper 输出
 - 已验证 `bun run smoke:context-compact:no-serena`
-- 已新增 `scripts/phase3-system-regression-smoke.ts`，依次跑 continue/resume/plugin/context smoke 并汇总各 case 的退出码，形成 Phase 3 的系统回归入口
+- 已新增 `scripts/phase3-system-regression-smoke.ts`，依次跑 continue/resume/plugin/LSP/MCP/context smoke 并汇总各 case 的退出码，形成 Phase 3 的系统回归入口
+- 已把 `scripts/session-resume-smoke.ts` 接入 `smoke:phase3-system-regression`，补齐 stored session、missing session 与 user-tail sentinel 三类 resume 基础变体
 - 已验证 `bun run smoke:phase3-system-regression`
-- 已新增 `scripts/migrated-config-system-smoke.ts`，把 `smoke:claude-config:no-serena`、`smoke:mcp-state`、`smoke:plugin-install` 与 `smoke:phase3-system-regression` 串成一轮真实迁移配置下的系统回归
+- 已新增 `scripts/migrated-config-system-smoke.ts`，把 `smoke:claude-config:no-serena`、`smoke:mcp-state`、`smoke:plugin-install`、`smoke:plugin-state` 与 `smoke:phase3-system-regression` 串成一轮真实迁移配置下的系统回归
+- 已把 `scripts/plugin-state-smoke.ts` 接入 `smoke:migrated-config-system`，补齐 migrated config 下 plugin enable/disable 与 runtime capability 切换回归
 - 已验证 `bun run smoke:migrated-config-system`
 - 已新增 `scripts/distribution-readiness-smoke.ts`，把 no-serena help 命令、`smoke:migrated-config-system`、`smoke:native-distribution:no-serena` 与 `smoke:native-local-install:no-serena` 串成更接近“正式可用”门槛的聚合回归
 - 已验证 `bun run smoke:distribution-readiness`
 - 已把 `doctor/install/update` 帮助入口纳入 source 与安装版 smoke，同时修补 `src/cli/update.ts`、`src/utils/doctorDiagnostic.ts` 中残留的旧命令提示，避免用户在分发/诊断路径看到 `claude` 入口
+- 已补齐 `scripts/analyze-text-hygiene.ts` / `scripts/check-text-hygiene.ts`，让 release-facing 文本卫生检查不再是悬空脚本，并可固定检查旧 `claude ...` 主入口提示是否回退
+- 已继续收口用户可见品牌/路径尾项：`Doctor` dismiss 提示、通知标题、permission/hooks/trust dialog/memory/worktree/plugin/session-start UI 路径提示、keybindings schema 与 SDK settings source 描述均已切到 `Neko Code` / `.neko-code`
+- 已验证 `bun run analyze:text-hygiene`
+- 已验证 `bun run check:text-hygiene`
+- 已验证 `bun run typecheck`
 - 已新增 `scripts/session-resume-worktree-smoke.ts`，在隔离 transcript 中写入 `worktree-state` 记录并验证 `loadConversationForResume()` correctly restores the persisted worktree session or records exits
 - 已验证 `bun run smoke:session-resume-worktree:no-serena`
 
@@ -319,6 +327,7 @@
 - 已落地：新增 `.github/workflows/release-candidate.yml`，在 `windows-latest` 上执行 `typecheck`、`smoke:release-preflight`、`stage-release-candidate`，并上传 unsigned release candidate artifact
 - 已验证：新增 `scripts/release-preflight.ts`，顺序执行 `build:native`、`smoke:distribution-readiness`，并额外校验 `dist/neko-code.exe`、`scripts/install-local-launcher.ps1` 主命令与 README / 关键 release-facing 文本一致性，形成“本地候选发布物 gate”
 - 已验证：`bun run smoke:release-preflight`
+- 已验证：本轮再次通过 `bun run smoke:distribution-readiness` 与 `bun run smoke:release-preflight`
 - 已验证：本轮 `dist/neko-code.exe -p --max-turns 1 "echo native smoke"` 会在命中 `max-turns` 限制时退出，并且源码入口 `bun src/entrypoints/cli.tsx -p --max-turns 1 "echo source smoke"` 则抛出完全相同的 `Error: Reached max turns (1)` 结果，说明当前失败属于通用行为而非编译产物里程碑差异
 
 ### Exit Conditions

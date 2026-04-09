@@ -4,6 +4,7 @@
  */
 
 import { z } from 'zod/v4'
+import { PRODUCT_NAME } from '../constants/product.js'
 import { lazySchema } from '../utils/lazySchema.js'
 
 /**
@@ -224,7 +225,7 @@ export const KeybindingsSchema = lazySchema(() =>
         .describe('Array of keybinding blocks by context'),
     })
     .describe(
-      'Claude Code keybindings configuration. Customize keyboard shortcuts by context.',
+      `${PRODUCT_NAME} keybindings configuration. Customize keyboard shortcuts by context.`,
     ),
 )
 

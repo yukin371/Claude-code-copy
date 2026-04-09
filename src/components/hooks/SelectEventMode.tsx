@@ -11,6 +11,7 @@ import { c as _c } from "react/compiler-runtime";
 import figures from 'figures';
 import * as React from 'react';
 import type { HookEvent } from 'src/entrypoints/agentSdkTypes.js';
+import { PROJECT_CONFIG_DIR_NAME } from 'src/constants/product.js';
 import type { HookEventMetadata } from 'src/utils/hooks/hooksConfigManager.js';
 import { Box, Link, Text } from '../../ink.js';
 import { plural } from '../../utils/stringUtils.js';
@@ -45,7 +46,7 @@ export function SelectEventMode(t0) {
   const subtitle = `${totalHooksCount} ${t1} configured`;
   let t2;
   if ($[2] !== restrictedByPolicy) {
-    t2 = restrictedByPolicy && <Box flexDirection="column"><Text color="suggestion">{figures.info} Hooks Restricted by Policy</Text><Text dimColor={true}>Only hooks from managed settings can run. User-defined hooks from ~/.claude/settings.json, .claude/settings.json, and .claude/settings.local.json are blocked.</Text></Box>;
+    t2 = restrictedByPolicy && <Box flexDirection="column"><Text color="suggestion">{figures.info} Hooks Restricted by Policy</Text><Text dimColor={true}>{`Only hooks from managed settings can run. User-defined hooks from ~/${PROJECT_CONFIG_DIR_NAME}/settings.json, ${PROJECT_CONFIG_DIR_NAME}/settings.json, and ${PROJECT_CONFIG_DIR_NAME}/settings.local.json are blocked.`}</Text></Box>;
     $[2] = restrictedByPolicy;
     $[3] = t2;
   } else {

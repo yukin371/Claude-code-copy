@@ -4,6 +4,7 @@ import {
   getDynamicConfig_CACHED_MAY_BE_STALE,
   getFeatureValue_CACHED_MAY_BE_STALE,
 } from '../services/analytics/growthbook.js'
+import { CLI_COMMAND_NAME, PRODUCT_NAME } from '../constants/product.js'
 // Namespace import breaks the bridgeEnabled → auth → config → bridgeEnabled
 // cycle — authModule.foo is a live binding, so by the time the helpers below
 // call it, auth.js is fully loaded. Previously used require() for the same
@@ -166,7 +167,7 @@ export function checkBridgeMinVersion(): string | null {
       minVersion: string
     }>('tengu_bridge_min_version', { minVersion: '0.0.0' })
     if (config.minVersion && lt(MACRO.VERSION, config.minVersion)) {
-      return `Your version of Claude Code (${MACRO.VERSION}) is too old for Remote Control.\nVersion ${config.minVersion} or higher is required. Run \`claude update\` to update.`
+      return `Your version of ${PRODUCT_NAME} (${MACRO.VERSION}) is too old for Remote Control.\nVersion ${config.minVersion} or higher is required. Run \`${CLI_COMMAND_NAME} update\` to update.`
     }
   }
   return null

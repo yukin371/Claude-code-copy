@@ -1,4 +1,5 @@
 import type { TerminalNotification } from '../ink/useTerminalNotification.js'
+import { PRODUCT_NAME } from '../constants/product.js'
 import { getGlobalConfig } from '../utils/config.js'
 import { env } from '../utils/env.js'
 import { execFileNoThrow } from '../utils/execFileNoThrow.js'
@@ -35,7 +36,7 @@ export async function sendNotification(
   })
 }
 
-const DEFAULT_TITLE = 'Claude Code'
+const DEFAULT_TITLE = PRODUCT_NAME
 
 async function sendToChannel(
   channel: string,

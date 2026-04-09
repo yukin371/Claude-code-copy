@@ -8,6 +8,7 @@
  */
 
 import { z } from 'zod/v4'
+import { PROJECT_CONFIG_DIR_NAME } from '../../constants/product.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 
 // ============================================================================
@@ -1191,9 +1192,9 @@ export const SettingSourceSchema = lazySchema(() =>
     .enum(['user', 'project', 'local'])
     .describe(
       'Source for loading filesystem-based settings. ' +
-        "'user' - Global user settings (~/.claude/settings.json). " +
-        "'project' - Project settings (.claude/settings.json). " +
-        "'local' - Local settings (.claude/settings.local.json).",
+        `'user' - Global user settings (~/${PROJECT_CONFIG_DIR_NAME}/settings.json). ` +
+        `'project' - Project settings (${PROJECT_CONFIG_DIR_NAME}/settings.json). ` +
+        `'local' - Local settings (${PROJECT_CONFIG_DIR_NAME}/settings.local.json).`,
     ),
 )
 
