@@ -108,10 +108,13 @@ bun run build:local-release-bundle
 bun run stage:release-candidate
 bun run stage:release-publication
 bun run stage:release-deploy
+bun run release:deploy-publish -- --target-root C:\path\to\publish-root
 bun run stage:github-release
+bun run scripts/publish-github-release.ts --version 0.1.0 --dry-run
 bun run release:apply-signed-artifact -- --signed-binary C:\path\to\signed.exe
 bun run smoke:signed-release-publication-workflow
 bun run smoke:stage-github-release
+bun run smoke:publish-github-release
 bun run smoke:native-update-cli-github-release
 bun run smoke:release-deploy-publish
 bun run smoke:native-update-cli-release-deploy
@@ -375,6 +378,14 @@ bun run stage:release-deploy
 - `upload-manifest.json`：声明每个 payload 文件应该上传到的目标相对路径
 - `release-deploy.json`：说明当前 deploy 目录使用的签名状态、主 binary、payload 指针与上传入口
 
+真正发布到本地镜像目录时，可以直接执行：
+
+```bash
+bun run release:deploy-publish -- --target-root C:\path\to\publish-root
+```
+
+该命令会严格按 `upload-manifest.json` 把 `payload/` 映射到目标根目录，等价于把 deploy 目录发布成一个可被 native installer / `neko update` 消费的静态发布源。
+
 其中 `bun run smoke:release-deploy-publish` 会严格按 `upload-manifest.json` 把 `payload/` 映射到本地 HTTP 根目录，再让 native installer 真实下载安装，验证 deploy 目录已经足够作为发布上传输入。
 
 其中 `bun run smoke:native-update-cli-release-deploy` 会在隔离环境里先从 deploy 根目录完成 native 安装，再直接执行已安装的 `neko update`，验证 CLI 自身的 native update 路径能消费这套本地发布源。
@@ -390,7 +401,8 @@ CI 骨架：
 - `release-signed-publication.yml` 可手动输入 version、unsigned RC 所在 run id、signed exe 所在 run id 与 artifact 名称，自动下载两侧 artifact，执行 `apply-signed-release-artifact -> stage:native-installer -> stage-release-deploy`，再跑 signed publication / installer / deploy / native update smoke，并重新上传 signed 版 `release-candidate`、`release-publication`、`native-installer`、`release-deploy`
 - 本地也可先跑 `bun run smoke:signed-release-publication-workflow`，模拟 GitHub 下载 unsigned artifact 与 signed exe 后的整条 signed publication/deploy 流程
 - `stage:github-release` 会把 signed candidate/publication/deploy/native-installer 产物整理成 `dist/github-release/<version>/`，其中包含 `portable-installer.zip`，输出 GitHub Release 可上传资产、checksums 和 release notes
-- `github-release-publish.yml` 可手动输入 version、signed publication run id，以及 `draft` / `prerelease` 开关；它会下载 signed artifacts，执行 `stage:github-release`，校验 `smoke:stage-github-release`，然后创建或更新 `v<version>` GitHub Release
+- `github-release-publish.yml` 可手动输入 version 与 signed publication run id；它会下载 signed artifacts，执行 `stage:github-release`，校验 `smoke:stage-github-release` / `smoke:publish-github-release`，然后创建或更新 `v<version>` GitHub Release
+- `scripts/publish-github-release.ts` 负责真正的 GitHub Release 发布命令拼装；首次创建 release 时会连同所有 staged assets 一起上传，不会出现“创建成功但没有资产”的空 release
 - `github-release-promote.yml` 可在已有 `v<version>` release 上单独调整 `draft` / `prerelease` / `latest`，把 prerelease 升级为正式 stable，或把草稿 release 发布出去
 - `smoke:native-update-cli-github-release` 会用本地假 GitHub Releases API 校验：已安装的 `neko update` 能直接消费 GitHub Release 资产
 - `smoke:promote-github-release` 会校验 GitHub Release promotion 命令行计划，避免 promote workflow 参数漂移

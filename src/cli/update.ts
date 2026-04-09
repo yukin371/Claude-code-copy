@@ -2,6 +2,7 @@ import chalk from 'chalk'
 import { logEvent } from 'src/services/analytics/index.js'
 import {
   getLatestVersion,
+  getLatestVersionFromNativeSource,
   type InstallStatus,
   installGlobalPackage,
 } from 'src/utils/autoUpdater.js'
@@ -131,7 +132,7 @@ export async function update() {
   // Check if running from a package manager
   if (diagnostic.installationType === 'package-manager') {
     const packageManager = await getPackageManager()
-    const latest = await getLatestVersion(channel)
+    const latest = await getLatestVersionFromNativeSource(channel)
     const packageManagerLabel =
       packageManager === 'unknown'
         ? 'an external package manager'

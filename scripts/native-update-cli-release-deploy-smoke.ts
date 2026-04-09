@@ -1,9 +1,10 @@
 #!/usr/bin/env bun
 
 import { existsSync } from 'node:fs'
-import { copyFile, mkdtemp, mkdir, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, extname, join, resolve } from 'node:path'
+import { createHash } from 'node:crypto'
+import { extname, isAbsolute, join, relative, resolve } from 'node:path'
 
 type SmokeOptions = {
   keepTemp: boolean
@@ -15,14 +16,6 @@ type DeployMetadata = {
   platform: string
   signed: boolean
   publishedBinary: string
-}
-
-type UploadManifest = {
-  version: string
-  entries: Array<{
-    source: string
-    destination: string
-  }>
 }
 
 type CommandResult = {
@@ -84,6 +77,115 @@ function getContentType(path: string): string {
   return 'text/plain; charset=utf-8'
 }
 
+function isPathInsideRoot(rootPath: string, candidatePath: string): boolean {
+  const normalizedRoot = resolve(rootPath)
+  const normalizedCandidate = resolve(candidatePath)
+  const relativePath = relative(normalizedRoot, normalizedCandidate)
+
+  return (
+    relativePath === ''
+    || (!relativePath.startsWith('..') && !isAbsolute(relativePath))
+  )
+}
+
+function getNextPatchVersion(version: string): string {
+  const match = version.match(/^(\d+)\.(\d+)\.(\d+)(.*)?$/)
+  if (!match) {
+    throw new Error(`Unsupported semver for upgrade smoke: ${version}`)
+  }
+
+  const [, major, minor, patch, suffix = ''] = match
+  return `${major}.${minor}.${Number(patch) + 1}${suffix}`
+}
+
+async function sha256(filePath: string): Promise<string> {
+  const content = await readFile(filePath)
+  return createHash('sha256').update(content).digest('hex')
+}
+
+async function stageSyntheticUpgrade(
+  repoRoot: string,
+  publishRoot: string,
+  platform: string,
+  nextVersion: string,
+): Promise<void> {
+  const nextBinaryDir = join(publishRoot, nextVersion, platform)
+  const nextBinaryPath = join(nextBinaryDir, 'neko.exe')
+  const nextManifestPath = join(publishRoot, nextVersion, 'manifest.json')
+  const stubEntry = join(publishRoot, '__synthetic-update-entry.ts')
+
+  await mkdir(nextBinaryDir, { recursive: true })
+  await writeFile(
+    stubEntry,
+    [
+      `const version = ${JSON.stringify(nextVersion)};`,
+      `const args = process.argv.slice(2);`,
+      `if (args.includes('--version')) {`,
+      `  console.log(\`\${version} (Neko Code)\`);`,
+      `} else if (args.includes('--help')) {`,
+      `  console.log('Usage: neko [options] [command] [prompt]');`,
+      `} else {`,
+      `  console.log(\`Synthetic release payload \${version}\`);`,
+      `}`,
+      '',
+    ].join('\n'),
+    'utf8',
+  )
+
+  const buildResult = await runCommand(
+    ['bun', 'build', '--compile', stubEntry, '--outfile', nextBinaryPath],
+    repoRoot,
+    process.env,
+  )
+  if (buildResult.exitCode !== 0) {
+    throw new Error(
+      `synthetic upgrade build failed: ${normalize(buildResult.stderr || buildResult.stdout)}`,
+    )
+  }
+
+  const checksum = await sha256(nextBinaryPath)
+  await writeFile(
+    nextManifestPath,
+    `${JSON.stringify(
+      {
+        version: nextVersion,
+        generatedAt: new Date().toISOString(),
+        platforms: {
+          [platform]: {
+            checksum,
+          },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  )
+  await writeFile(join(publishRoot, 'latest'), `${nextVersion}\n`, 'utf8')
+  await writeFile(
+    join(publishRoot, 'publish-ready', 'channels', 'latest.json'),
+    `${JSON.stringify(
+      {
+        channel: 'latest',
+        version: nextVersion,
+        platform,
+        generatedAt: new Date().toISOString(),
+        artifact: `${nextVersion}/${platform}/neko.exe`,
+        sha256: checksum,
+        signed: false,
+        signingStatus: 'synthetic-smoke',
+        manifest: `${nextVersion}/manifest.json`,
+        sourceArtifact: 'synthetic-update-entry.ts',
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  )
+
+  await rm(stubEntry, { force: true })
+}
+
 async function main(): Promise<void> {
   const repoRoot = process.cwd()
   const options = parseArgs(process.argv.slice(2))
@@ -122,16 +224,23 @@ async function main(): Promise<void> {
   const deployMetadata = JSON.parse(
     await readFile(join(deployRoot, 'release-deploy.json'), 'utf8'),
   ) as DeployMetadata
-  const uploadManifest = JSON.parse(
-    await readFile(join(deployRoot, 'upload-manifest.json'), 'utf8'),
-  ) as UploadManifest
-
   const publishRoot = await mkdtemp(join(tmpdir(), 'neko-native-update-release-deploy-publish-'))
-  for (const entry of uploadManifest.entries) {
-    const sourcePath = join(deployRoot, entry.source)
-    const destinationPath = join(publishRoot, entry.destination)
-    await mkdir(dirname(destinationPath), { recursive: true })
-    await copyFile(sourcePath, destinationPath)
+  const publishResult = await runCommand(
+    [
+      'bun',
+      'run',
+      'scripts/release-deploy-publish.ts',
+      '--skip-stage-deploy',
+      '--target-root',
+      publishRoot,
+    ],
+    repoRoot,
+    process.env,
+  )
+  if (publishResult.exitCode !== 0) {
+    throw new Error(
+      `release-deploy-publish failed: ${normalize(publishResult.stderr || publishResult.stdout)}`,
+    )
   }
 
   const servedRoot = resolve(publishRoot)
@@ -142,7 +251,7 @@ async function main(): Promise<void> {
       const relativePath = decodeURIComponent(url.pathname.replace(/^\/+/, ''))
       const filePath = resolve(servedRoot, relativePath)
 
-      if (!filePath.startsWith(servedRoot)) {
+      if (!isPathInsideRoot(servedRoot, filePath)) {
         return new Response('forbidden', { status: 403 })
       }
 
@@ -191,6 +300,24 @@ async function main(): Promise<void> {
     throw new Error(`Installed binary missing at ${installedBinary}`)
   }
 
+  const beforeVersionResult = await runCommand([installedBinary, '--version'], tempRoot, {
+    ...process.env,
+    NEKO_CODE_DISABLED_MCP_SERVERS: process.env.NEKO_CODE_DISABLED_MCP_SERVERS
+      ? `${process.env.NEKO_CODE_DISABLED_MCP_SERVERS},serena`
+      : 'serena',
+  })
+  if (
+    beforeVersionResult.exitCode !== 0
+    || !beforeVersionResult.stdout.includes(`${deployMetadata.version} (Neko Code)`)
+  ) {
+    throw new Error(
+      `installed --version before update failed: ${normalize(beforeVersionResult.stderr || beforeVersionResult.stdout)}`,
+    )
+  }
+
+  const nextVersion = getNextPatchVersion(deployMetadata.version)
+  await stageSyntheticUpgrade(repoRoot, publishRoot, deployMetadata.platform, nextVersion)
+
   const childEnv = {
     ...process.env,
     NODE_ENV: 'production',
@@ -208,9 +335,21 @@ async function main(): Promise<void> {
   const output = `${updateResult.stdout}\n${updateResult.stderr}`
   if (
     !output.includes('Checking for updates to latest version')
-    || !output.includes('No newer native update was detected')
+    || !output.includes(
+      `Successfully updated from ${deployMetadata.version} to version ${nextVersion}`,
+    )
   ) {
     throw new Error(`unexpected update output: ${normalize(output)}`)
+  }
+
+  const afterVersionResult = await runCommand([installedBinary, '--version'], tempRoot, childEnv)
+  if (
+    afterVersionResult.exitCode !== 0
+    || !afterVersionResult.stdout.includes(`${nextVersion} (Neko Code)`)
+  ) {
+    throw new Error(
+      `installed --version after update failed: ${normalize(afterVersionResult.stderr || afterVersionResult.stdout)}`,
+    )
   }
 
   server.stop(true)
@@ -218,6 +357,7 @@ async function main(): Promise<void> {
   console.log('[PASS] native-update-cli-release-deploy-smoke')
   console.log(`  baseUrl=${baseUrl}`)
   console.log(`  version=${deployMetadata.version}`)
+  console.log(`  upgradedVersion=${nextVersion}`)
   console.log(`  platform=${deployMetadata.platform}`)
   console.log(`  signed=${deployMetadata.signed}`)
   console.log(`  publishRoot=${publishRoot}`)

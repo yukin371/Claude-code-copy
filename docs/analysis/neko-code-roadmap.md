@@ -98,6 +98,7 @@
 - 目标：把 `neko update` 从本地 beta 体验推进到面向真实发布源的可验证流程。
 - 当前状态：
   - update 相关提示、diagnostics 与本地 alias 建议已大体切到 `neko`
+  - 本轮已把 native / package-manager 的版本探测源收敛到与 native installer 一致的 release source 解析，不再让 `doctor`、package-manager auto-updater 与 CLI `update` 各自看不同后端
   - 真实发布源、channel 切换与发布后验证仍未闭环
 - 剩余收口：
   - 对接正式发布源
@@ -207,6 +208,7 @@
 - 已验证：`bun run smoke:distribution-readiness`
 - 已修复：`src/cli/update.ts` 与 `src/utils/doctorDiagnostic.ts` 的用户可见提示不再继续把 `claude doctor` / `claude install` / `~/.local/bin/claude` 当作当前主入口；native 诊断与升级提示现已对齐 `neko`
 - 已验证：新增 `scripts/release-facing-diagnostics-smoke.ts` 并纳入 `smoke:distribution-readiness`，在受控环境里覆盖 `update` 的 native/global 失败提示分支，并真实触发 `doctorDiagnostic` 的 npm-local alias 提示，锁定 `neko doctor` / `neko install` / `alias neko="~/.neko-code/local/claude"` 等 release-facing 文案
+- 已验证：native / package-manager 相关版本探测现已统一走 native installer 的 source selection；`doctor`、package-manager auto-updater 与 CLI `update` 的 package-manager 分支不再继续硬编码查 GCS 或 npm
 - 已验证：新增 `scripts/build-local-release-bundle.ts`，可生成 `dist/release-local/`，写入 `latest` / `stable` channel 文件、`manifest.json` 与当前平台产物，形成可供 native installer 消费的本地 bundle 格式
 - 已验证：新增 `scripts/native-installer-local-bundle-smoke.ts`，通过 `NEKO_CODE_NATIVE_INSTALLER_BASE_URL` 把 native installer 指向本地临时 HTTP 源，并在隔离 `HOME` / `XDG_*` / `NEKO_CODE_CONFIG_DIR` 下真实执行下载、安装与帮助入口验证
 - 已验证：`bun run smoke:native-installer-local-bundle`
@@ -214,6 +216,9 @@
 - 已落地：新增 `.github/workflows/release-candidate.yml`，在 `windows-latest` 上执行 `typecheck`、`smoke:release-preflight`、`stage-release-candidate`，并上传 unsigned release candidate artifact
 - 已验证：新增 `scripts/release-preflight.ts`，顺序执行 `bun run build:native`、`bun run smoke:distribution-readiness`，再校验 `dist/neko-code.exe`、`scripts/install-local-launcher.ps1` 主命令和 README / 关键 release-facing 文本一致性，形成“本地候选发布物 gate”
 - 已验证：`bun run smoke:release-preflight`
+- 已验证：新增 `scripts/release-deploy-publish.ts` 与 `bun run release:deploy-publish -- --target-root <path>`，把 `dist/release-deploy/<version>/payload/` 按 `upload-manifest.json` 真正发布到本地镜像根目录；`release-deploy-publish` 相关 smoke 已改为调用真实脚本而非手写复制
+- 已收口：`scripts/release-deploy-publish.ts` 现已对 source / destination 做根目录边界校验，不再允许篡改 `upload-manifest.json` 后越过 deploy payload 或 publish target 根目录
+- 已验证：`scripts/release-deploy-publish-smoke.ts` 现会逐项比对 `upload-manifest.json` 的 source/destination 内容；`scripts/native-update-cli-release-deploy-smoke.ts` 与 `scripts/native-update-cli-github-release-smoke.ts` 现会注入合成的 `0.1.1` 发布物，真实断言 `neko update` 完成升级而不是只看到 “No newer update”
 - 已落地：补齐 `scripts/analyze-text-hygiene.ts`、`scripts/check-text-hygiene.ts` 与共享规则库，避免 `package.json` 中的文本卫生入口继续悬空
 - 已收口：bridge / auth 路径里的旧 `claude` 命令提示，并把 Remote Control / auth status 的旧入口指导纳入文本卫生规则，避免 bridge 尾路径回退到错误命令
 - 已收口：`Doctor` dismiss 提示、通知标题、permission/hooks/trust dialog/memory/worktree/plugin/session-start UI 路径提示、`/insights` 命令描述、REPL 默认标题/挂起提示、keybindings schema 与 SDK settings source 描述等用户可见文案已改为 `Neko Code` / `.neko-code` 路径，不再继续直露 `Claude Code` / `.claude`

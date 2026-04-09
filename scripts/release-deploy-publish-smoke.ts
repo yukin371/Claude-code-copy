@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 
 import { existsSync } from 'node:fs'
-import { copyFile, mkdtemp, mkdir, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, extname, join, resolve } from 'node:path'
+import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
 
 type SmokeOptions = {
   keepTemp: boolean
@@ -18,9 +18,6 @@ type DeployMetadata = {
 }
 
 type UploadManifest = {
-  version: string
-  platform: string
-  signed: boolean
   entries: Array<{
     source: string
     destination: string
@@ -86,6 +83,17 @@ function getContentType(path: string): string {
   return 'text/plain; charset=utf-8'
 }
 
+function isPathInsideRoot(rootPath: string, candidatePath: string): boolean {
+  const normalizedRoot = resolve(rootPath)
+  const normalizedCandidate = resolve(candidatePath)
+  const relativePath = relative(normalizedRoot, normalizedCandidate)
+
+  return (
+    relativePath === ''
+    || (!relativePath.startsWith('..') && !isAbsolute(relativePath))
+  )
+}
+
 async function main(): Promise<void> {
   const repoRoot = process.cwd()
   const options = parseArgs(process.argv.slice(2))
@@ -115,14 +123,36 @@ async function main(): Promise<void> {
   const uploadManifest = JSON.parse(
     await readFile(join(deployRoot, 'upload-manifest.json'), 'utf8'),
   ) as UploadManifest
-
   const publishRoot = await mkdtemp(join(tmpdir(), 'neko-release-deploy-publish-'))
+  const publishResult = await runCommand(
+    [
+      'bun',
+      'run',
+      'scripts/release-deploy-publish.ts',
+      '--skip-stage-deploy',
+      '--target-root',
+      publishRoot,
+    ],
+    repoRoot,
+    process.env,
+  )
+  if (publishResult.exitCode !== 0) {
+    throw new Error(
+      `release-deploy-publish failed: ${normalize(publishResult.stderr || publishResult.stdout)}`,
+    )
+  }
 
   for (const entry of uploadManifest.entries) {
     const sourcePath = join(deployRoot, entry.source)
     const destinationPath = join(publishRoot, entry.destination)
-    await mkdir(dirname(destinationPath), { recursive: true })
-    await copyFile(sourcePath, destinationPath)
+    const [sourceContent, destinationContent] = await Promise.all([
+      readFile(sourcePath),
+      readFile(destinationPath),
+    ])
+
+    if (!sourceContent.equals(destinationContent)) {
+      throw new Error(`Published payload mismatch for ${entry.destination}`)
+    }
   }
 
   const servedRoot = resolve(publishRoot)
@@ -133,7 +163,7 @@ async function main(): Promise<void> {
       const relativePath = decodeURIComponent(url.pathname.replace(/^\/+/, ''))
       const filePath = resolve(servedRoot, relativePath)
 
-      if (!filePath.startsWith(servedRoot)) {
+      if (!isPathInsideRoot(servedRoot, filePath)) {
         return new Response('forbidden', { status: 403 })
       }
 
@@ -217,6 +247,7 @@ async function main(): Promise<void> {
   console.log(`  platform=${deployMetadata.platform}`)
   console.log(`  signed=${deployMetadata.signed}`)
   console.log(`  publishRoot=${publishRoot}`)
+  console.log(`  publishedEntries=${uploadManifest.entries.length}`)
   console.log(`  installedBinary=${installedBinary}`)
   console.log(`  versionOutput=${normalize(versionResult.stdout)}`)
   console.log(`  helpOutput=${normalize(helpResult.stdout.split('\n')[0] ?? '')}`)

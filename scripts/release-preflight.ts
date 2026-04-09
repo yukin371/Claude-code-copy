@@ -69,6 +69,10 @@ const commandSteps: Step[] = [
     args: ['bun', 'run', 'scripts/stage-github-release-smoke.ts', '--skip-signed-workflow'],
   },
   {
+    label: 'publish-github-release',
+    args: ['bun', 'run', 'scripts/publish-github-release-smoke.ts', '--skip-stage-github-release'],
+  },
+  {
     label: 'native-update-cli-github-release',
     args: ['bun', 'run', 'scripts/native-update-cli-github-release-smoke.ts', '--skip-stage-github-release'],
   },

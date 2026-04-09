@@ -109,39 +109,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $ErrorActionPreference = 'Stop'
+          bun run scripts/publish-github-release.ts --version "$env:RELEASE_VERSION"
+
+      - name: Write publish summary
+        shell: pwsh
+        run: |
           $root = Join-Path $PWD "dist/github-release/$env:RELEASE_VERSION"
           $metadata = Get-Content (Join-Path $root 'release-github.json') | ConvertFrom-Json
           $tag = $metadata.tagName
-          $title = $metadata.releaseName
-          $notes = Join-Path $root $metadata.notesFile
-          $assets = Get-ChildItem -Path (Join-Path $root $metadata.assetsDir) -File | ForEach-Object { $_.FullName }
           $isDraft = [bool]$metadata.publishPolicy.publishDefaults.draft
           $isPrerelease = [bool]$metadata.publishPolicy.publishDefaults.prerelease
-          $createArgs = @('release', 'create', $tag, '--title', $title, '--notes-file', $notes)
-          $editArgs = @('release', 'edit', $tag, '--title', $title, '--notes-file', $notes)
-
-          if ($isDraft) {
-            $createArgs += '--draft'
-            $editArgs += '--draft=true'
-          } else {
-            $editArgs += '--draft=false'
-          }
-
-          if ($isPrerelease) {
-            $createArgs += '--prerelease'
-            $editArgs += '--prerelease'
-          }
-
-          $uploadArgs = @('release', 'upload', $tag, '--clobber') + $assets
-
-          gh release view $tag *> $null
-          if ($LASTEXITCODE -ne 0) {
-            & gh @createArgs
-          } else {
-            & gh @editArgs
-            & gh @uploadArgs
-          }
 
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## GitHub Release Package"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ""

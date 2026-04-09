@@ -320,6 +320,7 @@
 - 当前机器上已经打通 `bun run build:native`
 - 当前编译产物已验证 `--version`、`--help`
 - 随着 Phase 3 状态流闭环完成，当前主线已切到 Phase 4；剩余主要缺口不再是“能不能本机安装运行”，而是签名、正式发布与 update 源闭环
+- 本轮已把 native installer、package-manager 提示链路与 `doctor` 的版本探测统一到同一套 native release source 解析，减少“显示版本来源”和“实际 update 来源”不一致
 - 编译产物与源码模式的 `-p` 对照 smoke 现已统一切到本地 `openai-compatible` mock server，当前验证不再依赖外部 provider 配额或网络状态
 - 已验证：新增 `scripts/native-distribution-smoke.ts`，在脱离仓库源码路径的临时目录中复制 `dist/neko-code.exe` 并分别执行 `--version`、`--help`、`-p --max-turns 1`，同时与 `bun src/entrypoints/cli.tsx -p --max-turns 1` 的输出进行对照，确认分发入口可独立于源码工作区执行
 - 已验证：新增 `scripts/native-local-install-smoke.ts`，在临时 installer/bin 目录里复制并注册 `neko`，通过 PATH 调用后跑 `--version`、`--help`、`-p --max-turns 1 "Reply with exactly OK"`；现在要求安装版与源码版都 `exit 0` 且输出 `OK`，不再接受“同样失败也算一致”的弱校验
@@ -335,6 +336,9 @@
 - 已验证：新增 `scripts/release-preflight.ts`，顺序执行 `build:native`、`smoke:distribution-readiness`，并额外校验 `dist/neko-code.exe`、`scripts/install-local-launcher.ps1` 主命令与 README / 关键 release-facing 文本一致性，形成“本地候选发布物 gate”
 - 已验证：`bun run smoke:release-preflight`
 - 已验证：本轮再次通过 `bun run smoke:distribution-readiness` 与 `bun run smoke:release-preflight`
+- 已新增 `scripts/release-deploy-publish.ts` 与 `bun run release:deploy-publish -- --target-root <path>`，把 `release-deploy` payload 真正映射到本地发布根目录，并让 `release-deploy-publish` / `native-update-cli-release-deploy` smoke 直接复用该实现
+- 已继续收口 `release-deploy-publish` 安全边界：source / destination 现在都要求留在 deploy payload 与 publish target 根目录内，不再接受被篡改 manifest 的跨目录读写
+- 已把 `release-deploy-publish` / `native-update-cli-release-deploy` / `native-update-cli-github-release` smoke 从“只检查版本探测还活着”升级为“真实注入下一版本并断言 upgrade 成功”，同时补齐 publish manifest 全量映射校验
 - 已验证：本轮 `dist/neko-code.exe -p --max-turns 1 "echo native smoke"` 会在命中 `max-turns` 限制时退出，并且源码入口 `bun src/entrypoints/cli.tsx -p --max-turns 1 "echo source smoke"` 则抛出完全相同的 `Error: Reached max turns (1)` 结果，说明当前失败属于通用行为而非编译产物里程碑差异
 
 ### Exit Conditions

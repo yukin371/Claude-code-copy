@@ -222,10 +222,16 @@ async function runUpdateCommandCheck(): Promise<void> {
   let stderrBuffer = ''
   let globalConfig = { installMethod: 'native' as const }
   let latestVersion = '1.1.0'
+  let latestNativeVersion = '1.1.0'
   let globalInstallStatus: 'success' | 'no_permissions' | 'install_failed' =
     'success'
   let localInstallStatus: 'in_progress' | 'success' | 'install_failed' =
     'success'
+  let detectedPackageManager:
+    | 'unknown'
+    | 'homebrew'
+    | 'winget'
+    | 'apk' = 'unknown'
   let nativeUpdateError: Error | null = null
   let diagnosticState: DiagnosticStub = {
     installationType: 'native',
@@ -274,6 +280,7 @@ async function runUpdateCommandCheck(): Promise<void> {
   }))
   mock.module('src/utils/autoUpdater.js', () => ({
     getLatestVersion: async () => latestVersion,
+    getLatestVersionFromNativeSource: async () => latestNativeVersion,
     installGlobalPackage: async () => globalInstallStatus,
   }))
   mock.module('src/utils/completionCache.js', () => ({
@@ -319,7 +326,7 @@ async function runUpdateCommandCheck(): Promise<void> {
     removeInstalledSymlink: async () => {},
   }))
   mock.module('src/utils/nativeInstaller/packageManagers.js', () => ({
-    getPackageManager: async () => 'unknown',
+    getPackageManager: async () => detectedPackageManager,
   }))
   mock.module('src/utils/process.js', () => ({
     writeToStdout: (chunk: string) => {
@@ -416,9 +423,38 @@ async function runUpdateCommandCheck(): Promise<void> {
       'update global failure guidance',
     )
 
+    diagnosticState = {
+      ...diagnosticState,
+      installationType: 'package-manager',
+      configInstallMethod: 'not set',
+      packageManager: 'winget',
+    }
+    globalConfig = { installMethod: 'native' }
+    latestVersion = '9.9.9'
+    latestNativeVersion = '1.2.0'
+    detectedPackageManager = 'winget'
+    globalInstallStatus = 'success'
+
+    const packageManagerInfo = await runUpdateExpectExit(0)
+    assertContains(
+      packageManagerInfo.stdout,
+      'This installation is managed by winget.',
+      'update package-manager guidance',
+    )
+    assertContains(
+      packageManagerInfo.stdout,
+      'A newer version was detected: 1.0.0 → 1.2.0',
+      'update package-manager version source',
+    )
+    assertNotContains(
+      packageManagerInfo.stdout,
+      '9.9.9',
+      'update package-manager should not use npm/package updater source',
+    )
+
     console.log('[PASS] update-command')
     console.log(
-      '  checked=native-error-guidance,npm-global-install-guidance',
+      '  checked=native-error-guidance,npm-global-install-guidance,package-manager-native-source',
     )
   } finally {
     process.stderr.write = originalStderrWrite

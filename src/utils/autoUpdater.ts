@@ -18,6 +18,7 @@ import { execFileNoThrowWithCwd } from './execFileNoThrow.js'
 import { getFsImplementation } from './fsOperations.js'
 import { gracefulShutdownSync } from './gracefulShutdown.js'
 import { logError } from './log.js'
+import { getLatestVersion as getLatestNativeInstallerVersion } from './nativeInstaller/download.js'
 import { gte, lt } from './semver.js'
 import { getInitialSettings } from './settings/settings.js'
 import {
@@ -27,9 +28,6 @@ import {
   writeFileLines,
 } from './shellConfig.js'
 import { jsonParse } from './slowOperations.js'
-
-const GCS_BUCKET_URL =
-  'https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases'
 
 const MACRO_CONTEXT =
   typeof MACRO !== 'undefined' ? MACRO : null
@@ -410,32 +408,32 @@ export async function getNpmDistTags(): Promise<NpmDistTags> {
 }
 
 /**
- * Get the latest version from GCS bucket for a given release channel.
- * This is used by installations that don't have npm (e.g. package manager installs).
+ * Get the latest version from the active native release source for a given release channel.
+ * This follows the same source selection as the native installer / native update flow:
+ * GitHub Releases -> explicit binary repo override -> Artifactory/GCS defaults.
  */
-export async function getLatestVersionFromGcs(
+export async function getLatestVersionFromNativeSource(
   channel: ReleaseChannel,
 ): Promise<string | null> {
   try {
-    const response = await axios.get(`${GCS_BUCKET_URL}/${channel}`, {
-      timeout: 5000,
-      responseType: 'text',
-    })
-    return response.data.trim()
+    return await getLatestNativeInstallerVersion(channel)
   } catch (error) {
-    logForDebugging(`Failed to fetch ${channel} from GCS: ${error}`)
+    logForDebugging(
+      `Failed to fetch ${channel} from native release source: ${error}`,
+    )
     return null
   }
 }
 
 /**
- * Get available versions from GCS bucket (for native installations).
- * Fetches both latest and stable channel pointers.
+ * Get available versions from the active native release source.
+ * Fetches both latest and stable channel pointers using the same resolution
+ * logic as the native installer and native update flow.
  */
-export async function getGcsDistTags(): Promise<NpmDistTags> {
+export async function getNativeDistTags(): Promise<NpmDistTags> {
   const [latest, stable] = await Promise.all([
-    getLatestVersionFromGcs('latest'),
-    getLatestVersionFromGcs('stable'),
+    getLatestVersionFromNativeSource('latest'),
+    getLatestVersionFromNativeSource('stable'),
   ])
 
   return { latest, stable }

@@ -19,7 +19,7 @@ import { Box, Text } from '../ink.js';
 import { useKeybindings } from '../keybindings/useKeybinding.js';
 import { useAppState } from '../state/AppState.js';
 import { getPluginErrorMessage } from '../types/plugin.js';
-import { getGcsDistTags, getNpmDistTags, type NpmDistTags } from '../utils/autoUpdater.js';
+import { getNativeDistTags, getNpmDistTags, type NpmDistTags } from '../utils/autoUpdater.js';
 import { type ContextWarnings, checkContextWarnings } from '../utils/doctorContextWarnings.js';
 import { type DiagnosticInfo, getDoctorDiagnostic } from '../utils/doctorDiagnostic.js';
 import { validateBoundedIntEnvVar } from '../utils/envValidation.js';
@@ -582,7 +582,7 @@ function _temp7(error) {
   return error.mcpErrorMetadata === undefined;
 }
 function _temp6(diag) {
-  const fetchDistTags = diag.installationType === "native" ? getGcsDistTags : getNpmDistTags;
+  const fetchDistTags = diag.installationType === "native" || diag.installationType === "package-manager" ? getNativeDistTags : getNpmDistTags;
   return fetchDistTags().catch(_temp5);
 }
 function _temp5() {

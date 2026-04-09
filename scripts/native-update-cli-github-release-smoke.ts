@@ -1,9 +1,10 @@
 #!/usr/bin/env bun
 
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { extname, join, resolve } from 'node:path'
+import { createHash } from 'node:crypto'
+import { extname, isAbsolute, join, relative, resolve } from 'node:path'
 
 type SmokeOptions = {
   keepTemp: boolean
@@ -24,6 +25,18 @@ type CommandResult = {
   exitCode: number
   stdout: string
   stderr: string
+}
+
+type GitHubReleaseAsset = {
+  name: string
+  browser_download_url: string
+}
+
+type GitHubReleaseResponse = {
+  tag_name: string
+  draft: boolean
+  prerelease: boolean
+  assets: GitHubReleaseAsset[]
 }
 
 function parseArgs(argv: string[]): SmokeOptions {
@@ -80,6 +93,114 @@ function getContentType(path: string): string {
   return 'text/plain; charset=utf-8'
 }
 
+function isPathInsideRoot(rootPath: string, candidatePath: string): boolean {
+  const normalizedRoot = resolve(rootPath)
+  const normalizedCandidate = resolve(candidatePath)
+  const relativePath = relative(normalizedRoot, normalizedCandidate)
+
+  return (
+    relativePath === ''
+    || (!relativePath.startsWith('..') && !isAbsolute(relativePath))
+  )
+}
+
+function getNextPatchVersion(version: string): string {
+  const match = version.match(/^(\d+)\.(\d+)\.(\d+)(.*)?$/)
+  if (!match) {
+    throw new Error(`Unsupported semver for upgrade smoke: ${version}`)
+  }
+
+  const [, major, minor, patch, suffix = ''] = match
+  return `${major}.${minor}.${Number(patch) + 1}${suffix}`
+}
+
+function getPlatformFromPrimaryAsset(assetName: string, version: string): string {
+  const prefix = `neko-code-${version}-`
+  if (!assetName.startsWith(prefix) || !assetName.endsWith('.exe')) {
+    throw new Error(`Unable to infer platform from primary asset: ${assetName}`)
+  }
+
+  return assetName.slice(prefix.length, -'.exe'.length)
+}
+
+async function sha256(filePath: string): Promise<string> {
+  const content = await readFile(filePath)
+  return createHash('sha256').update(content).digest('hex')
+}
+
+async function createSyntheticGitHubAssets(
+  repoRoot: string,
+  assetsRoot: string,
+  currentVersion: string,
+  platform: string,
+): Promise<{
+  nextVersion: string
+  binaryAssetName: string
+  manifestAssetName: string
+}> {
+  const nextVersion = getNextPatchVersion(currentVersion)
+  const binaryAssetName = `neko-code-${nextVersion}-${platform}.exe`
+  const manifestAssetName = `neko-code-${nextVersion}-${platform}-manifest.json`
+  const stubEntry = join(assetsRoot, '__synthetic-github-release-entry.ts')
+  const binaryPath = join(assetsRoot, binaryAssetName)
+  const manifestPath = join(assetsRoot, manifestAssetName)
+
+  await writeFile(
+    stubEntry,
+    [
+      `const version = ${JSON.stringify(nextVersion)};`,
+      `const args = process.argv.slice(2);`,
+      `if (args.includes('--version')) {`,
+      `  console.log(\`\${version} (Neko Code)\`);`,
+      `} else if (args.includes('--help')) {`,
+      `  console.log('Usage: neko [options] [command] [prompt]');`,
+      `} else {`,
+      `  console.log(\`Synthetic GitHub release payload \${version}\`);`,
+      `}`,
+      '',
+    ].join('\n'),
+    'utf8',
+  )
+
+  const buildResult = await runCommand(
+    ['bun', 'build', '--compile', stubEntry, '--outfile', binaryPath],
+    repoRoot,
+    process.env,
+  )
+  if (buildResult.exitCode !== 0) {
+    throw new Error(
+      `synthetic GitHub release build failed: ${normalize(buildResult.stderr || buildResult.stdout)}`,
+    )
+  }
+
+  const checksum = await sha256(binaryPath)
+  await writeFile(
+    manifestPath,
+    `${JSON.stringify(
+      {
+        version: nextVersion,
+        generatedAt: new Date().toISOString(),
+        platforms: {
+          [platform]: {
+            checksum,
+          },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  )
+
+  await rm(stubEntry, { force: true })
+
+  return {
+    nextVersion,
+    binaryAssetName,
+    manifestAssetName,
+  }
+}
+
 async function main(): Promise<void> {
   const repoRoot = process.cwd()
   const options = parseArgs(process.argv.slice(2))
@@ -108,7 +229,7 @@ async function main(): Promise<void> {
   ) as GithubReleaseMetadata
   const assetsRoot = join(githubReleaseRoot, metadata.assetsDir)
   const requestLog: string[] = []
-  const releaseResponse = {
+  const installReleaseResponse: GitHubReleaseResponse = {
     tag_name: metadata.tagName,
     draft: false,
     prerelease: true,
@@ -117,6 +238,28 @@ async function main(): Promise<void> {
       browser_download_url: `__BASE_URL__/download/${asset.name}`,
     })),
   }
+  const syntheticAssets = await createSyntheticGitHubAssets(
+    repoRoot,
+    assetsRoot,
+    metadata.version,
+    getPlatformFromPrimaryAsset(metadata.primaryAsset, metadata.version),
+  )
+  const updateReleaseResponse: GitHubReleaseResponse = {
+    tag_name: `v${syntheticAssets.nextVersion}`,
+    draft: false,
+    prerelease: true,
+    assets: [
+      {
+        name: syntheticAssets.binaryAssetName,
+        browser_download_url: `__BASE_URL__/download/${syntheticAssets.binaryAssetName}`,
+      },
+      {
+        name: syntheticAssets.manifestAssetName,
+        browser_download_url: `__BASE_URL__/download/${syntheticAssets.manifestAssetName}`,
+      },
+    ],
+  }
+  let releaseResponse: GitHubReleaseResponse = installReleaseResponse
 
   const serveRoot = resolve(assetsRoot)
   const server = Bun.serve({
@@ -136,7 +279,7 @@ async function main(): Promise<void> {
         return Response.json([releaseResponse])
       }
 
-      if (url.pathname === `/repos/test/repo/releases/tags/${metadata.tagName}`) {
+      if (url.pathname === `/repos/test/repo/releases/tags/${releaseResponse.tag_name}`) {
         return Response.json({
           ...releaseResponse,
           assets: releaseResponse.assets.map(asset => ({
@@ -153,7 +296,7 @@ async function main(): Promise<void> {
         const assetName = decodeURIComponent(url.pathname.replace('/download/', ''))
         const filePath = resolve(serveRoot, assetName)
 
-        if (!filePath.startsWith(serveRoot)) {
+        if (!isPathInsideRoot(serveRoot, filePath)) {
           return new Response('forbidden', { status: 403 })
         }
 
@@ -208,6 +351,21 @@ async function main(): Promise<void> {
     throw new Error(`Installed binary missing at ${installedBinary}`)
   }
 
+  const beforeVersionResult = await runCommand([installedBinary, '--version'], tempRoot, {
+    ...process.env,
+    NEKO_CODE_DISABLED_MCP_SERVERS: process.env.NEKO_CODE_DISABLED_MCP_SERVERS
+      ? `${process.env.NEKO_CODE_DISABLED_MCP_SERVERS},serena`
+      : 'serena',
+  })
+  if (
+    beforeVersionResult.exitCode !== 0
+    || !beforeVersionResult.stdout.includes(`${version} (Neko Code)`)
+  ) {
+    throw new Error(
+      `installed --version before update failed: ${normalize(beforeVersionResult.stderr || beforeVersionResult.stdout)}`,
+    )
+  }
+
   const childEnv = {
     ...process.env,
     NODE_ENV: 'production',
@@ -218,6 +376,7 @@ async function main(): Promise<void> {
       : 'serena',
   }
 
+  releaseResponse = updateReleaseResponse
   const updateResult = await runCommand([installedBinary, 'update'], tempRoot, childEnv)
   if (updateResult.exitCode !== 0) {
     throw new Error(
@@ -228,10 +387,20 @@ async function main(): Promise<void> {
   const output = `${updateResult.stdout}\n${updateResult.stderr}`
   if (
     !output.includes('Checking for updates to latest version')
-    || !output.includes('No newer native update was detected')
+    || !output.includes(`Successfully updated from ${version} to version ${syntheticAssets.nextVersion}`)
   ) {
     throw new Error(
       `unexpected update output: ${normalize(output)} | installRequests=${installRequests.join(' -> ')} | updateRequests=${requestLog.join(' -> ')}`,
+    )
+  }
+
+  const afterVersionResult = await runCommand([installedBinary, '--version'], tempRoot, childEnv)
+  if (
+    afterVersionResult.exitCode !== 0
+    || !afterVersionResult.stdout.includes(`${syntheticAssets.nextVersion} (Neko Code)`)
+  ) {
+    throw new Error(
+      `installed --version after update failed: ${normalize(afterVersionResult.stderr || afterVersionResult.stdout)} | installRequests=${installRequests.join(' -> ')} | updateRequests=${requestLog.join(' -> ')}`,
     )
   }
 
@@ -240,6 +409,7 @@ async function main(): Promise<void> {
   console.log('[PASS] native-update-cli-github-release-smoke')
   console.log(`  apiBaseUrl=${apiBaseUrl}`)
   console.log(`  version=${version}`)
+  console.log(`  upgradedVersion=${syntheticAssets.nextVersion}`)
   console.log(`  tag=${metadata.tagName}`)
   console.log(`  installedBinary=${installedBinary}`)
   console.log(`  updateOutput=${normalize(updateResult.stdout)}`)
