@@ -87,11 +87,12 @@
 
 - 目标：把当前本地 build、bundle、installer、release candidate 产物组织成可重复执行的发布前闭环。
 - 当前状态：
-  - native build、local bundle、native installer、本地 PATH 安装与 `smoke:release-preflight` 已经打通
-  - 当前主要缺口已经转成签名、正式发布源与 GitHub Release 资产整理
+  - native build、local bundle、native installer、本地 PATH 安装、release candidate / deploy / GitHub Release staging 与 `smoke:release-preflight` 已经打通
+  - GitHub Release 资产整理与 publish plan 已落地，本地候选发布物 gate 也已覆盖到 deploy publish / GitHub Release publish / native update
+  - 当前主要缺口已经收敛到签名、正式发布源和真实外部发布动作
 - 剩余收口：
-  - 固化 unsigned release candidate 的产物格式、上传流程与校验项
-  - 继续减少只能依赖人工 spot check 的发布前动作
+  - 对接 signed artifact 与签名后的正式上传流程
+  - 把外部发布环境中的凭据、签名和 promote 动作固定到 CI/workflow
 
 ### 2. Update / 发布源
 
@@ -99,6 +100,7 @@
 - 当前状态：
   - update 相关提示、diagnostics 与本地 alias 建议已大体切到 `neko`
   - 本轮已把 native / package-manager 的版本探测源收敛到与 native installer 一致的 release source 解析，不再让 `doctor`、package-manager auto-updater 与 CLI `update` 各自看不同后端
+  - 本地 deploy 源与 GitHub Release mock 下的 `neko update` 已不再只验证“看到新版本”，而是会真实注入下一版本并断言升级成功
   - 真实发布源、channel 切换与发布后验证仍未闭环
 - 剩余收口：
   - 对接正式发布源
@@ -128,7 +130,7 @@
 ### P0
 
 1. 把签名、GitHub Release 资产与正式发布源闭环
-2. 把 `smoke:distribution-readiness`、`smoke:release-preflight` 固定维持为绿色 gate
+2. 把 `smoke:distribution-readiness`、`smoke:release-preflight` 固定维持为绿色 gate，并继续把签名/正式发布检查并进去
 3. 继续清理 release-facing 旧路径兼容、安装/升级提示和少量品牌残留
 4. 同步 roadmap / staged plan / README，让文档状态不再落后于本地 beta 实际能力
 5. 把 `neko update` 面向真实发布源的稳定验证与发布流程整理清楚
@@ -219,6 +221,7 @@
 - 已验证：新增 `scripts/release-deploy-publish.ts` 与 `bun run release:deploy-publish -- --target-root <path>`，把 `dist/release-deploy/<version>/payload/` 按 `upload-manifest.json` 真正发布到本地镜像根目录；`release-deploy-publish` 相关 smoke 已改为调用真实脚本而非手写复制
 - 已收口：`scripts/release-deploy-publish.ts` 现已对 source / destination 做根目录边界校验，不再允许篡改 `upload-manifest.json` 后越过 deploy payload 或 publish target 根目录
 - 已验证：`scripts/release-deploy-publish-smoke.ts` 现会逐项比对 `upload-manifest.json` 的 source/destination 内容；`scripts/native-update-cli-release-deploy-smoke.ts` 与 `scripts/native-update-cli-github-release-smoke.ts` 现会注入合成的 `0.1.1` 发布物，真实断言 `neko update` 完成升级而不是只看到 “No newer update”
+- 已验证：新增 `scripts/publish-github-release.ts` 与 `scripts/publish-github-release-smoke.ts`，GitHub Release 创建/更新命令已统一收口到脚本与 workflow，不再在 workflow 里手写拼接发布命令
 - 已落地：补齐 `scripts/analyze-text-hygiene.ts`、`scripts/check-text-hygiene.ts` 与共享规则库，避免 `package.json` 中的文本卫生入口继续悬空
 - 已收口：bridge / auth 路径里的旧 `claude` 命令提示，并把 Remote Control / auth status 的旧入口指导纳入文本卫生规则，避免 bridge 尾路径回退到错误命令
 - 已收口：`Doctor` dismiss 提示、通知标题、permission/hooks/trust dialog/memory/worktree/plugin/session-start UI 路径提示、`/insights` 命令描述、REPL 默认标题/挂起提示、keybindings schema 与 SDK settings source 描述等用户可见文案已改为 `Neko Code` / `.neko-code` 路径，不再继续直露 `Claude Code` / `.claude`
@@ -251,9 +254,10 @@
 ### 当前阶段下一步
 
 1. 继续把 `smoke:distribution-readiness` 与 `smoke:release-preflight` 维持为绿色固定 gate
-2. 推进签名、GitHub Release 资产、正式发布源与 `neko update` 的真实闭环
-3. 清理 stale error / 旧路径兼容 / release-facing 文案尾项，减少本地 beta 使用中的误报和混乱
-4. 继续把源码模式、分发产物与本地 PATH 安装作为固定对照验证项
+2. 推进 signed artifact、签名流程、GitHub Release promote 与正式发布源的真实闭环
+3. 补正式发布后的升级 / 回滚验证，避免当前验证只停留在本地 mock / staged source
+4. 清理 stale error / 旧路径兼容 / release-facing 文案尾项，减少本地 beta 使用中的误报和混乱
+5. 继续把源码模式、分发产物与本地 PATH 安装作为固定对照验证项
 
 ### 下一阶段入口
 
