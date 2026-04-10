@@ -17,7 +17,8 @@ on:
         type: string
       signed_artifact_name:
         description: Artifact name that contains the signed exe
-        required: true
+        required: false
+        default: ''
         type: string
       publish_github_release:
         description: Publish GitHub Release in the same workflow
@@ -81,11 +82,9 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
 
-          function Download-ArtifactZip {
+          function Get-RunArtifacts {
             param(
-              [string]$RunId,
-              [string]$ArtifactName,
-              [string]$ZipPath
+              [string]$RunId
             )
 
             $headers = @{
@@ -96,7 +95,17 @@ jobs:
 
             $artifactsUrl = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/runs/$RunId/artifacts?per_page=100"
             $response = Invoke-RestMethod -Headers $headers -Uri $artifactsUrl
-            $artifact = $response.artifacts | Where-Object { $_.name -eq $ArtifactName } | Select-Object -First 1
+            return @($response.artifacts)
+          }
+
+          function Download-ArtifactZip {
+            param(
+              [string]$RunId,
+              [string]$ArtifactName,
+              [string]$ZipPath
+            )
+
+            $artifact = (Get-RunArtifacts -RunId $RunId) | Where-Object { $_.name -eq $ArtifactName } | Select-Object -First 1
 
             if (-not $artifact) {
               throw "Artifact '$ArtifactName' not found in workflow run $RunId"
@@ -109,6 +118,72 @@ jobs:
             }
 
             Invoke-WebRequest -Headers $downloadHeaders -Uri $artifact.archive_download_url -OutFile $ZipPath
+          }
+
+          function Find-SignedExeInRun {
+            param(
+              [string]$RunId,
+              [string]$ArtifactNameHint,
+              [string]$ExtractRoot
+            )
+
+            $artifacts = Get-RunArtifacts -RunId $RunId
+            if (-not $artifacts -or $artifacts.Count -eq 0) {
+              throw "No artifacts found in workflow run $RunId"
+            }
+
+            $ordered = @()
+            if (-not [string]::IsNullOrWhiteSpace($ArtifactNameHint)) {
+              $ordered += @($artifacts | Where-Object { $_.name -eq $ArtifactNameHint })
+              if ($ordered.Count -eq 0) {
+                throw "Artifact '$ArtifactNameHint' not found in workflow run $RunId"
+              }
+            } else {
+              $preferred = @(
+                $artifacts | Where-Object { $_.name -match '(?i)signed|sign' }
+              )
+              $fallback = @(
+                $artifacts | Where-Object { $_.name -notmatch '(?i)signed|sign' }
+              )
+              $ordered = @($preferred + $fallback)
+            }
+
+            foreach ($artifact in $ordered) {
+              $zipPath = Join-Path $ExtractRoot ("signed-{0}.zip" -f $artifact.id)
+              $extractPath = Join-Path $ExtractRoot ("signed-{0}" -f $artifact.id)
+              if (Test-Path $extractPath) {
+                Remove-Item -LiteralPath $extractPath -Recurse -Force
+              }
+
+              $downloadHeaders = @{
+                Authorization = "Bearer $env:GITHUB_TOKEN"
+                Accept = 'application/octet-stream'
+                'X-GitHub-Api-Version' = '2022-11-28'
+              }
+              Invoke-WebRequest -Headers $downloadHeaders -Uri $artifact.archive_download_url -OutFile $zipPath
+              Expand-Archive -LiteralPath $zipPath -DestinationPath $extractPath -Force
+
+              $exes = @(Get-ChildItem -Path $extractPath -Recurse -File -Filter *.exe | Select-Object -ExpandProperty FullName)
+              if (-not $exes -or $exes.Count -eq 0) {
+                continue
+              }
+
+              # Prefer the direct binary (avoid setup/uninstall artifacts when present).
+              $preferredExe = $exes | Where-Object { $_ -match '(?i)neko' -and $_ -notmatch '(?i)setup|installer|uninstall' } | Select-Object -First 1
+              if ($preferredExe) {
+                return $preferredExe
+              }
+
+              if ($exes.Count -eq 1) {
+                return $exes[0]
+              }
+
+              $names = ($exes | ForEach-Object { Split-Path -Leaf $_ }) -join ', '
+              throw "Multiple .exe files found in artifact '$($artifact.name)'. Pass signed_artifact_name to disambiguate. Found: $names"
+            }
+
+            $available = ($artifacts | ForEach-Object { $_.name }) -join ', '
+            throw "Could not find a signed .exe in run $RunId. Available artifacts: $available"
           }
 
           $artifactRoot = Join-Path $PWD '.github-artifacts'
@@ -126,13 +201,9 @@ jobs:
           New-Item -ItemType Directory -Force -Path $candidateTarget | Out-Null
           Copy-Item -Path (Join-Path $candidateExtract '*') -Destination $candidateTarget -Recurse -Force
 
-          $signedZip = Join-Path $artifactRoot 'signed.zip'
-          Download-ArtifactZip -RunId $env:SIGNED_ARTIFACT_RUN_ID -ArtifactName $env:SIGNED_ARTIFACT_NAME -ZipPath $signedZip
-          Expand-Archive -LiteralPath $signedZip -DestinationPath $signedExtract -Force
-
-          $signedBinary = Get-ChildItem -Path $signedExtract -Recurse -File -Filter *.exe | Select-Object -ExpandProperty FullName -First 1
+          $signedBinary = Find-SignedExeInRun -RunId $env:SIGNED_ARTIFACT_RUN_ID -ArtifactNameHint $env:SIGNED_ARTIFACT_NAME -ExtractRoot $signedExtract
           if (-not $signedBinary) {
-            throw "Artifact '$env:SIGNED_ARTIFACT_NAME' does not contain a signed .exe"
+            throw "Signed artifact run $env:SIGNED_ARTIFACT_RUN_ID does not contain a signed .exe"
           }
 
           "signed_binary=$signedBinary" >> $env:GITHUB_OUTPUT
