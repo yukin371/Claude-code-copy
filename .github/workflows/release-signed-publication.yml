@@ -61,6 +61,18 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Routing tests
+        run: bun run test:routing
+
+      - name: Release workflow parser tests
+        run: bun run test:release-workflows
+
+      - name: Text hygiene
+        run: bun run check:text-hygiene
+
       - name: Download unsigned release candidate and signed exe
         id: materialize
         shell: pwsh
@@ -178,6 +190,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          bun run scripts/publish-github-release-smoke.ts --skip-stage-github-release
           bun run scripts/publish-github-release.ts --version "$env:RELEASE_VERSION"
 
       - name: Promote GitHub release
@@ -187,6 +200,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TARGET: ${{ inputs.promote_target }}
         run: |
+          bun run scripts/promote-github-release-smoke.ts
           bun run scripts/promote-github-release.ts --version "$env:RELEASE_VERSION" --target "$env:RELEASE_TARGET"
 
       - name: Upload signed release candidate

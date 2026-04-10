@@ -30,7 +30,7 @@ type DeployMetadata = {
   signingStatus: string
 }
 
-function parseArgs(argv: string[]): SmokeOptions {
+export function parseArgs(argv: string[]): SmokeOptions {
   let keepTemp = false
   let skipBuild = false
   let skipStageCandidate = false
@@ -209,7 +209,9 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch(error => {
-  console.error(error)
-  process.exit(1)
-})
+if (import.meta.main) {
+  main().catch(error => {
+    console.error(error)
+    process.exit(1)
+  })
+}

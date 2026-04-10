@@ -76,6 +76,7 @@
     "smoke:migrated-config-system": "bun run scripts/migrated-config-system-smoke.ts",
     "smoke:phase3-system-regression": "bun run scripts/phase3-system-regression-smoke.ts",
     "test:routing": "bun test src/services/api/openaiCompatibleClient.test.ts src/utils/promptCategory.test.ts src/utils/model/taskRouting.test.ts",
+    "test:release-workflows": "bun test scripts/signed-release-publication-workflow-smoke.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
