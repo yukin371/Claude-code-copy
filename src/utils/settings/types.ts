@@ -93,6 +93,10 @@ const TaskRouteRuleSchema = z
       ])
       .optional()
       .describe('Match a resolved task route.'),
+    matchProvider: z
+      .enum(['anthropic', 'codex', 'gemini', 'glm', 'minimax', 'openai-compatible'])
+      .optional()
+      .describe('Match the currently resolved provider (including session overrides).'),
 
     // Overrides (only declared fields override the base route settings)
     provider: z
@@ -121,11 +125,12 @@ const TaskRouteRuleSchema = z
       !!(
         value.matchQuerySource ||
         value.matchQuerySourcePrefix ||
-        value.matchRoute
+        value.matchRoute ||
+        value.matchProvider
       ),
     {
       message:
-        'taskRouteRules entries must set at least one matcher: matchQuerySource, matchQuerySourcePrefix, or matchRoute',
+        'taskRouteRules entries must set at least one matcher: matchQuerySource, matchQuerySourcePrefix, matchRoute, or matchProvider',
     },
   )
   .passthrough()

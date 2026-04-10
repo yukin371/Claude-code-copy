@@ -22,6 +22,7 @@ const ENV_KEYS = [
   'NEKO_CODE_PLAN_BASE_URL',
   'NEKO_CODE_PLAN_API_KEY',
   'TEST_GEMINI_KEY',
+  'TEST_OPENAI_KEY',
   'NODE_ENV',
 ] as const
 
@@ -521,5 +522,59 @@ describe('taskRouting transport compatibility', () => {
     expect(resolved.apiStyle).toBe('openai-compatible')
     expect(resolved.apiKey).toBe('secret')
     expect(resolved.keyId).toBe('gemini-k1')
+  })
+
+  test('taskRouteRules can match session provider override via matchProvider', async () => {
+    process.env.TEST_GEMINI_KEY = 'secret'
+    process.env.TEST_OPENAI_KEY = 'secret2'
+
+    setFlagSettingsInline({
+      providerKeys: [
+        {
+          id: 'k-openai',
+          provider: 'openai-compatible',
+          secretEnv: 'TEST_OPENAI_KEY',
+          models: ['gpt-5.4', 'gpt-5.2'],
+        },
+      ],
+      taskRoutes: {
+        main: {
+          provider: 'anthropic',
+          apiStyle: 'anthropic',
+          model: 'glm-5.1',
+        },
+      },
+      taskRouteRules: [
+        {
+          matchRoute: 'main',
+          matchProvider: 'openai-compatible',
+          provider: 'openai-compatible',
+          apiStyle: 'openai-compatible',
+          baseUrl: 'https://api.asxs.top/v1',
+          model: 'gpt-5.4',
+          keyRef: 'k-openai',
+        },
+      ],
+    })
+    resetSettingsCache()
+
+    const { resolveTaskRouteClientConfigFromQuerySource } = await import(
+      './taskRouting.js'
+    )
+
+    // Base: anthropic config untouched.
+    const base = resolveTaskRouteClientConfigFromQuerySource('repl_main_thread')
+    expect(base.provider).toBe('anthropic')
+    expect(base.apiStyle).toBe('anthropic')
+    expect(base.model).toBe('glm-5.1')
+
+    // Session override: provider=openai-compatible triggers matchProvider rule.
+    setMainLoopProviderOverride('openai-compatible')
+    const overridden = resolveTaskRouteClientConfigFromQuerySource('repl_main_thread')
+    expect(overridden.provider).toBe('openai-compatible')
+    expect(overridden.apiStyle).toBe('openai-compatible')
+    expect(overridden.baseUrl).toBe('https://api.asxs.top/v1')
+    expect(overridden.model).toBe('gpt-5.4')
+    expect(overridden.keyId).toBe('k-openai')
   })
 })

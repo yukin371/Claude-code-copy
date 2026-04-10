@@ -285,6 +285,7 @@ type TaskRouteRule = {
   matchQuerySource?: string
   matchQuerySourcePrefix?: string
   matchRoute?: TaskRouteName
+  matchProvider?: string
   provider?: string
   apiStyle?: string
   model?: string
@@ -310,9 +311,16 @@ function matchTaskRouteRule(params: {
   rule: TaskRouteRule
   normalizedQuerySource: string
   route: TaskRouteName
+  currentProvider: TaskRouteProviderName
 }): boolean {
   const rule = params.rule
   if (rule.matchRoute && rule.matchRoute !== params.route) return false
+  if (rule.matchProvider) {
+    const expected = normalizeProviderName(rule.matchProvider)
+    if (expected && expected !== params.currentProvider) {
+      return false
+    }
+  }
   if (rule.matchQuerySource) {
     if (normalizeQuerySource(rule.matchQuerySource) !== params.normalizedQuerySource) {
       return false
@@ -332,6 +340,7 @@ function getTaskRouteOverridesFromQuerySource(querySource?: string): TaskRouteSe
   const route = resolveTaskRouteNameFromNormalizedQuerySource(normalizedQuerySource)
   const rules = getTaskRouteRules()
   if (rules.length === 0) return undefined
+  const currentProvider = getTaskRouteExecutionTarget(route).provider
 
   let best: { rule: TaskRouteRule; rank: number } | null = null
   for (const rule of rules) {
@@ -339,19 +348,16 @@ function getTaskRouteOverridesFromQuerySource(querySource?: string): TaskRouteSe
       ...rule,
       matchRoute: rule.matchRoute as TaskRouteName | undefined,
     }
-    if (!matchTaskRouteRule({ rule: normalizedRule, normalizedQuerySource, route })) {
+    if (!matchTaskRouteRule({ rule: normalizedRule, normalizedQuerySource, route, currentProvider })) {
       continue
     }
 
     // Specificity ranking: exact querySource > prefix > route-only
     const rank =
-      normalizedRule.matchQuerySource
-        ? 3
-        : normalizedRule.matchQuerySourcePrefix
-          ? 2
-          : normalizedRule.matchRoute
-            ? 1
-            : 0
+      (normalizedRule.matchQuerySource ? 100 : 0) +
+      (normalizedRule.matchQuerySourcePrefix ? 50 : 0) +
+      (normalizedRule.matchRoute ? 10 : 0) +
+      (normalizedRule.matchProvider ? 5 : 0)
 
     if (!best || rank > best.rank) {
       best = { rule: normalizedRule, rank }
