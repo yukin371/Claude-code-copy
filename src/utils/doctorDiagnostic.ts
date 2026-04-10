@@ -223,11 +223,13 @@ async function detectMultipleInstallations(): Promise<
     installations.push({ type: 'npm-local', path: localPath })
   }
 
-  // Check for global npm installation
-  const packagesToCheck = ['@anthropic-ai/claude-code']
-  if (MACRO.PACKAGE_URL && MACRO.PACKAGE_URL !== '@anthropic-ai/claude-code') {
-    packagesToCheck.push(MACRO.PACKAGE_URL)
-  }
+  // Check for global npm installation.
+  // Include the current package (when known) and legacy upstream package names to help users
+  // detect and clean up multiple installations.
+  const packagesToCheck = [
+    MACRO.PACKAGE_URL || 'neko-code',
+    '@anthropic-ai/claude-code',
+  ].filter((name, index, list) => list.indexOf(name) === index)
   const npmResult = await execFileNoThrow('npm', [
     '-g',
     'config',

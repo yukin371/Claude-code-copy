@@ -15,7 +15,7 @@ export function getSafeMacroFeedbackChannel(fallback = 'support'): string {
 }
 
 export function getSafeMacroIssuesExplainer(
-  fallback = 'file an issue at https://github.com/anthropics/claude-code/issues',
+  fallback = 'file an issue at https://github.com/neko-code/neko-code/issues',
 ): string {
   return getMacroContext()?.ISSUES_EXPLAINER ?? fallback
 }

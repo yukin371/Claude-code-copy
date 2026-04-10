@@ -5,7 +5,7 @@ let udsSocketPath: string | undefined
 let onEnqueue: (() => void) | undefined
 
 export function getDefaultUdsSocketPath(): string {
-  return join(tmpdir(), 'claude-code-messaging.sock')
+  return join(tmpdir(), 'neko-code-messaging.sock')
 }
 
 export function getUdsMessagingSocketPath(): string | undefined {

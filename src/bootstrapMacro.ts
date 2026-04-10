@@ -17,7 +17,7 @@ const defaultMacro: MacroConfig = {
   NATIVE_PACKAGE_URL: pkg.name,
   VERSION_CHANGELOG: '',
   ISSUES_EXPLAINER:
-    'file an issue at https://github.com/anthropics/claude-code/issues',
+    'file an issue at https://github.com/neko-code/neko-code/issues',
   FEEDBACK_CHANNEL: 'github',
 }
 

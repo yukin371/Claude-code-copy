@@ -8,6 +8,11 @@ import { getSafeMacroVersion } from './macroAccess.js'
  * import without pulling in auth.ts and its transitive dependency tree.
  */
 
+export function getNekoCodeUserAgent(): string {
+  return `neko-code/${getSafeMacroVersion()}`
+}
+
+// Backwards-compatible export name: callers still import this in several places.
 export function getClaudeCodeUserAgent(): string {
-  return `claude-code/${getSafeMacroVersion()}`
+  return getNekoCodeUserAgent()
 }

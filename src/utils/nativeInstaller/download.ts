@@ -1,9 +1,9 @@
 /**
  * Download functionality for native installer
  *
- * Handles downloading Claude binaries from various sources:
+ * Handles downloading Neko Code binaries from various sources:
  * - Artifactory NPM packages
- * - GCS bucket
+ * - Binary repository (legacy)
  */
 
 import { feature } from 'bun:bundle'
@@ -22,8 +22,9 @@ import { sleep } from '../sleep.js'
 import { jsonStringify, writeFileSync_DEPRECATED } from '../slowOperations.js'
 import { getBinaryName, getPlatform } from './installer.js'
 
+// Legacy binary repo URL. Prefer GitHub Releases via NEKO_CODE_NATIVE_INSTALLER_GITHUB_REPO.
 const GCS_BUCKET_URL =
-  'https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases'
+  'https://storage.googleapis.com/neko-code-dist-placeholder/neko-code-releases'
 export const ARTIFACTORY_REGISTRY_URL =
   'https://artifactory.infra.ant.dev/artifactory/api/npm/npm-all/'
 const GITHUB_API_BASE_URL = 'https://api.github.com'
@@ -51,7 +52,7 @@ function getBinaryRepoBaseUrl(): string {
 
 function getGitHubReleaseRepo(): string | null {
   const repo = process.env.NEKO_CODE_NATIVE_INSTALLER_GITHUB_REPO?.trim()
-  return repo ? repo.replace(/^\/+|\/+$/g, '') : null
+  return repo ? repo.replace(/^\/+|\/+$/g, '') : 'neko-code/neko-code'
 }
 
 function getGitHubApiBaseUrl(): string {
@@ -331,7 +332,7 @@ export async function downloadVersionFromArtifactory(
   await fs.mkdir(stagingPath)
 
   const packageJson = {
-    name: 'claude-native-installer',
+    name: 'neko-native-installer',
     version: '0.0.1',
     dependencies: {
       [MACRO.NATIVE_PACKAGE_URL!]: version,
@@ -340,13 +341,13 @@ export async function downloadVersionFromArtifactory(
 
   // Create package-lock.json with integrity verification for platform-specific package
   const packageLock = {
-    name: 'claude-native-installer',
+    name: 'neko-native-installer',
     version: '0.0.1',
     lockfileVersion: 3,
     requires: true,
     packages: {
       '': {
-        name: 'claude-native-installer',
+        name: 'neko-native-installer',
         version: '0.0.1',
         dependencies: {
           [MACRO.NATIVE_PACKAGE_URL!]: version,
@@ -667,7 +668,7 @@ export async function downloadVersion(
   stagingPath: string,
 ): Promise<'npm' | 'binary'> {
   // Test-fixture versions route to the private sentinel bucket. DCE'd in all
-  // shipped builds — the string 'claude-code-ci-sentinel' and the gcloud call
+  // shipped builds — the string 'neko-code-ci-sentinel' and the gcloud call
   // never exist in compiled binaries. Same gcloud-token pattern as
   // remoteSkillLoader.ts:175-195.
   if (feature('ALLOW_TEST_VERSIONS') && /^99\.99\./.test(version)) {
@@ -678,7 +679,7 @@ export async function downloadVersion(
     await downloadVersionFromBinaryRepo(
       version,
       stagingPath,
-      'https://storage.googleapis.com/claude-code-ci-sentinel',
+      'https://storage.googleapis.com/neko-code-ci-sentinel',
       { headers: { Authorization: `Bearer ${stdout.trim()}` } },
     )
     return 'binary'

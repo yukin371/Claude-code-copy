@@ -43,8 +43,8 @@ export function generateKeybindingsTemplate(): string {
 
   // Format as object wrapper with bindings array
   const config = {
-    $schema: 'https://www.schemastore.org/claude-code-keybindings.json',
-    $docs: 'https://code.claude.com/docs/en/keybindings',
+    // $schema is intentionally omitted until Neko Code publishes a stable public schema URL.
+    $docs: 'https://github.com/neko-code/neko-code#keybindings',
     bindings,
   }
 

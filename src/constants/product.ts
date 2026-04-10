@@ -1,4 +1,6 @@
-export const PRODUCT_URL = 'https://claude.com/claude-code'
+// Public landing page used for attribution links.
+// Keep this pointed at the Neko Code project, not upstream Claude Code.
+export const PRODUCT_URL = 'https://github.com/neko-code/neko-code'
 
 export const PRODUCT_NAME = 'Neko Code'
 export const CLI_COMMAND_NAME = 'neko'

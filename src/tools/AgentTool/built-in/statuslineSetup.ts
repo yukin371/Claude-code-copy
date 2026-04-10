@@ -51,7 +51,7 @@ How to use the statusLine command:
        "project_dir": "string",  // Project root directory path
        "added_dirs": ["string"]  // Directories added via /add-dir
      },
-     "version": "string",        // Claude Code app version (e.g., "1.0.71")
+     "version": "string",        // Neko Code app version (e.g., "1.0.71")
      "output_style": {
        "name": "string",         // Output style name (e.g., "default", "Explanatory", "Learning")
      },
