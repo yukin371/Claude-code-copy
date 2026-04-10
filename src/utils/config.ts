@@ -78,6 +78,27 @@ export type ProjectConfig = {
   allowedTools: string[]
   mcpContextUris: string[]
   mcpServers?: Record<string, McpServerConfig>
+  /**
+   * Best-effort per-key usage tracking for third-party providers.
+   * This is NOT a source of truth, but helps with proactive warnings and handoffs.
+   */
+  providerKeyUsage?: Record<
+    string,
+    {
+      provider: string
+      windowSeconds: number
+      windowStartMs: number
+      requests: number
+      inputTokens: number
+      outputTokens: number
+      estimatedInputTokens?: number
+      estimatedOutputTokens?: number
+      cacheReadInputTokens: number
+      cacheCreationInputTokens: number
+      costUSD: number
+      lastUpdatedAt: number
+    }
+  >
   lastAPIDuration?: number
   lastAPIDurationWithoutRetries?: number
   lastToolDuration?: number

@@ -202,6 +202,60 @@ switch (command) {
     process.exit(0)
     break
   }
+  case 'key-usage':
+  case 'keys': {
+    const { enableConfigs } = await import('../src/utils/config.ts')
+    enableConfigs()
+    const { getStoredProviderKeyUsageSnapshot } = await import(
+      '../src/services/providerKeyUsageMonitor.ts'
+    )
+    const snapshot = getStoredProviderKeyUsageSnapshot()
+    const entries = Object.entries(snapshot).sort(([a], [b]) => a.localeCompare(b))
+    if (entries.length === 0) {
+      console.log('(no provider key usage recorded)')
+      process.exit(0)
+    }
+
+    const now = Date.now()
+    for (const [keyId, state] of entries) {
+      const resetAt = state.windowStartMs + state.windowSeconds * 1000
+      const windowPct =
+        state.windowSeconds > 0
+          ? Math.min(
+              100,
+              Math.max(
+                0,
+                Math.round(
+                  ((now - state.windowStartMs) / (state.windowSeconds * 1000)) *
+                    100,
+                ),
+              ),
+            )
+          : 0
+      const totalTokens =
+        state.inputTokens +
+        state.outputTokens +
+        state.cacheReadInputTokens +
+        state.cacheCreationInputTokens
+      const estimatedInput = state.estimatedInputTokens ?? 0
+      const estimatedOutput = state.estimatedOutputTokens ?? 0
+      const estimatedTokens = estimatedInput + estimatedOutput
+      const estimatedSuffix =
+        estimatedTokens > 0
+          ? ` estIn=${estimatedInput} estOut=${estimatedOutput}`
+          : ''
+      console.log(`${keyId} (${state.provider})`)
+      console.log(
+        `  window: ${Math.round(state.windowSeconds / 60)}m elapsed=${windowPct}% resetsAt=${new Date(resetAt).toISOString()}`,
+      )
+      console.log(
+        `  requests=${state.requests} tokens=${totalTokens + estimatedTokens} (in=${state.inputTokens} out=${state.outputTokens} cacheRead=${state.cacheReadInputTokens} cacheWrite=${state.cacheCreationInputTokens})${estimatedSuffix} costUSD=${state.costUSD.toFixed(4)}`,
+      )
+      console.log(`  lastUpdatedAt=${new Date(state.lastUpdatedAt).toISOString()}`)
+    }
+    process.exit(0)
+    break
+  }
   default:
     console.log('Bun tools')
     console.log('')
@@ -213,6 +267,7 @@ switch (command) {
     console.log('  bun run scripts/bun-tools.ts health [provider]')
     console.log('  bun run scripts/bun-tools.ts routes [--json]')
     console.log('  bun run scripts/bun-tools.ts route [querySource]')
+    console.log('  bun run scripts/bun-tools.ts key-usage')
     console.log('')
     console.log('Notes:')
     console.log('  - Use Bun as the project runtime.')

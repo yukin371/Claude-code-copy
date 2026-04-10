@@ -92,7 +92,10 @@ import {
   asSystemPrompt,
   type SystemPrompt,
 } from '../../utils/systemPromptType.js'
-import { tokenCountFromLastAPIResponse } from '../../utils/tokens.js'
+import {
+  tokenCountFromLastAPIResponse,
+  tokenCountWithEstimation,
+} from '../../utils/tokens.js'
 import { getDynamicConfig_BLOCKS_ON_INIT } from '../analytics/growthbook.js'
 import {
   currentLimits,
@@ -2880,6 +2883,7 @@ async function* queryModel(
   // limit) until getToolPermissionContext() resolves.
   const logMessageCount = messagesForAPI.length
   const logMessageTokens = tokenCountFromLastAPIResponse(messagesForAPI)
+  const estimatedInputTokens = tokenCountWithEstimation(messagesForAPI)
   void options.getToolPermissionContext().then(permissionContext => {
     logAPISuccessAndDuration({
       model:
@@ -2912,6 +2916,7 @@ async function* queryModel(
       fastMode: isFastModeRequest,
       previousRequestId,
       betas: lastRequestBetas,
+      estimatedInputTokens,
     })
   })
 

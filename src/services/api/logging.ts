@@ -38,6 +38,7 @@ import { sanitizeToolNameForAnalytics } from '../analytics/metadata.js'
 import { EMPTY_USAGE } from './emptyUsage.js'
 import { classifyAPIError } from './errors.js'
 import { extractConnectionErrorDetails } from './errorUtils.js'
+import { recordProviderKeyUsageFromAPISuccess } from '../providerKeyUsageMonitor.js'
 
 export type { NonNullableUsage }
 export { EMPTY_USAGE }
@@ -421,6 +422,7 @@ function logAPISuccess({
   fastMode,
   previousRequestId,
   betas,
+  estimatedInputTokens,
 }: {
   model: string
   preNormalizedModel: string
@@ -447,6 +449,7 @@ function logAPISuccess({
   fastMode?: boolean
   previousRequestId?: string | null
   betas?: string[]
+  estimatedInputTokens?: number
 }): void {
   const isNonInteractiveSession = getIsNonInteractiveSession()
   const isPostCompaction = consumePostCompaction()
@@ -576,6 +579,35 @@ function logAPISuccess({
   })
 
   setLastApiCompletionTimestamp(now)
+
+  // Best-effort per-key usage tracking for third-party keys referenced via taskRoutes.*.keyRef.
+  // This is intentionally non-fatal: routing enforces key validity, and monitoring should never
+  // break the main loop.
+  const estimatedOutputTokens =
+    usage.output_tokens > 0
+      ? undefined
+      : (() => {
+          const toolLen = toolUseContentLengths
+            ? Object.values(toolUseContentLengths).reduce(
+                (sum, value) => sum + value,
+                0,
+              )
+            : 0
+          const chars =
+            (textContentLength ?? 0) +
+            (thinkingContentLength ?? 0) +
+            toolLen
+          // Conservative heuristic, consistent with other byte-based estimates in the codebase.
+          return chars > 0 ? Math.round(chars / 4) : undefined
+        })()
+  recordProviderKeyUsageFromAPISuccess({
+    querySource,
+    model,
+    usage,
+    costUSD,
+    estimatedInputTokens,
+    estimatedOutputTokens,
+  })
 }
 
 export function logAPISuccessAndDuration({
@@ -604,6 +636,7 @@ export function logAPISuccessAndDuration({
   fastMode,
   previousRequestId,
   betas,
+  estimatedInputTokens,
 }: {
   model: string
   preNormalizedModel: string
@@ -637,6 +670,7 @@ export function logAPISuccessAndDuration({
   /** Request ID from the previous API call in this session */
   previousRequestId?: string | null
   betas?: string[]
+  estimatedInputTokens?: number
 }): void {
   const gateway = detectGateway({
     headers,
@@ -719,6 +753,7 @@ export function logAPISuccessAndDuration({
     fastMode,
     previousRequestId,
     betas,
+    estimatedInputTokens,
   })
   // Log API request event for OTLP
   void logOTelEvent('api_request', {
