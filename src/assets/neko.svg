@@ -1,0 +1,56 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#FFDEE9;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#FFDAC1;stop-opacity:1" />
+        </linearGradient>
+    </defs>
+    <rect width="200" height="200" rx="46" fill="url(#bgGrad)" />
+    <rect x="1.5" y="1.5" width="197" height="197" rx="45" fill="none" stroke="white" stroke-opacity="0.6" stroke-width="1.5" />
+
+    <g transform="translate(100, 115)">
+        
+        <!-- === 改进1：更猫化的耳朵（缩短、三角形更明显） === -->
+        <!-- 左耳 -->
+        <path d="M-55,-35 L-70,-80 Q-55,-75 -35,-50 Z" fill="#FFFFFF" />
+        <path d="M-52,-40 L-60,-68 Q-52,-65 -40,-52 Z" fill="#FFB7B2" />
+        <!-- 右耳 -->
+        <path d="M55,-35 L70,-80 Q55,-75 35,-50 Z" fill="#FFFFFF" />
+        <path d="M52,-40 L60,-68 Q52,-65 40,-52 Z" fill="#FFB7B2" />
+
+        <!-- 脸部：微调成更接近猫的“倒梯形”脸颊 -->
+        <path d="M-80,20 C-80,-65 80,-65 80,20 C80,70 -80,70 -80,20" fill="#FFFFFF" />
+
+        <!-- === 改进2：增加猫科鼻头小点（小而扁） === -->
+        <ellipse cx="0" cy="28" rx="4" ry="3" fill="#FFB7B2" />
+
+        <!-- 腮红 -->
+        <ellipse cx="-45" cy="22" rx="14" ry="7" fill="#FFB7B2" opacity="0.45"/>
+        <ellipse cx="45" cy="22" rx="14" ry="7" fill="#FFB7B2" opacity="0.45"/>
+        
+        <!-- 死鱼眼保持不变（你喜欢的神韵） -->
+        <g transform="translate(-35, 10)">
+            <path d="M-12,0 A12,12 0 0 0 12,0 L12,-2 L-12,-2 Z" fill="#6D5A4C" />
+            <circle cx="0" cy="4" r="2.5" fill="white" opacity="0.6"/>
+        </g>
+        <g transform="translate(35, 10)">
+            <path d="M-12,0 A12,12 0 0 0 12,0 L12,-2 L-12,-2 Z" fill="#6D5A4C" />
+            <circle cx="0" cy="4" r="2.5" fill="white" opacity="0.6"/>
+        </g>
+
+        <!-- W嘴，位置下移以配合鼻子 -->
+        <path d="M-7,33 Q-3,38 0,33 Q3,38 7,33" fill="none" stroke="#6D5A4C" stroke-width="2.5" stroke-linecap="round"/>
+
+        <!-- === 改进3：标准猫须阵列（每侧三根，从脸颊鼓起处放射） === -->
+        <g stroke="#6D5A4C" stroke-width="1.5" opacity="0.4" stroke-linecap="round">
+            <!-- 左须 -->
+            <line x1="-70" y1="18" x2="-92" y2="12" />
+            <line x1="-70" y1="22" x2="-92" y2="22" />
+            <line x1="-70" y1="26" x2="-92" y2="32" />
+            <!-- 右须 -->
+            <line x1="70" y1="18" x2="92" y2="12" />
+            <line x1="70" y1="22" x2="92" y2="22" />
+            <line x1="70" y1="26" x2="92" y2="32" />
+        </g>
+    </g>
+</svg>
