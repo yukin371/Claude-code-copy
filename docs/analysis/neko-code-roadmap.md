@@ -28,6 +28,8 @@
   - [2026-04-08-native-build-blockers.md](../plans/2026-04-08-native-build-blockers.md)
 - 当前工作区改动分组：
   - [2026-04-09-worktree-change-inventory.md](../plans/2026-04-09-worktree-change-inventory.md)
+- 本轮收尾对齐记录：
+  - [2026-04-10-release-preflight-signed-workflow-alignment.md](../plans/2026-04-10-release-preflight-signed-workflow-alignment.md)
 - 当前默认执行规则：
   - 以后默认按阶段计划推进
   - 只有当前 active phase 的 Exit Conditions 满足后，才切到下一阶段
@@ -224,6 +226,7 @@
 - 已验证：新增 `scripts/publish-github-release.ts` 与 `scripts/publish-github-release-smoke.ts`，GitHub Release 创建/更新命令已统一收口到脚本与 workflow，不再在 workflow 里手写拼接发布命令
 - 已收口：`scripts/promote-github-release.ts` 已从 `gh release edit` 切到显式 `gh api PATCH`，直接更新 `draft` / `prerelease` / `make_latest`，避免 promote 继续依赖 CLI flag 的隐式行为
 - 已验证：`scripts/promote-github-release-smoke.ts` 现已覆盖 `draft` / `prerelease` / `stable` 三种 promote target 与手工布尔参数组合；`smoke:release-preflight` 也已纳入 promote smoke
+- 已验证：`scripts/signed-release-publication-workflow-smoke.ts` 现已支持跳过重复 build/candidate staging，并已纳入 `smoke:release-preflight`，可在本地候选发布物 gate 中模拟“外部 unsigned artifact + 外部 signed exe 回灌”的 signed publication/deploy 交接链
 - 已落地：补齐 `scripts/analyze-text-hygiene.ts`、`scripts/check-text-hygiene.ts` 与共享规则库，避免 `package.json` 中的文本卫生入口继续悬空
 - 已收口：bridge / auth 路径里的旧 `claude` 命令提示，并把 Remote Control / auth status 的旧入口指导纳入文本卫生规则，避免 bridge 尾路径回退到错误命令
 - 已收口：`Doctor` dismiss 提示、通知标题、permission/hooks/trust dialog/memory/worktree/plugin/session-start UI 路径提示、`/insights` 命令描述、REPL 默认标题/挂起提示、keybindings schema 与 SDK settings source 描述等用户可见文案已改为 `Neko Code` / `.neko-code` 路径，不再继续直露 `Claude Code` / `.claude`
@@ -247,7 +250,7 @@
   - 明确发布说明与 upgrade workflow，让用户在新机器上直接下载运行
 - 当前还新增了一层本地候选发布物 gate：
   - `bun run smoke:release-preflight`
-  - 当前它已经把“构建 + 分发 smoke + 本地 release bundle 驱动的 installer 下载/安装 + unsigned release candidate staging + 安装脚本主入口 + README / 关键 release-facing 文本一致性”收成单条固定检查
+  - 当前它已经把“构建 + 分发 smoke + 本地 release bundle 驱动的 installer 下载/安装 + unsigned/signed release candidate staging + signed artifact 回灌 workflow 模拟 + GitHub Release publish/promote + 安装脚本主入口 + README / 关键 release-facing 文本一致性”收成单条固定检查
   - 该 gate 通过不代表 signing / 正式发布源 / 真实 auto-update 已完成，只代表本地候选产物没有明显回退
 - 所以现在的状态不是“只能源码内演示”，而是“本地 beta 可体验、正式发布链路未完成”。
 
