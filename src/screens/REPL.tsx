@@ -253,6 +253,7 @@ import { usePostCompactSurvey } from 'src/components/FeedbackSurvey/usePostCompa
 import { FeedbackSurvey } from 'src/components/FeedbackSurvey/FeedbackSurvey.js';
 import { useInstallMessages } from 'src/hooks/notifs/useInstallMessages.js';
 import { useAwaySummary } from 'src/hooks/useAwaySummary.js';
+import { useProviderKeyUsageHandoff } from 'src/hooks/useProviderKeyUsageHandoff.js';
 import { useChromeExtensionNotification } from 'src/hooks/useChromeExtensionNotification.js';
 import { useOfficialMarketplaceNotification } from 'src/hooks/useOfficialMarketplaceNotification.js';
 import { usePromptsFromClaudeInChrome } from 'src/hooks/usePromptsFromClaudeInChrome.js';
@@ -1307,6 +1308,7 @@ export function REPL({
     // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
     useAwaySummary(messages, setMessages, isLoading);
   }
+  useProviderKeyUsageHandoff(messages, setMessages, isLoading);
   const [cursor, setCursor] = useState<MessageActionsState | null>(null);
   const cursorNavRef = useRef<MessageActionsNav | null>(null);
   // Memoized so Messages' React.memo holds.
