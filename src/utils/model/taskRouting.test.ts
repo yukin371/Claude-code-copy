@@ -1,9 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { setFlagSettingsInline } from '../../bootstrap/state.js'
+import {
+  getAllowedSettingSources,
+  setAllowedSettingSources,
+  setFlagSettingsInline,
+} from '../../bootstrap/state.js'
 import {
   resetMainLoopProviderOverrideForTests,
   setMainLoopProviderOverride,
 } from './sessionProviderOverride.js'
+import { resetMainLoopKeyRefOverrideForTests } from './sessionKeyRefOverride.js'
 import { resetSettingsCache } from '../settings/settingsCache.js'
 
 type EnvSnapshot = Record<string, string | undefined>
@@ -42,15 +47,23 @@ function restoreEnv(snapshot: EnvSnapshot): void {
 
 describe('taskRouting transport compatibility', () => {
   let envSnapshot: EnvSnapshot
+  let allowedSourcesSnapshot: ReturnType<typeof getAllowedSettingSources>
 
   beforeEach(() => {
     envSnapshot = snapshotEnv(ENV_KEYS)
     resetMainLoopProviderOverrideForTests()
+    resetMainLoopKeyRefOverrideForTests()
+
+    // Keep tests hermetic: do not load user/project/local settings from disk.
+    allowedSourcesSnapshot = getAllowedSettingSources()
+    setAllowedSettingSources([])
   })
 
   afterEach(() => {
     restoreEnv(envSnapshot)
     resetMainLoopProviderOverrideForTests()
+    resetMainLoopKeyRefOverrideForTests()
+    setAllowedSettingSources(allowedSourcesSnapshot)
     setFlagSettingsInline(null)
     resetSettingsCache()
   })

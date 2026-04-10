@@ -583,8 +583,19 @@ export const SettingsSchema = lazySchema(() =>
           'Per-route provider, API style, model, and base URL configuration for task routing.',
         ),
       taskRouteRules: z
-        .array(TaskRouteRuleSchema)
+        // Accept null entries for robustness (e.g., partially edited configs).
+        // We filter them out so callers can treat taskRouteRules as TaskRouteRule[].
+        .array(TaskRouteRuleSchema.nullable())
         .optional()
+        .transform(value =>
+          Array.isArray(value)
+            ? value.filter(
+                (
+                  rule,
+                ): rule is z.infer<typeof TaskRouteRuleSchema> => rule !== null,
+              )
+            : undefined,
+        )
         .describe(
           'Optional fine-grained routing rules keyed by querySource/route, allowing task-level model/provider/keyRef selection.',
         ),
