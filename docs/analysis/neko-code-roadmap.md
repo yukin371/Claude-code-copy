@@ -209,6 +209,9 @@
   - 在接近限额阈值（例如 90%）时：
     - 触发通知（非阻塞）
     - 可选触发“移交总结”生成：输出结构化 handoff（目标/已完成/未完成/下一步/关键文件/关键命令/风险）
+  - 当前状态：
+    - 已落地：当 `providerKeys[].limits` 配置且使用率达到 80%/90% 时，在 REPL 输出 warning；90% 且 turn idle 时生成 handoff summary（`querySource=quota_handoff`）并附加为系统信息。
+    - 已对齐：handoff summary 复用了 `session_memory` 内容作为更广的上下文输入，不引入新的“半记忆”体系。
   - 与记忆系统对齐：
     - handoff summary 的生成优先复用现有 `session_memory`/`compact` 基础设施，避免另起一套“半记忆”。
     - 不得破坏 `--continue` / `--resume` 的主链一致性（已有 resume/continue/compact harness 作为回归底座）。
@@ -225,6 +228,7 @@
 - 已落地：roadmap 新增 Track A（多提供商 key/模型策略/监控/临界移交总结），并新增对应设计文档入口
 - 已验证：多 provider / route helper 回归已覆盖 `direct-provider` 与 `gateway` 两种模式
 - 已验证：任务路由回归已覆盖 `querySource -> route` 的 review / frontend hint 映射
+- 已验证：新增 `src/services/providerKeyUsageHandoffLogic.test.ts`，覆盖 quota 使用率计算（requests/tokens/cost 取最大、估算 token 合并、窗口 reset 时间输出）。
 - 已验证：状态页已可查看非 `main` 任务路由矩阵
 - 已验证：只读 smoke 矩阵已更新到 22 条用例
 - 已验证：plugin refresh 隔离 smoke 已收口
