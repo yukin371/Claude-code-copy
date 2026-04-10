@@ -14,6 +14,9 @@ import { MODEL_ALIASES } from '../../utils/model/aliases.js';
 import { checkOpus1mAccess, checkSonnet1mAccess } from '../../utils/model/check1mAccess.js';
 import { getDefaultMainLoopModelSetting, isOpus1mMergeEnabled, renderDefaultModelSetting } from '../../utils/model/model.js';
 import { isModelAllowed } from '../../utils/model/modelAllowlist.js';
+import { pickPrimarySourceForModel } from '../../utils/model/configuredModelRegistry.js';
+import { setMainLoopKeyRefOverride } from '../../utils/model/sessionKeyRefOverride.js';
+import { setMainLoopProviderOverride } from '../../utils/model/sessionProviderOverride.js';
 import { validateModel } from '../../utils/model/validateModel.js';
 function ModelPickerWrapper(t0) {
   const $ = _c(17);
@@ -55,6 +58,20 @@ function ModelPickerWrapper(t0) {
         mainLoopModel: model,
         mainLoopModelForSession: null
       }));
+      // Keep provider/keyRef in sync for menu selections too.
+      if (!model) {
+        setMainLoopProviderOverride(undefined);
+        setMainLoopKeyRefOverride(undefined);
+      } else {
+        const primary = pickPrimarySourceForModel(model);
+        if (primary) {
+          setMainLoopProviderOverride(primary.provider);
+          setMainLoopKeyRefOverride(primary.keyRef);
+        } else if (isKnownAlias(model) || model === process.env.ANTHROPIC_CUSTOM_MODEL_OPTION) {
+          setMainLoopProviderOverride('anthropic');
+          setMainLoopKeyRefOverride(undefined);
+        }
+      }
       let message = `Set model to ${chalk.bold(renderModelLabel(model))}`;
       if (effort !== undefined) {
         message = message + ` with ${chalk.bold(effort)} effort`;
@@ -196,6 +213,23 @@ function SetModelAndClose({
       }
     }
     function setModel(modelValue: string | null): void {
+      // Session routing: infer the correct provider/keyRef from the selected model.
+      // Users should only need to pick a model, not think about providers.
+      if (!modelValue) {
+        setMainLoopProviderOverride(undefined);
+        setMainLoopKeyRefOverride(undefined);
+      } else {
+        const primary = pickPrimarySourceForModel(modelValue);
+        if (primary) {
+          setMainLoopProviderOverride(primary.provider);
+          setMainLoopKeyRefOverride(primary.keyRef);
+        } else if (isKnownAlias(modelValue) || modelValue === process.env.ANTHROPIC_CUSTOM_MODEL_OPTION) {
+          // Known Anthropic aliases and the explicit Anthropic custom model should force Anthropic transport.
+          setMainLoopProviderOverride('anthropic');
+          setMainLoopKeyRefOverride(undefined);
+        }
+      }
+
       setAppState(prev => ({
         ...prev,
         mainLoopModel: modelValue,

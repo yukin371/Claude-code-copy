@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module'
 import { getProviderDefaultApiStyle, getProviderFamily } from './providerMetadata.js'
 import { getMainLoopProviderOverride } from './sessionProviderOverride.js'
+import { getTaskRouteKeyRefOverride } from './sessionKeyRefOverride.js'
 import { resolveProviderKeyRef } from './providerKeyRegistry.js'
 
 export type TaskRouteName =
@@ -629,7 +630,9 @@ export function getTaskRouteTransportConfig(
       : undefined
   const baseUrl = explicitBaseUrl || globalOpenAIBaseUrl || globalAnthropicBaseUrl
   const routeApiKey = process.env[TASK_ROUTE_API_KEY_ENV[route]]?.trim()
-  const resolvedKeyRef = routeSettings?.keyRef?.trim() || undefined
+  const sessionKeyRefOverride = getTaskRouteKeyRefOverride(route)
+  const resolvedKeyRef =
+    sessionKeyRefOverride?.trim() || routeSettings?.keyRef?.trim() || undefined
   const keyRefResolution = resolvedKeyRef
     ? resolveApiKeyFromProviderKeyRef({
         keyRef: resolvedKeyRef,

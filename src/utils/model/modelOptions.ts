@@ -61,12 +61,12 @@ function getOpenAICompatibleModelOptionsFromSettings(): ModelOption[] {
       if (!entry || typeof entry !== 'object') continue
       const allowlist = (entry as { models?: unknown }).models
       if (!Array.isArray(allowlist)) continue
-      for (const model of allowlist) {
-        add(model)
-      }
+      for (const model of allowlist) add(model)
     }
   }
 
+  // Also surface models declared directly in routing settings, since users expect them
+  // to appear in the picker even if they were not listed under providerKeys.
   const taskRoutes = settings.taskRoutes
   if (taskRoutes && typeof taskRoutes === 'object') {
     for (const route of Object.values(taskRoutes as Record<string, unknown>)) {
@@ -74,7 +74,6 @@ function getOpenAICompatibleModelOptionsFromSettings(): ModelOption[] {
       add((route as { model?: unknown }).model)
     }
   }
-
   const taskRouteRules = settings.taskRouteRules
   if (Array.isArray(taskRouteRules)) {
     for (const rule of taskRouteRules) {
@@ -83,26 +82,13 @@ function getOpenAICompatibleModelOptionsFromSettings(): ModelOption[] {
     }
   }
 
-  const routeTarget = getTaskRouteExecutionTarget('main')
-  const defaultModel = routeTarget.model?.trim()
-
-  const sorted = Array.from(models).sort((a, b) => a.localeCompare(b))
-  const options: ModelOption[] = [
-    {
-      value: null,
-      label: 'Default (recommended)',
-      description: defaultModel
-        ? `Use the configured taskRoutes.main.model (currently ${defaultModel})`
-        : 'Use the configured taskRoutes.main.model (not set)',
-    },
-    ...sorted.map(model => ({
+  return Array.from(models)
+    .sort((a, b) => a.localeCompare(b))
+    .map(model => ({
       value: model,
       label: model,
       description: 'Configured model',
-    })),
-  ]
-
-  return options
+    }))
 }
 
 export function getDefaultOptionForUser(fastMode = false): ModelOption {
@@ -523,11 +509,26 @@ function getKnownModelOption(model: string): ModelOption | null {
 
 export function getModelOptions(fastMode = false): ModelOption[] {
   const routeTarget = getTaskRouteExecutionTarget('main')
-  if (routeTarget.apiStyle === 'openai-compatible') {
-    return filterModelOptionsByAllowlist(getOpenAICompatibleModelOptionsFromSettings())
-  }
+
+  // Always show configured OpenAI-compatible models, even when the current main route
+  // is Anthropic-style. Users should be able to pick a model without first thinking
+  // about providers.
+  const openaiModels = getOpenAICompatibleModelOptionsFromSettings()
 
   const options = getModelOptionsBase(fastMode)
+
+  // If the main route is openai-compatible, rewrite the Default option description to
+  // reflect the configured taskRoutes.main.model instead of Anthropic subscription defaults.
+  if (routeTarget.apiStyle === 'openai-compatible' && options.length > 0) {
+    const defaultModel = routeTarget.model?.trim()
+    options[0] = {
+      value: null,
+      label: 'Default (recommended)',
+      description: defaultModel
+        ? `Use the configured taskRoutes.main.model (currently ${defaultModel})`
+        : 'Use the configured taskRoutes.main.model (not set)',
+    }
+  }
 
   // Add the custom model from the ANTHROPIC_CUSTOM_MODEL_OPTION env var
   const envCustomModel = process.env.ANTHROPIC_CUSTOM_MODEL_OPTION
@@ -546,6 +547,13 @@ export function getModelOptions(fastMode = false): ModelOption[] {
 
   // Append additional model options fetched during bootstrap
   for (const opt of getGlobalConfig().additionalModelOptionsCache ?? []) {
+    if (!options.some(existing => existing.value === opt.value)) {
+      options.push(opt)
+    }
+  }
+
+  // Merge in configured OpenAI-compatible models (avoid duplicates).
+  for (const opt of openaiModels) {
     if (!options.some(existing => existing.value === opt.value)) {
       options.push(opt)
     }

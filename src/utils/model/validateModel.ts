@@ -10,6 +10,7 @@ import {
   AuthenticationError,
 } from '@anthropic-ai/sdk'
 import { getModelStrings } from './modelStrings.js'
+import { isModelDeclaredInProviderKeys } from './configuredModelRegistry.js'
 
 // Cache valid models to avoid repeated API calls
 const validModelCache = new Map<string, boolean>()
@@ -43,6 +44,15 @@ export async function validateModel(
 
   // Check if it matches ANTHROPIC_CUSTOM_MODEL_OPTION (pre-validated by the user)
   if (normalizedModel === process.env.ANTHROPIC_CUSTOM_MODEL_OPTION) {
+    return { valid: true }
+  }
+
+  // If the model was declared in settings.providerKeys, treat it as valid without
+  // making an Anthropic validation request.
+  //
+  // For OpenAI-compatible gateways, we generally cannot validate model existence
+  // without provider-specific APIs, and the user explicitly configured the list.
+  if (isModelDeclaredInProviderKeys(normalizedModel)) {
     return { valid: true }
   }
 
