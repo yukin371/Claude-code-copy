@@ -142,10 +142,87 @@
 1. 更完整的品牌文案清理与旧路径兼容收尾
 2. 更上层的交互式配置入口
 3. 外部网关接入示例、运维约束与观测文档补强
+4. 多提供商 key 管理、模型能力声明、任务级模型策略与 quota 监控（见下：Track A）
+
+### Track A: 多提供商 Key / 模型策略 / 监控（面向“代理加快开发”）
+
+- 目标：
+  - 兼容 Claude(Anthropic) 与 OpenAI-compatible 两种 API 格式，不单独分叉协议层。
+  - 用户可以配置 1 个或多个 key；每个 key 声明自己可用的模型集合与限制。
+  - 用户可以按 route / querySource / 任务类型选择不同 provider + model + key，类似 “oh my opencode” 的任务级模型策略。
+  - 引入 5 小时窗口（及可配置窗口）的使用监控，在接近限制前触发预警与“移交总结”，避免任务进行到一半被限额打断。
+- 边界与约束：
+  - 不把“运维型流量治理”（复杂限流、并发队列、组织级配额）继续堆进应用；外部网关仍是主方案（LiteLLM / Portkey / Helicone / Cloudflare AI Gateway 等）。
+  - 应用内只做：key registry、能力声明、任务路由决策、best-effort 监控与用户提示。
+  - key 不允许通过 `baseUrl/apiKey` 的逗号池在应用内做随机池化；显式 `baseUrl/apiKey` 仍代表 single-upstream pin。
+- 设计入口：
+  - 设计文档：`docs/analysis/neko-code-multi-provider-keys-and-monitoring.md`
+
+#### M1. Key Registry 与路由挂钩（最小可用）
+
+- 范围：
+  - `settings.json` 新增 `providerKeys[]`，每个 key 具备：`id/provider/secretEnv/models/expiresAt/limits/context`（全部 optional, 向后兼容）。
+  - `taskRoutes.<route>.keyRef` 支持引用 `providerKeys[].id`，解析到 route transport 的 `apiKey`，并保留非机密 `keyId` 用于监控。
+  - keyRef 能力约束：过期、模型 deny、secret 缺失时，路由应 fail-fast 且错误可定位到 `route + keyRef`。
+- 验收标准：
+  - `bun run typecheck`
+  - `bun run test:routing` 覆盖 keyRef 基础用例（ok / missing / expired / model-denied）。
+  - `bun run smoke:readonly-routing` 在不配置 keyRef 时行为不变；配置 keyRef 时能在 debug snapshot 中标注 `apiKeySource=key-ref*`。
+- 测试项：
+  - 单测：`src/utils/model/taskRouting.test.ts`
+  - 新增单测：`src/utils/model/providerKeyRegistry.test.ts`
+
+#### M2. 任务级模型策略（按 querySource 精细路由）
+
+- 范围：
+  - 新增 `taskRouteRules[]`（可选）：按 `querySource`/prefix/route hint 进行覆盖式路由（只覆盖 rule 中声明的字段）。
+  - 支持“同一主对话内不同子任务用不同模型”：例如 `web_search_tool`/`permission_explainer`/`session_memory`/`tool_use_summary_generation` 走不同 key+model。
+  - 规则优先级明确且可诊断：env > route-env > route-settings > taskRouteRules > defaults。
+- 验收标准：
+  - `bun run test:routing` 新增覆盖：querySource rule override 的稳定性与可解释性。
+  - `bun run smoke:readonly-routing` 增加 2-3 条样例 querySource 的断言（防止规则被静默忽略）。
+- 测试项：
+  - 单测：`src/utils/model/taskRouting.test.ts` 扩展 querySource case matrix
+  - 只读 smoke：`scripts/readonly-smoke.ps1 -Workflow routing` 增加 keyRef/rule 断言
+
+#### M3. Quota Monitor（5 小时窗口）与预警
+
+- 范围：
+  - per-key 计数：requests、tokens（input/output/cache）、cost(USD, best-effort)、estimated tokens（当上游缺 usage）。
+  - 支持两类套餐：
+    - 按次计费：`maxRequests`
+    - 按 token 计费：`maxTotalTokens`/`maxInputTokens`/`maxOutputTokens`
+    - 可选：`maxUsd`
+  - 5 小时窗口默认值为 `18000s`，允许 key 自定义窗口（用于周/月限额或自建套餐）。
+  - 新增诊断入口输出当前 key 使用快照（CLI/bun-tools），用于排障与 statusline 对接。
+- 验收标准：
+  - `bun run test:routing` 继续绿。
+  - 新增单测：usage monitor 对窗口 rollover 的行为（时间模拟 + reset 逻辑）。
+  - 新增诊断命令能在无 usage 数据时输出 estimated 字段（标注为估算）。
+- 测试项：
+  - 单测：`src/services/providerKeyUsageMonitor.test.ts`
+  - 只读诊断：`bun run scripts/bun-tools.ts key-usage`
+
+#### M4. 临界点“移交总结”（避免中断）与记忆对齐
+
+- 范围：
+  - 在接近限额阈值（例如 90%）时：
+    - 触发通知（非阻塞）
+    - 可选触发“移交总结”生成：输出结构化 handoff（目标/已完成/未完成/下一步/关键文件/关键命令/风险）
+  - 与记忆系统对齐：
+    - handoff summary 的生成优先复用现有 `session_memory`/`compact` 基础设施，避免另起一套“半记忆”。
+    - 不得破坏 `--continue` / `--resume` 的主链一致性（已有 resume/continue/compact harness 作为回归底座）。
+- 验收标准：
+  - 新增 smoke：模拟“接近限额”场景下能输出 handoff summary，并且不影响 session continue/resume 的基本链路。
+  - `bun run smoke:phase3-system-regression` 与 `bun run smoke:distribution-readiness` 继续绿。
+- 测试项：
+  - 新增 smoke：`scripts/handoff-summary-smoke.ts`
+  - 复用既有 harness：`scripts/session-continue-smoke.ts`、`scripts/session-resume-smoke.ts`
 
 ## 最近已验证推进
 
 - 已验证：`bun run typecheck`
+- 已落地：roadmap 新增 Track A（多提供商 key/模型策略/监控/临界移交总结），并新增对应设计文档入口
 - 已验证：多 provider / route helper 回归已覆盖 `direct-provider` 与 `gateway` 两种模式
 - 已验证：任务路由回归已覆盖 `querySource -> route` 的 review / frontend hint 映射
 - 已验证：状态页已可查看非 `main` 任务路由矩阵

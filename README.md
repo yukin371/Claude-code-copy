@@ -470,6 +470,7 @@ bun run smoke:claude-config
 
 - 路线图：[`docs/analysis/neko-code-roadmap.md`](docs/analysis/neko-code-roadmap.md)
 - Provider 接入说明：[`docs/analysis/neko-code-provider-integration-guide.md`](docs/analysis/neko-code-provider-integration-guide.md)
+- 多提供商 key/模型策略/监控设计：[`docs/analysis/neko-code-multi-provider-keys-and-monitoring.md`](docs/analysis/neko-code-multi-provider-keys-and-monitoring.md)
 - CLI 基线状态：[`docs/plans/2026-04-02-cli-baseline-status.md`](docs/plans/2026-04-02-cli-baseline-status.md)
 
 ## 说明
