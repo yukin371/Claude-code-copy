@@ -17,6 +17,7 @@ import { getSettings_DEPRECATED } from '../settings/settings.js'
 import { checkOpus1mAccess, checkSonnet1mAccess } from './check1mAccess.js'
 import { getAPIProvider } from './providers.js'
 import { isModelAllowed } from './modelAllowlist.js'
+import { getTaskRouteExecutionTarget } from './taskRouting.js'
 import {
   getCanonicalName,
   getClaudeAiUserDefaultModelDescription,
@@ -41,6 +42,67 @@ export type ModelOption = {
   label: string
   description: string
   descriptionForModel?: string
+}
+
+function getOpenAICompatibleModelOptionsFromSettings(): ModelOption[] {
+  const settings = (getSettings_DEPRECATED() || {}) as Record<string, unknown>
+
+  const models = new Set<string>()
+  const add = (value: unknown) => {
+    if (typeof value !== 'string') return
+    const trimmed = value.trim()
+    if (!trimmed) return
+    models.add(trimmed)
+  }
+
+  const providerKeys = settings.providerKeys
+  if (Array.isArray(providerKeys)) {
+    for (const entry of providerKeys) {
+      if (!entry || typeof entry !== 'object') continue
+      const allowlist = (entry as { models?: unknown }).models
+      if (!Array.isArray(allowlist)) continue
+      for (const model of allowlist) {
+        add(model)
+      }
+    }
+  }
+
+  const taskRoutes = settings.taskRoutes
+  if (taskRoutes && typeof taskRoutes === 'object') {
+    for (const route of Object.values(taskRoutes as Record<string, unknown>)) {
+      if (!route || typeof route !== 'object') continue
+      add((route as { model?: unknown }).model)
+    }
+  }
+
+  const taskRouteRules = settings.taskRouteRules
+  if (Array.isArray(taskRouteRules)) {
+    for (const rule of taskRouteRules) {
+      if (!rule || typeof rule !== 'object') continue
+      add((rule as { model?: unknown }).model)
+    }
+  }
+
+  const routeTarget = getTaskRouteExecutionTarget('main')
+  const defaultModel = routeTarget.model?.trim()
+
+  const sorted = Array.from(models).sort((a, b) => a.localeCompare(b))
+  const options: ModelOption[] = [
+    {
+      value: null,
+      label: 'Default (recommended)',
+      description: defaultModel
+        ? `Use the configured taskRoutes.main.model (currently ${defaultModel})`
+        : 'Use the configured taskRoutes.main.model (not set)',
+    },
+    ...sorted.map(model => ({
+      value: model,
+      label: model,
+      description: 'Configured model',
+    })),
+  ]
+
+  return options
 }
 
 export function getDefaultOptionForUser(fastMode = false): ModelOption {
@@ -460,6 +522,11 @@ function getKnownModelOption(model: string): ModelOption | null {
 }
 
 export function getModelOptions(fastMode = false): ModelOption[] {
+  const routeTarget = getTaskRouteExecutionTarget('main')
+  if (routeTarget.apiStyle === 'openai-compatible') {
+    return filterModelOptionsByAllowlist(getOpenAICompatibleModelOptionsFromSettings())
+  }
+
   const options = getModelOptionsBase(fastMode)
 
   // Add the custom model from the ANTHROPIC_CUSTOM_MODEL_OPTION env var

@@ -96,14 +96,16 @@ export function getUserSpecifiedModelSetting(): ModelSetting | undefined {
  */
 export function getMainLoopModel(): ModelName {
   const routeTarget = getTaskRouteExecutionTarget('main')
+  const userOverride = getUserSpecifiedModelSetting()
+  if (userOverride !== undefined && userOverride !== null) {
+    return routeTarget.apiStyle === 'anthropic'
+      ? parseUserSpecifiedModel(userOverride)
+      : normalizeModelStringForAPI(String(userOverride))
+  }
   if (routeTarget.model) {
     return routeTarget.apiStyle === 'anthropic'
       ? parseUserSpecifiedModel(routeTarget.model)
       : normalizeModelStringForAPI(routeTarget.model)
-  }
-  const model = getUserSpecifiedModelSetting()
-  if (model !== undefined && model !== null) {
-    return parseUserSpecifiedModel(model)
   }
   return getDefaultMainLoopModel()
 }
