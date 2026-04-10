@@ -381,7 +381,7 @@ async function main(): Promise<void> {
     repoRoot,
     'src',
     'assets',
-    'neko-installer-icon.svg',
+    'neko.svg',
   )
 
   const publication = JSON.parse(
