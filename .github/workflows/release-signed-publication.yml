@@ -19,10 +19,25 @@ on:
         description: Artifact name that contains the signed exe
         required: true
         type: string
+      publish_github_release:
+        description: Publish GitHub Release in the same workflow
+        required: true
+        default: true
+        type: boolean
+      promote_target:
+        description: Optional promotion target after publish
+        required: true
+        default: none
+        type: choice
+        options:
+          - none
+          - draft
+          - prerelease
+          - stable
 
 permissions:
   actions: read
-  contents: read
+  contents: write
 
 jobs:
   signed-publication:
@@ -145,6 +160,35 @@ jobs:
         run: |
           bun run scripts/native-update-cli-release-deploy-smoke.ts --skip-stage-deploy
 
+      - name: Stage GitHub release assets
+        if: ${{ inputs.publish_github_release }}
+        shell: pwsh
+        run: |
+          bun run scripts/stage-github-release.ts --skip-stage-deploy
+
+      - name: Smoke GitHub release package
+        if: ${{ inputs.publish_github_release }}
+        shell: pwsh
+        run: |
+          bun run scripts/stage-github-release-smoke.ts --skip-signed-workflow --skip-stage-github-release
+
+      - name: Publish draft prerelease
+        if: ${{ inputs.publish_github_release }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bun run scripts/publish-github-release.ts --version "$env:RELEASE_VERSION"
+
+      - name: Promote GitHub release
+        if: ${{ inputs.publish_github_release && inputs.promote_target != 'none' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TARGET: ${{ inputs.promote_target }}
+        run: |
+          bun run scripts/promote-github-release.ts --version "$env:RELEASE_VERSION" --target "$env:RELEASE_TARGET"
+
       - name: Upload signed release candidate
         uses: actions/upload-artifact@v4
         with:
@@ -176,3 +220,21 @@ jobs:
           path: dist/release-deploy/${{ inputs.version }}
           if-no-files-found: error
           retention-days: 14
+
+      - name: Upload staged GitHub release package
+        if: ${{ inputs.publish_github_release }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: neko-code-github-release-${{ inputs.version }}-win32-x64
+          path: dist/github-release/${{ inputs.version }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Write release summary
+        shell: pwsh
+        run: |
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Signed Publication"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ""
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Version: $env:RELEASE_VERSION"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Publish GitHub Release: ${{ inputs.publish_github_release }}"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Promote target: ${{ inputs.promote_target }}"
