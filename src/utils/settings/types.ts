@@ -60,6 +60,174 @@ const TaskRouteSettingsSchema = z
       .describe(
         'Optional base URL override for this task route. When set, the route is treated as openai-compatible.',
       ),
+    keyRef: z
+      .string()
+      .optional()
+      .describe(
+        'Reference to a providerKeys entry id. When set, routing will resolve the API key from providerKeys instead of relying on provider env vars.',
+      ),
+  })
+  .passthrough()
+
+const TaskRouteRuleSchema = z
+  .object({
+    // Matchers (AND semantics when multiple are provided)
+    matchQuerySource: z
+      .string()
+      .optional()
+      .describe('Match an exact querySource (case-insensitive).'),
+    matchQuerySourcePrefix: z
+      .string()
+      .optional()
+      .describe('Match querySource prefix (case-insensitive).'),
+    matchRoute: z
+      .enum([
+        'main',
+        'subagent',
+        'frontend',
+        'review',
+        'explore',
+        'plan',
+        'guide',
+        'statusline',
+      ])
+      .optional()
+      .describe('Match a resolved task route.'),
+
+    // Overrides (only declared fields override the base route settings)
+    provider: z
+      .enum(['anthropic', 'codex', 'gemini', 'glm', 'minimax', 'openai-compatible'])
+      .optional()
+      .describe('Provider override for this rule.'),
+    apiStyle: z
+      .enum(['anthropic', 'openai-compatible'])
+      .optional()
+      .describe('API style override for this rule.'),
+    model: z
+      .string()
+      .optional()
+      .describe('Model override for this rule.'),
+    baseUrl: z
+      .string()
+      .optional()
+      .describe('Base URL override for this rule.'),
+    keyRef: z
+      .string()
+      .optional()
+      .describe('providerKeys id to use for this rule.'),
+  })
+  .refine(
+    value =>
+      !!(
+        value.matchQuerySource ||
+        value.matchQuerySourcePrefix ||
+        value.matchRoute
+      ),
+    {
+      message:
+        'taskRouteRules entries must set at least one matcher: matchQuerySource, matchQuerySourcePrefix, or matchRoute',
+    },
+  )
+  .passthrough()
+
+const ProviderKeyLimitsSchema = z
+  .object({
+    windowSeconds: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe(
+        'Optional quota window length in seconds (e.g., 18000 for 5 hours). When omitted, the monitor uses provider defaults.',
+      ),
+    maxRequests: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Maximum requests allowed within the quota window.'),
+    maxTotalTokens: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Maximum total tokens (input+output) allowed within the quota window.'),
+    maxInputTokens: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Maximum input tokens allowed within the quota window.'),
+    maxOutputTokens: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Maximum output tokens allowed within the quota window.'),
+    maxUsd: z
+      .number()
+      .positive()
+      .optional()
+      .describe('Maximum USD cost allowed within the quota window (best-effort when pricing is known).'),
+  })
+  .passthrough()
+
+const ProviderKeyContextSchema = z
+  .object({
+    maxContextTokens: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe(
+        'Override the effective context window used for local decisions (auto-compact, context warnings) when using this key.',
+      ),
+    compactTargetTokens: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe(
+        'Preferred post-compaction target token size when nearing context or quota limits.',
+      ),
+  })
+  .passthrough()
+
+const ProviderKeySchema = z
+  .object({
+    id: z
+      .string()
+      .min(1)
+      .describe('Stable key identifier used by taskRoutes.*.keyRef.'),
+    provider: z
+      .enum(['anthropic', 'codex', 'gemini', 'glm', 'minimax', 'openai-compatible'])
+      .describe('Provider this key is intended for.'),
+    secretEnv: z
+      .string()
+      .optional()
+      .describe(
+        'Environment variable name that contains the key secret. Preferred over inline secret.',
+      ),
+    secret: z
+      .string()
+      .optional()
+      .describe(
+        'Inline key secret (discouraged). Prefer secretEnv or an external helper to avoid storing secrets on disk.',
+      ),
+    models: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'Optional allowlist of models this key can be used with. If omitted, the key is assumed to allow any model supported by the provider.',
+      ),
+    expiresAt: z
+      .string()
+      .optional()
+      .describe(
+        'Optional expiry timestamp (ISO 8601). The router can refuse to use expired keys and the monitor can warn before expiry.',
+      ),
+    limits: ProviderKeyLimitsSchema.optional().describe('Optional quota/budget limits for this key.'),
+    context: ProviderKeyContextSchema.optional().describe('Optional local context/compaction preferences for this key.'),
   })
   .passthrough()
 
@@ -408,6 +576,18 @@ export const SettingsSchema = lazySchema(() =>
         .optional()
         .describe(
           'Per-route provider, API style, model, and base URL configuration for task routing.',
+        ),
+      taskRouteRules: z
+        .array(TaskRouteRuleSchema)
+        .optional()
+        .describe(
+          'Optional fine-grained routing rules keyed by querySource/route, allowing task-level model/provider/keyRef selection.',
+        ),
+      providerKeys: z
+        .array(ProviderKeySchema)
+        .optional()
+        .describe(
+          'Optional registry of provider API keys with metadata (allowed models, expiry, quotas). Use taskRoutes.*.keyRef to reference entries.',
         ),
       openAIProviderStrategy: z
         .enum(['fallback', 'round-robin', 'weighted'])
