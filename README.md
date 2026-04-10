@@ -1,6 +1,6 @@
 # Neko Code
 
-Neko Code 是一个从 Claude Code 源码快照反向补全出来的可运行项目。
+Neko Code 是一个从上游 CLI 源码快照反向补全出来的可运行项目。
 
 当前目标不是复刻一个 100% 完整等价的官方仓库，而是先把它推进到：
 
@@ -9,7 +9,7 @@ Neko Code 是一个从 Claude Code 源码快照反向补全出来的可运行项
 - 支持多 API / 多 provider 共存
 - 支持把任务路由到不同 provider / model / apiStyle / baseUrl
 - 支持按任务类型路由不同模型，逐步接近类似 Oh My Opencode 的任务级模型分配体验
-- 支持把现有 Claude Code 用户配置迁移到 Neko Code
+- 支持把现有历史配置迁移到 Neko Code
 
 ## 项目方向
 
@@ -25,16 +25,16 @@ Neko Code 是一个从 Claude Code 源码快照反向补全出来的可运行项
 
 - 让应用只负责任务路由，不内建长期负载均衡平台能力
 - 把负载均衡、failover、key pool、重试等网关能力尽量下沉到外部聚合层
-- 保留 Claude Code 的主交互体验和工具能力
+- 保留上游 CLI 的主交互体验和工具能力
 - 逐步让主线程、subagent、review、前端修改等任务使用不同模型
-- 在迁移成本尽可能低的前提下，把 Claude Code 配置平滑迁入 Neko Code
+- 在迁移成本尽可能低的前提下，把历史配置平滑迁入 Neko Code
 
 ## 已验证能力
 
 当前已经完成并经过验证的部分：
 
 - 默认品牌切换为 `Neko Code`
-- 默认配置目录、临时目录、tmux socket 与 Claude Code 隔离
+- 默认配置目录、临时目录、tmux socket 与历史目录隔离
 - 默认关闭 analytics / telemetry，相关 sink 改为 no-op
 - 保守的 Claude 配置迁移
   - 首次启动可从 `~/.claude` 导入核心配置到 `~/.neko-code`
@@ -50,7 +50,7 @@ Neko Code 是一个从 Claude Code 源码快照反向补全出来的可运行项
   - 已修补 headless 未等待 `runHeadless(...)` 的提前退出问题
   - 已补齐关键 `MACRO.*` bootstrap / 兜底
   - 已修补 OpenAI-compatible stream `.withResponse()` 兼容问题
-- 使用迁移后的真实 Claude 配置回放 `bun src/entrypoints/cli.tsx -p --max-turns 1 "Reply with exactly OK"` 已可返回 `OK`
+- 使用迁移后的真实历史配置回放 `bun src/entrypoints/cli.tsx -p --max-turns 1 "Reply with exactly OK"` 已可返回 `OK`
 - Bun 工程依赖基线已补齐
 - native build 基线已打通
 - `bun run build:native` 已可生成 `dist/neko-code.exe`
@@ -437,7 +437,7 @@ bun run build:native
 
 - `dist/neko-code.exe -p --max-turns 1 "Reply with exactly OK"`
 
-使用现有 Claude 配置做隔离 smoke：
+使用现有历史配置做隔离 smoke：
 
 ```bash
 bun run smoke:claude-config
@@ -459,7 +459,7 @@ bun run smoke:claude-config
 
 现阶段最值得继续推进的方向：
 
-- 复制真实 Claude 配置做回归烟测，识别剩余运行时缺口
+- 复制真实历史配置做回归烟测，识别剩余运行时缺口
 - 继续恢复高级交互链路和真实会话路径
 - 逐步把 SDK 占位类型替换成真实结构
 - 沿 `bridgeMessaging -> inboundMessages -> initReplBridge -> structuredIO` 主链路收口类型问题

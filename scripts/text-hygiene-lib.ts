@@ -1,5 +1,5 @@
 import { readdir } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 export type TextHygieneFinding = {
   file: string
@@ -192,7 +192,20 @@ const RULES: Rule[] = [
     label: 'auth status logged-out guidance uses legacy CLI auth command',
     needle: 'Not logged in. Run claude auth login to authenticate.',
   },
+  {
+    label: 'readme intro uses stale product name',
+    needle: 'Neko Code 是一个从 Claude Code 源码快照反向补全出来的可运行项目。',
+  },
+  {
+    label: 'roadmap goal uses stale product name',
+    needle: '产出一个像 Claude Code 一样可直接从终端启动的本地可运行版本',
+  },
 ]
+
+const EXTRA_TARGET_FILES = [
+  'README.md',
+  'docs/analysis/neko-code-roadmap.md',
+] as const
 
 async function collectFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true })
@@ -214,7 +227,11 @@ async function collectFiles(dir: string): Promise<string[]> {
 }
 
 export async function findTextHygieneIssues(): Promise<TextHygieneFinding[]> {
-  const files = await collectFiles(join(process.cwd(), 'src'))
+  const srcFiles = await collectFiles(join(process.cwd(), 'src'))
+  const files = [
+    ...srcFiles,
+    ...EXTRA_TARGET_FILES.map(file => resolve(process.cwd(), file)),
+  ]
   const findings: TextHygieneFinding[] = []
 
   for (const file of files) {
@@ -235,7 +252,7 @@ export async function findTextHygieneIssues(): Promise<TextHygieneFinding[]> {
 
 export function formatFindings(findings: TextHygieneFinding[]): string {
   if (findings.length === 0) {
-    return 'No legacy release-facing text regressions found in src/.'
+    return 'No legacy release-facing text regressions found in src/ + release-facing docs.'
   }
 
   return [
