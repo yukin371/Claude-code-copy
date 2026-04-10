@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { setFlagSettingsInline } from '../../bootstrap/state.js'
 import {
   resetMainLoopProviderOverrideForTests,
   setMainLoopProviderOverride,
 } from './sessionProviderOverride.js'
+import { resetSettingsCache } from '../settings/settingsCache.js'
 
 type EnvSnapshot = Record<string, string | undefined>
 
@@ -19,6 +21,8 @@ const ENV_KEYS = [
   'NEKO_CODE_MAIN_API_KEY',
   'NEKO_CODE_PLAN_BASE_URL',
   'NEKO_CODE_PLAN_API_KEY',
+  'TEST_GEMINI_KEY',
+  'NODE_ENV',
 ] as const
 
 function snapshotEnv(keys: readonly string[]): EnvSnapshot {
@@ -46,6 +50,8 @@ describe('taskRouting transport compatibility', () => {
   afterEach(() => {
     restoreEnv(envSnapshot)
     resetMainLoopProviderOverrideForTests()
+    setFlagSettingsInline(null)
+    resetSettingsCache()
   })
 
   test('anthropic routes ignore global openai-compatible transport defaults', async () => {
@@ -471,5 +477,49 @@ describe('taskRouting transport compatibility', () => {
       'main-route-secret',
     )
     expect(mainRouteSnapshot?.transport.apiKey).toBe('main-route-secret')
+  })
+
+  test('taskRouteRules can override provider/model/keyRef for a specific querySource', async () => {
+    process.env.NODE_ENV = 'test'
+    process.env.TEST_GEMINI_KEY = 'secret'
+
+    setFlagSettingsInline({
+      providerKeys: [
+        {
+          id: 'gemini-k1',
+          provider: 'gemini',
+          secretEnv: 'TEST_GEMINI_KEY',
+          models: ['gemini-2.5-pro'],
+        },
+      ],
+      taskRoutes: {
+        main: {
+          provider: 'glm',
+          apiStyle: 'openai-compatible',
+          model: 'glm-4',
+        },
+      },
+      taskRouteRules: [
+        {
+          matchQuerySource: 'web_search_tool',
+          provider: 'gemini',
+          apiStyle: 'openai-compatible',
+          model: 'gemini-2.5-pro',
+          keyRef: 'gemini-k1',
+        },
+      ],
+    })
+    resetSettingsCache()
+
+    const { resolveTaskRouteClientConfigFromQuerySource } = await import(
+      './taskRouting.js'
+    )
+    const resolved = resolveTaskRouteClientConfigFromQuerySource('web_search_tool')
+    expect(resolved.route).toBe('main')
+    expect(resolved.provider).toBe('gemini')
+    expect(resolved.model).toBe('gemini-2.5-pro')
+    expect(resolved.apiStyle).toBe('openai-compatible')
+    expect(resolved.apiKey).toBe('secret')
+    expect(resolved.keyId).toBe('gemini-k1')
   })
 })

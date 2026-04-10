@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module'
 import { getProviderDefaultApiStyle, getProviderFamily } from './providerMetadata.js'
 import { getMainLoopProviderOverride } from './sessionProviderOverride.js'
+import { resolveProviderKeyRef } from './providerKeyRegistry.js'
 
 export type TaskRouteName =
   | 'main'
@@ -33,6 +34,11 @@ export type TaskRouteTransportMode = 'direct-provider' | 'single-upstream'
 export type TaskRouteTransportConfig = TaskRouteExecutionTarget & {
   baseUrl?: string
   apiKey?: string
+  /**
+   * Non-secret key identity, typically set from settings taskRoutes.*.keyRef.
+   * This is used for quota monitoring and diagnostics. It MUST NOT contain secrets.
+   */
+  keyId?: string
   transportMode?: TaskRouteTransportMode
   baseUrlSource?: TaskRouteDebugSource
   apiKeySource?: TaskRouteDebugSource
@@ -48,6 +54,7 @@ type TaskRouteSettings = {
   apiStyle?: string
   model?: string
   baseUrl?: string
+  keyRef?: string
 }
 
 type TaskRouteDebugSettings = {
@@ -55,6 +62,7 @@ type TaskRouteDebugSettings = {
   apiStyle?: string
   model?: string
   baseUrl?: string
+  keyRef?: string
 }
 
 type TaskRouteDebugRouteEnv = {
@@ -74,6 +82,11 @@ export type TaskRouteDebugSource =
   | 'session-override'
   | 'derived-provider'
   | 'forced-by-base-url'
+  | 'key-ref'
+  | 'key-ref-env'
+  | 'key-ref-missing'
+  | 'key-ref-expired'
+  | 'key-ref-model-denied'
 
 export type TaskRouteDebugField<T> = {
   value: T | undefined
@@ -268,6 +281,109 @@ function getTaskRouteSettings(route: TaskRouteName): TaskRouteSettings | undefin
   }
 }
 
+type TaskRouteRule = {
+  matchQuerySource?: string
+  matchQuerySourcePrefix?: string
+  matchRoute?: TaskRouteName
+  provider?: string
+  apiStyle?: string
+  model?: string
+  baseUrl?: string
+  keyRef?: string
+}
+
+function getTaskRouteRules(): TaskRouteRule[] {
+  try {
+    const require = createRequire(import.meta.url)
+    const settingsModule = require('../settings/settings.js') as {
+      getSettings_DEPRECATED?: () => {
+        taskRouteRules?: TaskRouteRule[]
+      }
+    }
+    return settingsModule.getSettings_DEPRECATED?.()?.taskRouteRules ?? []
+  } catch {
+    return []
+  }
+}
+
+function matchTaskRouteRule(params: {
+  rule: TaskRouteRule
+  normalizedQuerySource: string
+  route: TaskRouteName
+}): boolean {
+  const rule = params.rule
+  if (rule.matchRoute && rule.matchRoute !== params.route) return false
+  if (rule.matchQuerySource) {
+    if (normalizeQuerySource(rule.matchQuerySource) !== params.normalizedQuerySource) {
+      return false
+    }
+  }
+  if (rule.matchQuerySourcePrefix) {
+    const prefix = normalizeQuerySource(rule.matchQuerySourcePrefix)
+    if (!params.normalizedQuerySource.startsWith(prefix)) {
+      return false
+    }
+  }
+  return true
+}
+
+function getTaskRouteOverridesFromQuerySource(querySource?: string): TaskRouteSettings | undefined {
+  const normalizedQuerySource = normalizeQuerySource(querySource)
+  const route = resolveTaskRouteNameFromNormalizedQuerySource(normalizedQuerySource)
+  const rules = getTaskRouteRules()
+  if (rules.length === 0) return undefined
+
+  let best: { rule: TaskRouteRule; rank: number } | null = null
+  for (const rule of rules) {
+    const normalizedRule = {
+      ...rule,
+      matchRoute: rule.matchRoute as TaskRouteName | undefined,
+    }
+    if (!matchTaskRouteRule({ rule: normalizedRule, normalizedQuerySource, route })) {
+      continue
+    }
+
+    // Specificity ranking: exact querySource > prefix > route-only
+    const rank =
+      normalizedRule.matchQuerySource
+        ? 3
+        : normalizedRule.matchQuerySourcePrefix
+          ? 2
+          : normalizedRule.matchRoute
+            ? 1
+            : 0
+
+    if (!best || rank > best.rank) {
+      best = { rule: normalizedRule, rank }
+    }
+  }
+
+  if (!best) return undefined
+  return {
+    provider: best.rule.provider,
+    apiStyle: best.rule.apiStyle,
+    model: best.rule.model,
+    baseUrl: best.rule.baseUrl,
+    keyRef: best.rule.keyRef,
+  }
+}
+
+function mergeTaskRouteSettings(
+  base: TaskRouteSettings | undefined,
+  overrides: TaskRouteSettings | undefined,
+): TaskRouteSettings | undefined {
+  if (!base && !overrides) return undefined
+  if (!overrides) return base
+
+  const merged: TaskRouteSettings = { ...(base ?? {}) }
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value !== undefined) {
+      ;(merged as any)[key] = value
+    }
+  }
+  return merged
+}
+
 function normalizeConfiguredValue(value?: string): string | undefined {
   const trimmed = value?.trim()
   return trimmed ? trimmed : undefined
@@ -290,6 +406,7 @@ function getTaskRouteDebugSettings(route: TaskRouteName): TaskRouteDebugSettings
     apiStyle: normalizeConfiguredValue(settings?.apiStyle),
     model: normalizeConfiguredValue(settings?.model),
     baseUrl: settings?.baseUrl?.trim(),
+    keyRef: normalizeConfiguredValue(settings?.keyRef),
   }
 }
 
@@ -428,10 +545,14 @@ export function getTaskRouteExecutionTarget(
   route: TaskRouteName,
   options: {
     ignoreSessionOverride?: boolean
+    settingsOverride?: TaskRouteSettings
   } = {},
 ): TaskRouteExecutionTarget {
   const defaultTarget = DEFAULT_ROUTE_TARGETS[route]
-  const routeSettings = getTaskRouteSettings(route)
+  const routeSettings = mergeTaskRouteSettings(
+    getTaskRouteSettings(route),
+    options.settingsOverride,
+  )
   const sessionProviderOverride =
     route === 'main' && !options.ignoreSessionOverride
       ? getMainLoopProviderOverride()
@@ -479,9 +600,13 @@ export function getTaskRouteExecutionTarget(
 
 export function getTaskRouteTransportConfig(
   route: TaskRouteName,
+  settingsOverride?: TaskRouteSettings,
 ): TaskRouteTransportConfig {
-  const target = getTaskRouteExecutionTarget(route)
-  const routeSettings = getTaskRouteSettings(route)
+  const routeSettings = mergeTaskRouteSettings(
+    getTaskRouteSettings(route),
+    settingsOverride,
+  )
+  const target = getTaskRouteExecutionTarget(route, { settingsOverride })
   const routeEnvBaseUrl = process.env[TASK_ROUTE_BASE_URL_ENV[route]]?.trim()
   const settingsBaseUrl = routeSettings?.baseUrl?.trim()
   const explicitBaseUrl = routeEnvBaseUrl || settingsBaseUrl
@@ -498,15 +623,30 @@ export function getTaskRouteTransportConfig(
       : undefined
   const baseUrl = explicitBaseUrl || globalOpenAIBaseUrl || globalAnthropicBaseUrl
   const routeApiKey = process.env[TASK_ROUTE_API_KEY_ENV[route]]?.trim()
+  const resolvedKeyRef = routeSettings?.keyRef?.trim() || undefined
+  const keyRefResolution = resolvedKeyRef
+    ? resolveApiKeyFromProviderKeyRef({
+        keyRef: resolvedKeyRef,
+        routeProvider: target.provider,
+        routeModel: target.model,
+      })
+    : undefined
+  if (resolvedKeyRef && routeApiKey === undefined && !keyRefResolution?.apiKey) {
+    throw new Error(
+      `taskRoutes.${route}.keyRef='${resolvedKeyRef}' could not be resolved (${keyRefResolution?.source ?? 'unknown'})`,
+    )
+  }
   const globalApiKey = usesOpenAICompatibleTransport
     ? getGlobalOpenAICompatibleApiKey()
     : undefined
   const transportMode: TaskRouteTransportMode =
-    baseUrl !== undefined || routeApiKey !== undefined
+    baseUrl !== undefined || routeApiKey !== undefined || keyRefResolution?.apiKey !== undefined
       ? 'single-upstream'
       : 'direct-provider'
   const apiKey =
-    routeApiKey || (baseUrl !== undefined ? globalApiKey : undefined)
+    routeApiKey ||
+    keyRefResolution?.apiKey ||
+    (baseUrl !== undefined ? globalApiKey : undefined)
   const baseUrlSource: TaskRouteDebugSource =
     routeEnvBaseUrl !== undefined
       ? 'route-env'
@@ -518,6 +658,8 @@ export function getTaskRouteTransportConfig(
   const apiKeySource: TaskRouteDebugSource =
     routeApiKey !== undefined
       ? 'route-env'
+      : keyRefResolution?.apiKey !== undefined
+        ? keyRefResolution.source
       : apiKey !== undefined
         ? 'global-env'
         : 'none'
@@ -528,9 +670,39 @@ export function getTaskRouteTransportConfig(
       explicitBaseUrl || globalOpenAIBaseUrl ? 'openai-compatible' : target.apiStyle,
     baseUrl,
     apiKey,
+    keyId: keyRefResolution?.apiKey ? resolvedKeyRef : undefined,
     transportMode,
     baseUrlSource,
     apiKeySource,
+  }
+}
+
+function resolveApiKeyFromProviderKeyRef(params: {
+  keyRef: string
+  routeProvider: TaskRouteProviderName
+  routeModel?: string
+}): { apiKey?: string; source: TaskRouteDebugSource } {
+  const resolution = resolveProviderKeyRef({
+    keyRef: params.keyRef,
+    expectedProvider: params.routeProvider,
+    model: params.routeModel,
+  })
+
+  switch (resolution.status) {
+    case 'ok':
+      return {
+        apiKey: resolution.apiKey,
+        source: resolution.secretSource === 'inline' ? 'key-ref' : 'key-ref-env',
+      }
+    case 'expired':
+      return { apiKey: undefined, source: 'key-ref-expired' }
+    case 'model_denied':
+      return { apiKey: undefined, source: 'key-ref-model-denied' }
+    case 'provider_mismatch':
+    case 'secret_missing':
+    case 'missing':
+    default:
+      return { apiKey: undefined, source: 'key-ref-missing' }
   }
 }
 
@@ -801,11 +973,21 @@ function getTaskRouteApiKeyDebugField(params: {
 export function getTaskRouteDebugSnapshot(
   route: TaskRouteName,
   options: TaskRouteDebugSnapshotOptions = {},
+  settingsOverride?: TaskRouteSettings,
 ): TaskRouteDebugSnapshot {
   const includeSecrets = options.includeSecrets === true
   const defaultTarget = DEFAULT_ROUTE_TARGETS[route]
   const routeEnv = getTaskRouteDebugRouteEnv(route)
-  const routeSettings = getTaskRouteDebugSettings(route)
+  const routeSettings = (() => {
+    const merged = mergeTaskRouteSettings(getTaskRouteSettings(route), settingsOverride)
+    return {
+      provider: normalizeConfiguredValue(merged?.provider),
+      apiStyle: normalizeConfiguredValue(merged?.apiStyle),
+      model: normalizeConfiguredValue(merged?.model),
+      baseUrl: merged?.baseUrl?.trim(),
+      keyRef: normalizeConfiguredValue(merged?.keyRef),
+    }
+  })()
   const sessionProviderOverride =
     route === 'main' ? getMainLoopProviderOverride() : undefined
   const providerField = getTaskRouteProviderDebugField({
@@ -824,8 +1006,8 @@ export function getTaskRouteDebugSnapshot(
     routeEnv,
     routeSettings,
   })
-  const executionTarget = getTaskRouteExecutionTarget(route)
-  const transport = getTaskRouteTransportConfig(route)
+  const executionTarget = getTaskRouteExecutionTarget(route, { settingsOverride })
+  const transport = getTaskRouteTransportConfig(route, settingsOverride)
   const baseUrlField = getTaskRouteBaseUrlDebugField({
     routeEnv,
     routeSettings,
@@ -881,10 +1063,12 @@ export function getTaskRouteDebugSnapshot(
       baseUrl: {
         ...baseUrlField,
         value: transport.baseUrl,
+        source: transport.baseUrlSource ?? baseUrlField.source,
       },
       apiKey: {
         ...apiKeyField,
         value: transportApiKey,
+        source: transport.apiKeySource ?? apiKeyField.source,
       },
     },
   }
@@ -975,9 +1159,10 @@ export function getTaskRouteDebugSnapshotFromQuerySource(
   options: TaskRouteDebugSnapshotOptions = {},
 ): TaskRouteFromQuerySourceDebugSnapshot {
   const querySourceSnapshot = getTaskRouteQuerySourceSnapshot(querySource)
+  const overrides = getTaskRouteOverridesFromQuerySource(querySource)
   return {
     ...querySourceSnapshot,
-    routeSnapshot: getTaskRouteDebugSnapshot(querySourceSnapshot.route, options),
+    routeSnapshot: getTaskRouteDebugSnapshot(querySourceSnapshot.route, options, overrides),
   }
 }
 
@@ -1012,9 +1197,10 @@ export function getTaskRoutingDebugSnapshot(
 
 export function resolveTaskRouteTransportFromQuerySource(querySource?: string) {
   const route = resolveTaskRouteNameFromQuerySource(querySource)
+  const overrides = getTaskRouteOverridesFromQuerySource(querySource)
   return {
     route,
-    ...getTaskRouteTransportConfig(route),
+    ...getTaskRouteTransportConfig(route, overrides),
   }
 }
 
@@ -1022,11 +1208,14 @@ export function resolveTaskRouteClientConfigFromQuerySource(
   querySource?: string,
 ): TaskRouteClientConfig {
   const route = resolveTaskRouteNameFromQuerySource(querySource)
-  const executionTarget = getTaskRouteExecutionTarget(route)
+  const overrides = getTaskRouteOverridesFromQuerySource(querySource)
+  const executionTarget = getTaskRouteExecutionTarget(route, {
+    settingsOverride: overrides,
+  })
   return {
     route,
     executionTarget,
-    ...getTaskRouteTransportConfig(route),
+    ...getTaskRouteTransportConfig(route, overrides),
   }
 }
 
