@@ -53,6 +53,16 @@ const commandSteps: Step[] = [
     args: ['bun', 'run', 'scripts/apply-signed-release-artifact-smoke.ts'],
   },
   {
+    label: 'signed-release-publication-workflow',
+    args: [
+      'bun',
+      'run',
+      'scripts/signed-release-publication-workflow-smoke.ts',
+      '--skip-build',
+      '--skip-stage-candidate',
+    ],
+  },
+  {
     label: 'stage-release-deploy',
     args: ['bun', 'run', 'scripts/stage-release-deploy-smoke.ts'],
   },
@@ -150,7 +160,7 @@ const releaseFacingChecks = [
 
 const outstandingBlockers = [
   'NSIS toolchain 与签名流程尚未接入',
-  '签名 artifact 尚未接入',
+  '真实外部 signed artifact / signing service 尚未接入',
 ] as const
 
 async function sha256(filePath: string): Promise<string> {

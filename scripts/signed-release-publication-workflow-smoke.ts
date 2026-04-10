@@ -6,6 +6,8 @@ import { join } from 'node:path'
 
 type SmokeOptions = {
   keepTemp: boolean
+  skipBuild: boolean
+  skipStageCandidate: boolean
 }
 
 type ReleaseCandidateMetadata = {
@@ -30,6 +32,8 @@ type DeployMetadata = {
 
 function parseArgs(argv: string[]): SmokeOptions {
   let keepTemp = false
+  let skipBuild = false
+  let skipStageCandidate = false
 
   for (const arg of argv) {
     if (arg === '--keep-temp') {
@@ -37,10 +41,20 @@ function parseArgs(argv: string[]): SmokeOptions {
       continue
     }
 
+    if (arg === '--skip-build') {
+      skipBuild = true
+      continue
+    }
+
+    if (arg === '--skip-stage-candidate') {
+      skipStageCandidate = true
+      continue
+    }
+
     throw new Error(`Unsupported argument: ${arg}`)
   }
 
-  return { keepTemp }
+  return { keepTemp, skipBuild, skipStageCandidate }
 }
 
 async function runCommand(args: string[], cwd: string): Promise<void> {
@@ -61,14 +75,18 @@ async function main(): Promise<void> {
   const repoRoot = process.cwd()
   const options = parseArgs(process.argv.slice(2))
 
-  console.log('[RUN] build:native')
-  await runCommand(['bun', 'run', 'build:native'], repoRoot)
+  if (!options.skipBuild) {
+    console.log('[RUN] build:native')
+    await runCommand(['bun', 'run', 'build:native'], repoRoot)
+  }
 
-  console.log('[RUN] stage-release-candidate')
-  await runCommand(
-    ['bun', 'run', 'scripts/stage-release-candidate.ts', '--skip-build'],
-    repoRoot,
-  )
+  if (!options.skipStageCandidate) {
+    console.log('[RUN] stage-release-candidate')
+    await runCommand(
+      ['bun', 'run', 'scripts/stage-release-candidate.ts', '--skip-build'],
+      repoRoot,
+    )
+  }
 
   const packageJson = JSON.parse(
     await readFile(join(repoRoot, 'package.json'), 'utf8'),
