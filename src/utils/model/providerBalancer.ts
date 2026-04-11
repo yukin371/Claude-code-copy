@@ -15,6 +15,8 @@ export type ProviderEndpointCandidate = {
   provider: TaskRouteProviderName
   baseUrl: string
   apiKey?: string
+  keyId?: string
+  keyPriority?: number
   baseUrlIndex: number
   apiKeyIndex: number
   providerWeight: number
@@ -22,16 +24,26 @@ export type ProviderEndpointCandidate = {
 }
 
 type ProviderEndpointHealth = {
+  provider: TaskRouteProviderName
+  baseUrl: string
+  keyId?: string
+  keyPriority?: number
   failures: number
   lastFailureAt?: number
   lastFailureReason?: string
   lastSuccessAt?: number
+  lastAttemptAt?: number
+  lastOutcome?: 'success' | 'failure'
   cooldownUntil?: number
 }
 
 const providerSequenceCursor = new Map<TaskRouteProviderName, number>()
 const providerEndpointCursor = new Map<TaskRouteProviderName, number>()
 const endpointHealth = new Map<string, ProviderEndpointHealth>()
+const lastSuccessfulSourceEndpoint = new Map<
+  string,
+  { endpointId: string; keyId?: string; selectedAt: number }
+>()
 const BASE_COOLDOWN_MS = 1_000
 const MAX_COOLDOWN_MS = 60_000
 
@@ -44,12 +56,45 @@ export function buildProviderEndpointCandidates(
   for (const provider of providers) {
     const providerTransport = buildProviderTransport(transport, provider)
     const baseUrls = resolveBaseUrls(providerTransport, provider === transport.provider)
-    const apiKeys = resolveApiKeys(providerTransport, provider === transport.provider)
-
-    if (baseUrls.length === 0) continue
-
-    const keyOptions = apiKeys.length > 0 ? apiKeys : [undefined]
     const providerWeight = getProviderLoadBalanceWeight(provider)
+    const keyedCandidates = resolveProviderKeyCandidates(
+      providerTransport,
+      provider === transport.provider,
+    )
+
+    if (keyedCandidates.length > 0) {
+      for (let apiKeyIndex = 0; apiKeyIndex < keyedCandidates.length; apiKeyIndex++) {
+        const keyCandidate = keyedCandidates[apiKeyIndex]
+        const candidateBaseUrls =
+          keyCandidate.baseUrl !== undefined ? [keyCandidate.baseUrl] : baseUrls
+        if (candidateBaseUrls.length === 0) continue
+
+        for (let baseUrlIndex = 0; baseUrlIndex < candidateBaseUrls.length; baseUrlIndex++) {
+          const baseUrl = candidateBaseUrls[baseUrlIndex]
+          candidates.push({
+            provider,
+            baseUrl,
+            apiKey: keyCandidate.apiKey,
+            keyId: keyCandidate.keyId,
+            keyPriority: keyCandidate.priority,
+            baseUrlIndex,
+            apiKeyIndex,
+            providerWeight,
+            endpointId: makeEndpointId(
+              provider,
+              baseUrl,
+              keyCandidate.apiKey,
+              keyCandidate.keyId,
+            ),
+          })
+        }
+      }
+      continue
+    }
+
+    const apiKeys = resolveApiKeys(providerTransport, provider === transport.provider)
+    if (baseUrls.length === 0) continue
+    const keyOptions = apiKeys.length > 0 ? apiKeys : [undefined]
 
     for (let baseUrlIndex = 0; baseUrlIndex < baseUrls.length; baseUrlIndex++) {
       const baseUrl = baseUrls[baseUrlIndex]
@@ -94,18 +139,38 @@ export function selectProviderEndpointCandidates(
 
     const endpointCursor = providerEndpointCursor.get(provider) ?? 0
     providerEndpointCursor.set(provider, endpointCursor + 1)
-    orderedCandidates.push(...rotateArray(providerCandidates, endpointCursor))
+    orderedCandidates.push(
+      ...orderProviderCandidates(providerCandidates, endpointCursor),
+    )
   }
 
   return orderedCandidates.length > 0 ? orderedCandidates : available
 }
 
-export function markProviderEndpointSuccess(candidate: ProviderEndpointCandidate): void {
+export function markProviderEndpointSuccess(
+  candidate: ProviderEndpointCandidate,
+  source?: string,
+): void {
+  const now = Date.now()
   endpointHealth.set(candidate.endpointId, {
+    provider: candidate.provider,
+    baseUrl: candidate.baseUrl,
+    keyId: candidate.keyId,
+    keyPriority: candidate.keyPriority,
     failures: 0,
-    lastSuccessAt: Date.now(),
+    lastSuccessAt: now,
+    lastAttemptAt: now,
+    lastOutcome: 'success',
     cooldownUntil: 0,
   })
+  const normalizedSource = source?.trim()
+  if (normalizedSource) {
+    lastSuccessfulSourceEndpoint.set(normalizedSource, {
+      endpointId: candidate.endpointId,
+      keyId: candidate.keyId,
+      selectedAt: now,
+    })
+  }
 }
 
 export function markProviderEndpointFailure(
@@ -114,31 +179,56 @@ export function markProviderEndpointFailure(
 ): void {
   const current = endpointHealth.get(candidate.endpointId)
   const failures = (current?.failures ?? 0) + 1
-  const cooldownUntil = Date.now() + getCooldownMs(failures)
+  const now = Date.now()
+  const cooldownUntil = now + getCooldownMs(failures)
   endpointHealth.set(candidate.endpointId, {
+    provider: candidate.provider,
+    baseUrl: candidate.baseUrl,
+    keyId: candidate.keyId,
+    keyPriority: candidate.keyPriority,
     failures,
-    lastFailureAt: Date.now(),
+    lastFailureAt: now,
     lastFailureReason: reason,
     lastSuccessAt: current?.lastSuccessAt,
+    lastAttemptAt: now,
+    lastOutcome: 'failure',
     cooldownUntil,
   })
 }
 
 export function getProviderEndpointHealthSnapshot(
   provider?: TaskRouteProviderName,
-): Array<{ endpointId: string } & ProviderEndpointHealth> {
+): Array<
+  {
+    endpointId: string
+    coolingDown: boolean
+    cooldownRemainingMs: number
+  } & ProviderEndpointHealth
+> {
+  const now = Date.now()
   const entries = Array.from(endpointHealth.entries()).map(([endpointId, state]) => ({
     endpointId,
     ...state,
+    coolingDown: !!state.cooldownUntil && state.cooldownUntil > now,
+    cooldownRemainingMs: Math.max(0, (state.cooldownUntil ?? 0) - now),
   }))
   if (!provider) return entries
-  return entries.filter(entry => entry.endpointId.startsWith(`${provider}|`))
+  return entries.filter(entry => entry.provider === provider)
+}
+
+export function getLastSuccessfulProviderKeyIdForSource(
+  source?: string,
+): string | undefined {
+  const normalized = source?.trim()
+  if (!normalized) return undefined
+  return lastSuccessfulSourceEndpoint.get(normalized)?.keyId
 }
 
 export function resetProviderBalancerForTests(): void {
   providerSequenceCursor.clear()
   providerEndpointCursor.clear()
   endpointHealth.clear()
+  lastSuccessfulSourceEndpoint.clear()
 }
 
 function getProviderOrder(transport: TaskRouteTransportConfig): TaskRouteProviderName[] {
@@ -221,6 +311,19 @@ function resolveApiKeys(
   return keys
 }
 
+function resolveProviderKeyCandidates(
+  transport: TaskRouteTransportConfig,
+  isPreferredProvider: boolean,
+): NonNullable<TaskRouteTransportConfig['apiKeyCandidates']> {
+  if (
+    !isPreferredProvider ||
+    getTaskRouteTransportMode(transport) !== 'single-upstream'
+  ) {
+    return []
+  }
+  return transport.apiKeyCandidates ?? []
+}
+
 function isCoolingDown(endpointId: string): boolean {
   const state = endpointHealth.get(endpointId)
   return !!state?.cooldownUntil && state.cooldownUntil > Date.now()
@@ -235,8 +338,37 @@ function makeEndpointId(
   provider: TaskRouteProviderName,
   baseUrl: string,
   apiKey?: string,
+  keyId?: string,
 ): string {
-  return `${provider}|${baseUrl}|${apiKey ?? ''}`
+  return `${provider}|${baseUrl}|${keyId ?? apiKey ?? ''}`
+}
+
+function orderProviderCandidates(
+  candidates: readonly ProviderEndpointCandidate[],
+  cursor: number,
+): ProviderEndpointCandidate[] {
+  if (candidates.length <= 1) return [...candidates]
+
+  const groups = new Map<number, ProviderEndpointCandidate[]>()
+  for (const candidate of candidates) {
+    const priority = candidate.keyPriority ?? Number.MAX_SAFE_INTEGER
+    const group = groups.get(priority) ?? []
+    group.push(candidate)
+    groups.set(priority, group)
+  }
+
+  const ordered: ProviderEndpointCandidate[] = []
+  const priorities = Array.from(groups.keys()).sort((a, b) => a - b)
+  for (const priority of priorities) {
+    const group = (groups.get(priority) ?? []).sort((a, b) => {
+      if (a.baseUrlIndex !== b.baseUrlIndex) return a.baseUrlIndex - b.baseUrlIndex
+      if (a.apiKeyIndex !== b.apiKeyIndex) return a.apiKeyIndex - b.apiKeyIndex
+      return a.endpointId.localeCompare(b.endpointId)
+    })
+    ordered.push(...rotateArray(group, cursor))
+  }
+
+  return ordered
 }
 
 function rotateArray<T>(items: readonly T[], cursor: number): T[] {

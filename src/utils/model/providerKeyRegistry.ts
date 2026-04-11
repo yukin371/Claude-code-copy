@@ -1,11 +1,14 @@
-import { createRequire } from 'node:module'
+import { getConfigEnvironmentVariable } from '../managedEnv.js'
+import { getSettings_DEPRECATED } from '../settings/settings.js'
 
 export type ProviderKeyRegistryEntry = {
   id: string
   provider: string
+  baseUrl?: string
   secretEnv?: string
   secret?: string
   models?: string[]
+  priority?: number
   expiresAt?: string
   limits?: Record<string, unknown>
   context?: Record<string, unknown>
@@ -23,21 +26,12 @@ export type ProviderKeyRefResolution = {
   status: ProviderKeyRefStatus
   entry?: ProviderKeyRegistryEntry
   apiKey?: string
+  baseUrl?: string
   secretSource?: 'env' | 'inline'
 }
 
 export function getProviderKeyRegistryFromSettings(): ProviderKeyRegistryEntry[] {
-  try {
-    const require = createRequire(import.meta.url)
-    const settingsModule = require('../settings/settings.js') as {
-      getSettings_DEPRECATED?: () => {
-        providerKeys?: ProviderKeyRegistryEntry[]
-      }
-    }
-    return settingsModule.getSettings_DEPRECATED?.()?.providerKeys ?? []
-  } catch {
-    return []
-  }
+  return getSettings_DEPRECATED()?.providerKeys ?? []
 }
 
 export function resolveProviderKeyRef(params: {
@@ -72,16 +66,23 @@ export function resolveProviderKeyRef(params: {
   }
 
   const envName = entry.secretEnv?.trim()
+  const baseUrl = entry.baseUrl?.trim()
   if (envName) {
-    const apiKey = process.env[envName]?.trim()
+    const apiKey = getConfigEnvironmentVariable(envName)
     return apiKey
-      ? { status: 'ok', entry, apiKey, secretSource: 'env' }
+      ? { status: 'ok', entry, apiKey, baseUrl, secretSource: 'env' }
       : { status: 'secret_missing', entry }
   }
 
   const inline = entry.secret?.trim()
   if (inline) {
-    return { status: 'ok', entry, apiKey: inline, secretSource: 'inline' }
+    return {
+      status: 'ok',
+      entry,
+      apiKey: inline,
+      baseUrl,
+      secretSource: 'inline',
+    }
   }
 
   return { status: 'secret_missing', entry }

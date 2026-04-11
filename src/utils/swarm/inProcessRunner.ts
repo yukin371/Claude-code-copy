@@ -73,7 +73,6 @@ import {
   SUBAGENT_REJECT_MESSAGE,
   SUBAGENT_REJECT_MESSAGE_WITH_REASON_PREFIX,
 } from '../messages.js'
-import type { ModelAlias } from '../model/aliases.js'
 import {
   applyPermissionUpdates,
   persistPermissionUpdates,
@@ -1206,7 +1205,7 @@ export async function runInProcessTeammate(
             forkContextMessages,
             querySource: 'agent:custom',
             override: { abortController: currentWorkAbortController },
-            model: model as ModelAlias | undefined,
+            model,
             preserveToolUseResults: true,
             availableTools: toolUseContext.options.tools,
             allowedTools,

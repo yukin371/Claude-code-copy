@@ -1,4 +1,9 @@
 import { createRequire } from 'node:module'
+import { isModelAlias } from './aliases.js'
+import {
+  getConfiguredSourcesForModel,
+  pickPrimarySourceForModel,
+} from './configuredModelRegistry.js'
 import { getProviderDefaultApiStyle, getProviderFamily } from './providerMetadata.js'
 import { getMainLoopProviderOverride } from './sessionProviderOverride.js'
 import { getTaskRouteKeyRefOverride } from './sessionKeyRefOverride.js'
@@ -32,9 +37,18 @@ export type TaskRouteExecutionTarget = {
 
 export type TaskRouteTransportMode = 'direct-provider' | 'single-upstream'
 
+export type TaskRouteApiKeyCandidate = {
+  keyId: string
+  apiKey: string
+  baseUrl?: string
+  priority: number
+  apiKeySource: TaskRouteDebugSource
+}
+
 export type TaskRouteTransportConfig = TaskRouteExecutionTarget & {
   baseUrl?: string
   apiKey?: string
+  apiKeyCandidates?: TaskRouteApiKeyCandidate[]
   /**
    * Non-secret key identity, typically set from settings taskRoutes.*.keyRef.
    * This is used for quota monitoring and diagnostics. It MUST NOT contain secrets.
@@ -616,7 +630,18 @@ export function getTaskRouteTransportConfig(
   const target = getTaskRouteExecutionTarget(route, { settingsOverride })
   const routeEnvBaseUrl = process.env[TASK_ROUTE_BASE_URL_ENV[route]]?.trim()
   const settingsBaseUrl = routeSettings?.baseUrl?.trim()
-  const explicitBaseUrl = routeEnvBaseUrl || settingsBaseUrl
+  const sessionKeyRefOverride = getTaskRouteKeyRefOverride(route)
+  const resolvedKeyRef =
+    sessionKeyRefOverride?.trim() || routeSettings?.keyRef?.trim() || undefined
+  const keyRefResolution = resolvedKeyRef
+    ? resolveApiKeyFromProviderKeyRef({
+        keyRef: resolvedKeyRef,
+        routeProvider: target.provider,
+        routeModel: target.model,
+      })
+    : undefined
+  const keyRefBaseUrl = keyRefResolution?.baseUrl?.trim()
+  const explicitBaseUrl = routeEnvBaseUrl || settingsBaseUrl || keyRefBaseUrl
   const usesOpenAICompatibleTransport =
     explicitBaseUrl !== undefined ||
     target.apiStyle === 'openai-compatible' ||
@@ -630,16 +655,13 @@ export function getTaskRouteTransportConfig(
       : undefined
   const baseUrl = explicitBaseUrl || globalOpenAIBaseUrl || globalAnthropicBaseUrl
   const routeApiKey = process.env[TASK_ROUTE_API_KEY_ENV[route]]?.trim()
-  const sessionKeyRefOverride = getTaskRouteKeyRefOverride(route)
-  const resolvedKeyRef =
-    sessionKeyRefOverride?.trim() || routeSettings?.keyRef?.trim() || undefined
-  const keyRefResolution = resolvedKeyRef
-    ? resolveApiKeyFromProviderKeyRef({
-        keyRef: resolvedKeyRef,
-        routeProvider: target.provider,
-        routeModel: target.model,
-      })
-    : undefined
+  const apiKeyCandidates =
+    routeApiKey === undefined && !resolvedKeyRef
+      ? resolveApiKeyCandidatesForModelPool({
+          routeProvider: target.provider,
+          routeModel: target.model,
+        })
+      : []
   if (resolvedKeyRef && routeApiKey === undefined && !keyRefResolution?.apiKey) {
     throw new Error(
       `taskRoutes.${route}.keyRef='${resolvedKeyRef}' could not be resolved (${keyRefResolution?.source ?? 'unknown'})`,
@@ -649,7 +671,10 @@ export function getTaskRouteTransportConfig(
     ? getGlobalOpenAICompatibleApiKey()
     : undefined
   const transportMode: TaskRouteTransportMode =
-    baseUrl !== undefined || routeApiKey !== undefined || keyRefResolution?.apiKey !== undefined
+    baseUrl !== undefined ||
+    routeApiKey !== undefined ||
+    keyRefResolution?.apiKey !== undefined ||
+    apiKeyCandidates.length > 0
       ? 'single-upstream'
       : 'direct-provider'
   const apiKey =
@@ -661,6 +686,8 @@ export function getTaskRouteTransportConfig(
       ? 'route-env'
       : settingsBaseUrl !== undefined
         ? 'route-settings'
+        : keyRefBaseUrl !== undefined
+          ? 'key-ref'
         : globalOpenAIBaseUrl !== undefined || globalAnthropicBaseUrl !== undefined
           ? 'global-env'
           : 'none'
@@ -679,6 +706,7 @@ export function getTaskRouteTransportConfig(
       explicitBaseUrl || globalOpenAIBaseUrl ? 'openai-compatible' : target.apiStyle,
     baseUrl,
     apiKey,
+    apiKeyCandidates: apiKeyCandidates.length > 0 ? apiKeyCandidates : undefined,
     keyId: keyRefResolution?.apiKey ? resolvedKeyRef : undefined,
     transportMode,
     baseUrlSource,
@@ -690,7 +718,7 @@ function resolveApiKeyFromProviderKeyRef(params: {
   keyRef: string
   routeProvider: TaskRouteProviderName
   routeModel?: string
-}): { apiKey?: string; source: TaskRouteDebugSource } {
+}): { apiKey?: string; baseUrl?: string; source: TaskRouteDebugSource } {
   const resolution = resolveProviderKeyRef({
     keyRef: params.keyRef,
     expectedProvider: params.routeProvider,
@@ -701,6 +729,7 @@ function resolveApiKeyFromProviderKeyRef(params: {
     case 'ok':
       return {
         apiKey: resolution.apiKey,
+        baseUrl: resolution.baseUrl,
         source: resolution.secretSource === 'inline' ? 'key-ref' : 'key-ref-env',
       }
     case 'expired':
@@ -715,12 +744,43 @@ function resolveApiKeyFromProviderKeyRef(params: {
   }
 }
 
+function resolveApiKeyCandidatesForModelPool(params: {
+  routeProvider: TaskRouteProviderName
+  routeModel?: string
+}): TaskRouteApiKeyCandidate[] {
+  const model = params.routeModel?.trim()
+  if (!model) return []
+
+  const candidates: TaskRouteApiKeyCandidate[] = []
+  const sources = getConfiguredSourcesForModel(model, params.routeProvider)
+  for (const source of sources) {
+    const resolution = resolveProviderKeyRef({
+      keyRef: source.keyRef,
+      expectedProvider: params.routeProvider,
+      model,
+    })
+    if (resolution.status !== 'ok' || !resolution.apiKey) continue
+    candidates.push({
+      keyId: source.keyRef,
+      apiKey: resolution.apiKey,
+      baseUrl: resolution.baseUrl?.trim() || undefined,
+      priority: source.priority,
+      apiKeySource:
+        resolution.secretSource === 'inline' ? 'key-ref' : 'key-ref-env',
+    })
+  }
+
+  return candidates
+}
+
 export function getTaskRouteTransportMode(
   transport: TaskRouteTransportConfig,
 ): TaskRouteTransportMode {
   return (
     transport.transportMode ??
-    (transport.baseUrl?.trim() || transport.apiKey?.trim()
+    (transport.baseUrl?.trim() ||
+    transport.apiKey?.trim() ||
+    (transport.apiKeyCandidates?.length ?? 0) > 0
       ? 'single-upstream'
       : 'direct-provider')
   )
@@ -1044,6 +1104,10 @@ export function getTaskRouteDebugSnapshot(
   const transportApiKey = includeSecrets
     ? transport.apiKey
     : maskSecret(transport.apiKey)
+  const transportApiKeyCandidates = transport.apiKeyCandidates?.map(candidate => ({
+    ...candidate,
+    apiKey: includeSecrets ? candidate.apiKey : maskSecret(candidate.apiKey),
+  }))
 
   return {
     route,
@@ -1058,6 +1122,7 @@ export function getTaskRouteDebugSnapshot(
     transport: {
       ...transport,
       apiKey: transportApiKey,
+      apiKeyCandidates: transportApiKeyCandidates,
     },
     fields: {
       provider: {
@@ -1215,9 +1280,13 @@ export function resolveTaskRouteTransportFromQuerySource(querySource?: string) {
 
 export function resolveTaskRouteClientConfigFromQuerySource(
   querySource?: string,
+  model?: string,
 ): TaskRouteClientConfig {
   const route = resolveTaskRouteNameFromQuerySource(querySource)
-  const overrides = getTaskRouteOverridesFromQuerySource(querySource)
+  const overrides = mergeTaskRouteSettings(
+    getTaskRouteOverridesFromQuerySource(querySource),
+    getTaskRouteOverridesFromModel(model),
+  )
   const executionTarget = getTaskRouteExecutionTarget(route, {
     settingsOverride: overrides,
   })
@@ -1226,6 +1295,35 @@ export function resolveTaskRouteClientConfigFromQuerySource(
     executionTarget,
     ...getTaskRouteTransportConfig(route, overrides),
   }
+}
+
+function getTaskRouteOverridesFromModel(
+  model?: string,
+): TaskRouteSettings | undefined {
+  const modelValue = model?.trim()
+  if (!modelValue) return undefined
+
+  const primary = pickPrimarySourceForModel(modelValue)
+  if (primary) {
+    return {
+      provider: primary.provider,
+      apiStyle: getProviderDefaultApiStyle(primary.provider),
+      model: normalizeTaskRouteModel(modelValue),
+    }
+  }
+
+  if (
+    isModelAlias(modelValue) ||
+    modelValue === process.env.ANTHROPIC_CUSTOM_MODEL_OPTION
+  ) {
+    return {
+      provider: 'anthropic',
+      apiStyle: 'anthropic',
+      model: normalizeTaskRouteModel(modelValue),
+    }
+  }
+
+  return undefined
 }
 
 function normalizeProviderName(

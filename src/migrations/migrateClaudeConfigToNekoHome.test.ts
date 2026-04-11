@@ -294,6 +294,100 @@ describe('migrateClaudeConfigDirectory', () => {
     )
   })
 
+  test('merges missing legacy settings keys into an existing Neko settings file', async () => {
+    const { migrateClaudeConfigDirectory } = await import(
+      './migrateClaudeConfigToNekoHome.js'
+    )
+    const sourceDir = createTempDir('claude-legacy-')
+    const targetDir = createTempDir('neko-home-')
+
+    writeJson(join(sourceDir, 'settings.json'), {
+      env: {
+        NEKO_CODE_CODEX_API_KEY: 'legacy-codex-key',
+      },
+      providerKeys: [
+        {
+          id: 'codex-k1',
+          provider: 'codex',
+          secretEnv: 'NEKO_CODE_CODEX_API_KEY',
+          models: ['gpt-5.2'],
+        },
+      ],
+      taskRoutes: {
+        review: {
+          provider: 'codex',
+          apiStyle: 'openai-compatible',
+          model: 'gpt-5.2',
+          keyRef: 'codex-k1',
+        },
+      },
+      taskRouteRules: [
+        {
+          matchQuerySourcePrefix: 'verification_agent',
+          provider: 'codex',
+          model: 'gpt-5.2',
+          keyRef: 'codex-k1',
+        },
+      ],
+    })
+
+    writeJson(join(targetDir, 'settings.json'), {
+      env: {
+        ANTHROPIC_BASE_URL: 'https://open.bigmodel.cn/api/anthropic',
+      },
+      providerKeys: [
+        {
+          id: 'asxs-k1',
+          provider: 'openai-compatible',
+          secretEnv: 'OPENAI_API_KEY',
+          models: ['gpt-5.4'],
+        },
+      ],
+      taskRoutes: {
+        main: {
+          provider: 'openai-compatible',
+          apiStyle: 'openai-compatible',
+          model: 'gpt-5.4',
+          keyRef: 'asxs-k1',
+        },
+      },
+      taskRouteRules: [
+        {
+          matchQuerySourcePrefix: 'repl_main_thread',
+          model: 'gpt-5.4',
+          keyRef: 'asxs-k1',
+        },
+      ],
+    })
+
+    const result = migrateClaudeConfigDirectory({
+      sourceDir,
+      targetDir,
+      targetGlobalConfigPath: join(targetDir, '.neko-code.json'),
+      mergeGlobalConfig: () => false,
+    })
+
+    const mergedSettings = JSON.parse(
+      readFileSync(join(targetDir, 'settings.json'), 'utf-8'),
+    )
+
+    expect(result.copiedFiles).toContain('settings.json')
+    expect(mergedSettings.env).toMatchObject({
+      ANTHROPIC_BASE_URL: 'https://open.bigmodel.cn/api/anthropic',
+      NEKO_CODE_CODEX_API_KEY: 'legacy-codex-key',
+    })
+    expect(
+      mergedSettings.providerKeys.map((entry: { id: string }) => entry.id),
+    ).toEqual(['asxs-k1', 'codex-k1'])
+    expect(mergedSettings.taskRoutes.main.model).toBe('gpt-5.4')
+    expect(mergedSettings.taskRoutes.review).toMatchObject({
+      provider: 'codex',
+      model: 'gpt-5.2',
+      keyRef: 'codex-k1',
+    })
+    expect(mergedSettings.taskRouteRules).toHaveLength(2)
+  })
+
   test('merges legacy mcp config and rewrites plugin state into target plugin dir', async () => {
     const { migrateClaudeConfigDirectory } = await import(
       './migrateClaudeConfigToNekoHome.js'

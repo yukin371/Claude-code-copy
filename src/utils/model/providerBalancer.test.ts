@@ -92,6 +92,42 @@ describe('providerBalancer', () => {
     expect(candidates[0]?.providerWeight).toBe(3)
   })
 
+  test('single-upstream key pools prefer lower priority numbers and fail over on cooldown', () => {
+    const transport: TaskRouteTransportConfig = {
+      provider: 'openai-compatible',
+      apiStyle: 'openai-compatible',
+      baseUrl: 'https://gateway.example.com/v1',
+      transportMode: 'single-upstream',
+      apiKeyCandidates: [
+        {
+          keyId: 'k-secondary',
+          apiKey: 'secondary-secret',
+          priority: 20,
+          apiKeySource: 'key-ref',
+        },
+        {
+          keyId: 'k-primary',
+          apiKey: 'primary-secret',
+          priority: 10,
+          apiKeySource: 'key-ref',
+        },
+      ],
+    }
+
+    const candidates = buildProviderEndpointCandidates(transport)
+    const first = selectProviderEndpointCandidates(transport, candidates)
+
+    expect(first.map(candidate => candidate.keyId)).toEqual([
+      'k-primary',
+      'k-secondary',
+    ])
+
+    markProviderEndpointFailure(first[0]!, 'timeout')
+    const second = selectProviderEndpointCandidates(transport, candidates)
+
+    expect(second.map(candidate => candidate.keyId)).toEqual(['k-secondary'])
+  })
+
   test('selectProviderEndpointCandidates skips endpoints in cooldown when alternatives exist', () => {
     const transport: TaskRouteTransportConfig = {
       provider: 'gemini',

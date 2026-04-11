@@ -197,3 +197,25 @@ export function applyConfigEnvironmentVariables(): void {
   // Reconfigure proxy/mTLS agents to pick up any proxy env vars from settings
   configureGlobalAgents()
 }
+
+/**
+ * Read a config-backed environment variable, preferring the live process env
+ * while still honoring settings.env when the current process has not been
+ * rehydrated yet.
+ */
+export function getConfigEnvironmentVariable(
+  name: string,
+): string | undefined {
+  const processValue = process.env[name]?.trim()
+  if (processValue) {
+    return processValue
+  }
+
+  const settingsValue = getSettings_DEPRECATED()?.env?.[name]
+  if (typeof settingsValue !== 'string') {
+    return undefined
+  }
+
+  const trimmed = settingsValue.trim()
+  return trimmed || undefined
+}

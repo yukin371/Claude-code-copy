@@ -235,7 +235,7 @@ async function executeOpenAICompatibleRequest({
 
     try {
       logForDebugging(
-        `[OpenAICompat] POST ${endpoint} model=${resolvedModel} source=${source ?? 'unknown'} attempt=${attempt + 1}/${attempts}`,
+        `[OpenAICompat] POST ${endpoint} model=${resolvedModel} source=${source ?? 'unknown'} attempt=${attempt + 1}/${attempts} key=${candidate.keyId ?? 'env'} priority=${candidate.keyPriority ?? 'default'}`,
       )
       const response = await fetchFn(endpoint, {
         method: 'POST',
@@ -260,6 +260,9 @@ async function executeOpenAICompatibleRequest({
             candidate,
             `http_${response.status}:${message || 'openai-compatible failure'}`,
           )
+          logForDebugging(
+            `[OpenAICompat] failover reason=http_${response.status} key=${candidate.keyId ?? 'env'} next_attempt=${attempt + 2}/${attempts}`,
+          )
           clear()
           continue
         }
@@ -274,7 +277,7 @@ async function executeOpenAICompatibleRequest({
       if (!stream) {
         const data = (await response.json()) as OpenAIChatCompletion
         const message = convertChatCompletionToBetaMessage(data, resolvedModel)
-        markProviderEndpointSuccess(candidate)
+        markProviderEndpointSuccess(candidate, source)
         clear()
         return { data: message }
       }
@@ -288,7 +291,7 @@ async function executeOpenAICompatibleRequest({
         cleanup: clear,
         resolvedModel,
       })
-      markProviderEndpointSuccess(candidate)
+      markProviderEndpointSuccess(candidate, source)
       return {
         response,
         requestId,
@@ -309,6 +312,9 @@ async function executeOpenAICompatibleRequest({
         error instanceof Error ? error.message : 'transport_error',
       )
       if (attempt < attempts - 1 && isRetryableOpenAITransportError(error)) {
+        logForDebugging(
+          `[OpenAICompat] retry transport_error key=${candidate.keyId ?? 'env'} next_attempt=${attempt + 2}/${attempts}`,
+        )
         continue
       }
       break
@@ -399,6 +405,7 @@ function createStreamState(model: string, requestId: string) {
     model,
     requestId,
     started: false,
+    finalized: false,
     stopReason: null as string | null,
     usage: zeroUsage(),
     lastUsage: zeroUsage(),
@@ -533,26 +540,21 @@ function* emitOpenAIChunkEvents(
   if (choice.finish_reason) {
     state.stopReason = mapFinishReason(choice.finish_reason)
     if (chunk.usage) {
-      state.usage = mapUsage(chunk.usage)
+      const usage = mapUsage(chunk.usage)
+      state.usage = usage
+      state.lastUsage = usage
     }
-    yield* emitContentBlockStops(state)
-    yield {
-      type: 'message_delta',
-      delta: {
-        stop_reason: state.stopReason,
-      },
-      usage: mapUsage(chunk.usage),
-    }
-    yield { type: 'message_stop' }
+    yield* finalizeOpenAIStreamState(state)
   } else if (chunk.usage) {
     state.lastUsage = mapUsage(chunk.usage)
   }
 }
 
 function* finalizeOpenAIStreamState(state: StreamState): Generator<any> {
-  if (!state.started) {
+  if (!state.started || state.finalized) {
     return
   }
+  state.finalized = true
   if (!state.stopReason) {
     state.stopReason = state.toolCallBlockIndexes.size > 0 ? 'tool_use' : 'end_turn'
   }

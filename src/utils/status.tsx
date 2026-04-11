@@ -13,6 +13,7 @@ import { formatNumber } from './format.js';
 import { getIdeClientName, type IDEExtensionInstallationStatus, isJetBrainsIde, toIDEDisplayName } from './ide.js';
 import { getClaudeAiUserDefaultModelDescription, getMainLoopModel, modelDisplayString } from './model/model.js';
 import { formatProviderTargetLabel, getMainLoopProviderState } from './model/mainProvider.js';
+import { getProviderEndpointHealthSnapshot } from './model/providerBalancer.js';
 import { getProviderLoadBalanceConfigSnapshot } from './model/providerMetadata.js';
 import { getAPIProvider } from './model/providers.js';
 import { getTaskRouteDebugSnapshot, getTaskRouteDebugSnapshotFromQuerySource, TASK_ROUTE_NAMES, TASK_ROUTE_STATUS_QUERY_SOURCE_EXAMPLES, type TaskRouteName } from './model/taskRouting.js';
@@ -188,6 +189,17 @@ function formatDoctorRouteSnapshotDiagnostic(diagnostic: Awaited<ReturnType<type
 }
 function buildMainTaskRouteProperties(): Property[] {
   const snapshot = getTaskRouteDebugSnapshot('main');
+  const configuredKeyPool = snapshot.transport.apiKeyCandidates?.map(candidate => `${candidate.keyId} (priority ${candidate.priority}${candidate.baseUrl ? ` / ${candidate.baseUrl}` : ''})`) ?? [];
+  const trackedKeyIds = new Set((snapshot.transport.apiKeyCandidates ?? []).map(candidate => candidate.keyId));
+  if (snapshot.transport.keyId) {
+    trackedKeyIds.add(snapshot.transport.keyId);
+  }
+  const retryHealth = getProviderEndpointHealthSnapshot(snapshot.executionTarget.provider).filter(entry => trackedKeyIds.size === 0 || !!entry.keyId && trackedKeyIds.has(entry.keyId)).map(entry => {
+    const state = entry.coolingDown ? `cooling ${entry.cooldownRemainingMs}ms` : 'healthy';
+    const keyLabel = entry.keyId ?? entry.endpointId;
+    const reason = entry.lastFailureReason ? ` / ${entry.lastFailureReason}` : '';
+    return `${keyLabel}: ${state} / failures=${entry.failures}${reason}`;
+  });
   return [{
     label: 'Main task route',
     value: snapshot.route
@@ -206,7 +218,13 @@ function buildMainTaskRouteProperties(): Property[] {
   }, {
     label: 'Task route API key',
     value: `${snapshot.transport.apiKey ?? 'unset'} (${snapshot.fields.apiKey.source})`
-  }];
+  }, ...(configuredKeyPool.length > 0 ? [{
+    label: 'Task route key pool',
+    value: configuredKeyPool
+  }] : []), ...(retryHealth.length > 0 ? [{
+    label: 'Task route retry status',
+    value: retryHealth
+  }] : [])];
 }
 function formatSecondaryTaskRouteLine(route: TaskRouteName): string {
   const snapshot = getTaskRouteDebugSnapshot(route);

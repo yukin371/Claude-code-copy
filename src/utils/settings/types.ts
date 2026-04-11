@@ -207,6 +207,12 @@ const ProviderKeySchema = z
     provider: z
       .enum(['anthropic', 'codex', 'gemini', 'glm', 'minimax', 'openai-compatible'])
       .describe('Provider this key is intended for.'),
+    baseUrl: z
+      .string()
+      .optional()
+      .describe(
+        'Optional base URL override associated with this key. Useful for provider-specific gateways.',
+      ),
     secretEnv: z
       .string()
       .optional()
@@ -224,6 +230,13 @@ const ProviderKeySchema = z
       .optional()
       .describe(
         'Optional allowlist of models this key can be used with. If omitted, the key is assumed to allow any model supported by the provider.',
+      ),
+    priority: z
+      .number()
+      .int()
+      .optional()
+      .describe(
+        'Optional priority used when multiple keys can serve the same model. Lower numbers are tried first.',
       ),
     expiresAt: z
       .string()

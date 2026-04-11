@@ -1,5 +1,4 @@
 import type { PermissionMode } from '../permissions/PermissionMode.js'
-import { capitalize } from '../stringUtils.js'
 import { MODEL_ALIASES, type ModelAlias } from './aliases.js'
 import { applyBedrockRegionPrefix, getBedrockRegionPrefix } from './bedrock.js'
 import {
@@ -7,7 +6,9 @@ import {
   getRuntimeMainLoopModel,
   normalizeModelStringForAPI,
   parseUserSpecifiedModel,
+  renderModelName,
 } from './model.js'
+import { getModelOptions } from './modelOptions.js'
 import { getAPIProvider } from './providers.js'
 import {
   getTaskRouteExecutionTarget,
@@ -18,7 +19,7 @@ export const AGENT_MODEL_OPTIONS = [...MODEL_ALIASES, 'inherit'] as const
 export type AgentModelAlias = (typeof AGENT_MODEL_OPTIONS)[number]
 
 export type AgentModelOption = {
-  value: AgentModelAlias
+  value: string
   label: string
   description: string
 }
@@ -42,31 +43,11 @@ export function getDefaultSubagentModel(): string {
 export function getAgentModel(
   agentModel: string | undefined,
   parentModel: string,
-  toolSpecifiedModel?: ModelAlias,
+  toolSpecifiedModel?: string,
   permissionMode?: PermissionMode,
   agentType?: string,
   taskPrompt?: string,
 ): string {
-  if (toolSpecifiedModel) {
-    if (aliasMatchesParentTier(toolSpecifiedModel, parentModel)) {
-      return parentModel
-    }
-    const model = parseUserSpecifiedModel(toolSpecifiedModel)
-    return applyInheritedRegionPrefix(model, toolSpecifiedModel)
-  }
-
-  const route = resolveTaskRouteName({ agentType, taskPrompt })
-  const routeTarget = getTaskRouteExecutionTarget(route)
-  if (routeTarget.model) {
-    return routeTarget.apiStyle === 'anthropic'
-      ? parseUserSpecifiedModel(routeTarget.model)
-      : normalizeModelStringForAPI(routeTarget.model)
-  }
-
-  if (route === 'subagent' && process.env.CLAUDE_CODE_SUBAGENT_MODEL) {
-    return parseUserSpecifiedModel(process.env.CLAUDE_CODE_SUBAGENT_MODEL)
-  }
-
   // Extract Bedrock region prefix from parent model to inherit for subagents.
   // This ensures subagents use the same cross-region inference profile (e.g., "eu.", "us.")
   // as the parent, which is required when IAM permissions only allow specific regions.
@@ -87,6 +68,26 @@ export function getAgentModel(
       return applyBedrockRegionPrefix(resolvedModel, parentRegionPrefix)
     }
     return resolvedModel
+  }
+
+  if (toolSpecifiedModel) {
+    if (aliasMatchesParentTier(toolSpecifiedModel, parentModel)) {
+      return parentModel
+    }
+    const model = parseUserSpecifiedModel(toolSpecifiedModel)
+    return applyInheritedRegionPrefix(model, toolSpecifiedModel)
+  }
+
+  const route = resolveTaskRouteName({ agentType, taskPrompt })
+  const routeTarget = getTaskRouteExecutionTarget(route)
+  if (routeTarget.model) {
+    return routeTarget.apiStyle === 'anthropic'
+      ? parseUserSpecifiedModel(routeTarget.model)
+      : normalizeModelStringForAPI(routeTarget.model)
+  }
+
+  if (route === 'subagent' && process.env.CLAUDE_CODE_SUBAGENT_MODEL) {
+    return parseUserSpecifiedModel(process.env.CLAUDE_CODE_SUBAGENT_MODEL)
   }
 
   const agentModelWithExp = agentModel ?? getDefaultSubagentModel()
@@ -139,14 +140,44 @@ export function getAgentModelDisplay(model: string | undefined): string {
   // When model is omitted, getDefaultSubagentModel() returns 'inherit' at runtime
   if (!model) return 'Inherit from parent (default)'
   if (model === 'inherit') return 'Inherit from parent'
-  return capitalize(model)
+
+  const trimmed = model.trim()
+  const resolved = parseUserSpecifiedModel(trimmed)
+  const renderedResolved = renderModelName(resolved)
+
+  if (resolved === trimmed) {
+    return renderedResolved
+  }
+  return `${trimmed} (${renderedResolved})`
 }
 
 /**
  * Get available model options for agents
  */
 export function getAgentModelOptions(): AgentModelOption[] {
-  return [
+  const options: AgentModelOption[] = [
+    {
+      value: 'inherit',
+      label: 'Inherit from parent',
+      description: 'Use the same model as the main conversation',
+    },
+  ]
+
+  const seen = new Set<string>(['inherit'])
+
+  for (const option of getModelOptions()) {
+    if (option.value === null) continue
+    const value = option.value.trim()
+    if (!value || seen.has(value)) continue
+    seen.add(value)
+    options.push({
+      value,
+      label: option.label,
+      description: option.descriptionForModel ?? option.description,
+    })
+  }
+
+  const legacyAliases: AgentModelOption[] = [
     {
       value: 'sonnet',
       label: 'Sonnet',
@@ -162,10 +193,13 @@ export function getAgentModelOptions(): AgentModelOption[] {
       label: 'Haiku',
       description: 'Fast and efficient for simple tasks',
     },
-    {
-      value: 'inherit',
-      label: 'Inherit from parent',
-      description: 'Use the same model as the main conversation',
-    },
   ]
+
+  for (const option of legacyAliases) {
+    if (seen.has(option.value)) continue
+    seen.add(option.value)
+    options.push(option)
+  }
+
+  return options
 }

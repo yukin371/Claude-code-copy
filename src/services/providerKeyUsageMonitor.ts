@@ -3,6 +3,7 @@ import {
   getCurrentProjectConfig,
   saveCurrentProjectConfig,
 } from '../utils/config.js'
+import { getLastSuccessfulProviderKeyIdForSource } from '../utils/model/providerBalancer.js'
 import { resolveTaskRouteClientConfigFromQuerySource } from '../utils/model/taskRouting.js'
 import { getProviderKeyRegistryFromSettings } from '../utils/model/providerKeyRegistry.js'
 import { logForDebugging } from '../utils/debug.js'
@@ -140,7 +141,9 @@ export function recordProviderKeyUsageFromAPISuccess(params: {
       params.querySource,
     )
 
-    const keyId = routeConfig.keyId?.trim()
+    const keyId =
+      getLastSuccessfulProviderKeyIdForSource(params.querySource) ??
+      routeConfig.keyId?.trim()
     if (!keyId) {
       return
     }

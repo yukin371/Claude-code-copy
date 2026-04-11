@@ -34,6 +34,7 @@ import {
 } from './model.js'
 import { has1mContext } from '../context.js'
 import { getGlobalConfig } from '../config.js'
+import { getConfigEnvironmentVariable } from '../managedEnv.js'
 
 // @[MODEL LAUNCH]: Update all the available and default model option strings below.
 
@@ -124,18 +125,25 @@ export function getDefaultOptionForUser(fastMode = false): ModelOption {
 
 function getCustomSonnetOption(): ModelOption | undefined {
   const is3P = getAPIProvider() !== 'firstParty'
-  const customSonnetModel = process.env.ANTHROPIC_DEFAULT_SONNET_MODEL
+  const customSonnetModel = getConfigEnvironmentVariable(
+    'ANTHROPIC_DEFAULT_SONNET_MODEL',
+  )
   // When a 3P user has a custom sonnet model string, show it directly
   if (is3P && customSonnetModel) {
     const is1m = has1mContext(customSonnetModel)
+    const customSonnetModelName = getConfigEnvironmentVariable(
+      'ANTHROPIC_DEFAULT_SONNET_MODEL_NAME',
+    )
+    const customSonnetDescription = getConfigEnvironmentVariable(
+      'ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION',
+    )
     return {
       value: 'sonnet',
-      label:
-        process.env.ANTHROPIC_DEFAULT_SONNET_MODEL_NAME ?? customSonnetModel,
+      label: customSonnetModelName ?? customSonnetModel,
       description:
-        process.env.ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION ??
-        `Custom Sonnet model${is1m ? ' (1M context)' : ''}`,
-      descriptionForModel: `${process.env.ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION ?? `Custom Sonnet model${is1m ? ' with 1M context' : ''}`} (${customSonnetModel})`,
+        customSonnetDescription ??
+        `Configured default model${is1m ? ' (1M context)' : ''}`,
+      descriptionForModel: `${customSonnetDescription ?? `Configured default model${is1m ? ' with 1M context' : ''}`} (${customSonnetModel})`,
     }
   }
 }
@@ -155,17 +163,25 @@ function getSonnet46Option(): ModelOption {
 
 function getCustomOpusOption(): ModelOption | undefined {
   const is3P = getAPIProvider() !== 'firstParty'
-  const customOpusModel = process.env.ANTHROPIC_DEFAULT_OPUS_MODEL
+  const customOpusModel = getConfigEnvironmentVariable(
+    'ANTHROPIC_DEFAULT_OPUS_MODEL',
+  )
   // When a 3P user has a custom opus model string, show it directly
   if (is3P && customOpusModel) {
     const is1m = has1mContext(customOpusModel)
+    const customOpusModelName = getConfigEnvironmentVariable(
+      'ANTHROPIC_DEFAULT_OPUS_MODEL_NAME',
+    )
+    const customOpusDescription = getConfigEnvironmentVariable(
+      'ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION',
+    )
     return {
       value: 'opus',
-      label: process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_NAME ?? customOpusModel,
+      label: customOpusModelName ?? customOpusModel,
       description:
-        process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION ??
-        `Custom Opus model${is1m ? ' (1M context)' : ''}`,
-      descriptionForModel: `${process.env.ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION ?? `Custom Opus model${is1m ? ' with 1M context' : ''}`} (${customOpusModel})`,
+        customOpusDescription ??
+        `Configured default model${is1m ? ' (1M context)' : ''}`,
+      descriptionForModel: `${customOpusDescription ?? `Configured default model${is1m ? ' with 1M context' : ''}`} (${customOpusModel})`,
     }
   }
 }
@@ -213,16 +229,22 @@ export function getOpus46_1MOption(fastMode = false): ModelOption {
 
 function getCustomHaikuOption(): ModelOption | undefined {
   const is3P = getAPIProvider() !== 'firstParty'
-  const customHaikuModel = process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL
+  const customHaikuModel = getConfigEnvironmentVariable(
+    'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+  )
   // When a 3P user has a custom haiku model string, show it directly
   if (is3P && customHaikuModel) {
+    const customHaikuModelName = getConfigEnvironmentVariable(
+      'ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME',
+    )
+    const customHaikuDescription = getConfigEnvironmentVariable(
+      'ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION',
+    )
     return {
       value: 'haiku',
-      label: process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME ?? customHaikuModel,
-      description:
-        process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION ??
-        'Custom Haiku model',
-      descriptionForModel: `${process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION ?? 'Custom Haiku model'} (${customHaikuModel})`,
+      label: customHaikuModelName ?? customHaikuModel,
+      description: customHaikuDescription ?? 'Configured default model',
+      descriptionForModel: `${customHaikuDescription ?? 'Configured default model'} (${customHaikuModel})`,
     }
   }
 }

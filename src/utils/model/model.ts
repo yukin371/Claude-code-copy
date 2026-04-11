@@ -33,6 +33,7 @@ import { LIGHTNING_BOLT } from '../../constants/figures.js'
 import { isModelAllowed } from './modelAllowlist.js'
 import { type ModelAlias, isModelAlias } from './aliases.js'
 import { capitalize } from '../stringUtils.js'
+import { getConfigEnvironmentVariable } from '../managedEnv.js'
 
 export type ModelShortName = string
 export type ModelName = string
@@ -60,8 +61,8 @@ export function isNonCustomOpusModel(model: ModelName): boolean {
  * Priority order within this function:
  * 1. Model override during session (from /model command) - highest priority
  * 2. Model override at startup (from --model flag)
- * 3. ANTHROPIC_MODEL environment variable
- * 4. Settings (from user's saved settings)
+ * 3. Settings (from user's saved settings)
+ * 4. ANTHROPIC_MODEL environment variable
  */
 export function getUserSpecifiedModelSetting(): ModelSetting | undefined {
   let specifiedModel: ModelSetting | undefined
@@ -71,7 +72,7 @@ export function getUserSpecifiedModelSetting(): ModelSetting | undefined {
     specifiedModel = modelOverride
   } else {
     const settings = getSettings_DEPRECATED() || {}
-    specifiedModel = process.env.ANTHROPIC_MODEL || settings.model || undefined
+    specifiedModel = settings.model || process.env.ANTHROPIC_MODEL || undefined
   }
 
   // Ignore the user-specified model if it's not in the availableModels allowlist.
@@ -88,8 +89,8 @@ export function getUserSpecifiedModelSetting(): ModelSetting | undefined {
  * Model Selection Priority Order:
  * 1. Model override during session (from /model command) - highest priority
  * 2. Model override at startup (from --model flag)
- * 3. ANTHROPIC_MODEL environment variable
- * 4. Settings (from user's saved settings)
+ * 3. Settings (from user's saved settings)
+ * 4. ANTHROPIC_MODEL environment variable
  * 5. Built-in default
  *
  * @returns The resolved model name to use
@@ -116,8 +117,9 @@ export function getBestModel(): ModelName {
 
 // @[MODEL LAUNCH]: Update the default Opus model (3P providers may lag so keep defaults unchanged).
 export function getDefaultOpusModel(): ModelName {
-  if (process.env.ANTHROPIC_DEFAULT_OPUS_MODEL) {
-    return process.env.ANTHROPIC_DEFAULT_OPUS_MODEL
+  const configured = getConfigEnvironmentVariable('ANTHROPIC_DEFAULT_OPUS_MODEL')
+  if (configured) {
+    return configured
   }
   // 3P providers (Bedrock, Vertex, Foundry) — kept as a separate branch
   // even when values match, since 3P availability lags firstParty and
@@ -130,8 +132,11 @@ export function getDefaultOpusModel(): ModelName {
 
 // @[MODEL LAUNCH]: Update the default Sonnet model (3P providers may lag so keep defaults unchanged).
 export function getDefaultSonnetModel(): ModelName {
-  if (process.env.ANTHROPIC_DEFAULT_SONNET_MODEL) {
-    return process.env.ANTHROPIC_DEFAULT_SONNET_MODEL
+  const configured = getConfigEnvironmentVariable(
+    'ANTHROPIC_DEFAULT_SONNET_MODEL',
+  )
+  if (configured) {
+    return configured
   }
   // Default to Sonnet 4.5 for 3P since they may not have 4.6 yet
   if (getAPIProvider() !== 'firstParty') {
@@ -142,8 +147,11 @@ export function getDefaultSonnetModel(): ModelName {
 
 // @[MODEL LAUNCH]: Update the default Haiku model (3P providers may lag so keep defaults unchanged).
 export function getDefaultHaikuModel(): ModelName {
-  if (process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL) {
-    return process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL
+  const configured = getConfigEnvironmentVariable(
+    'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+  )
+  if (configured) {
+    return configured
   }
 
   // Haiku 4.5 is available on all platforms (first-party, Foundry, Bedrock, Vertex)
@@ -410,6 +418,10 @@ export function renderModelName(model: ModelName): string {
   if (publicName) {
     return publicName
   }
+  const customDefaultName = getConfiguredCustomModelDisplayName(model)
+  if (customDefaultName) {
+    return customDefaultName
+  }
   if (process.env.USER_TYPE === 'ant') {
     const resolved = parseUserSpecifiedModel(model)
     const antModel = resolveAntModel(model)
@@ -581,6 +593,11 @@ export function modelDisplayString(model: ModelSetting): string {
 
 // @[MODEL LAUNCH]: Add a marketing name mapping for the new model below.
 export function getMarketingNameForModel(modelId: string): string | undefined {
+  const customDefaultName = getConfiguredCustomModelDisplayName(modelId)
+  if (customDefaultName) {
+    return customDefaultName
+  }
+
   if (getAPIProvider() === 'foundry') {
     // deployment ID is user-defined in Foundry, so it may have no relation to the actual model
     return undefined
@@ -621,6 +638,41 @@ export function getMarketingNameForModel(modelId: string): string | undefined {
   }
   if (canonical.includes('claude-3-5-haiku')) {
     return 'Claude 3.5 Haiku'
+  }
+
+  return undefined
+}
+
+function getConfiguredCustomModelDisplayName(modelId: string): string | undefined {
+  const has1m = modelId.toLowerCase().includes('[1m]')
+  const baseModelId = modelId.replace(/\[1m\]$/i, '').trim().toLowerCase()
+
+  const candidates = [
+    {
+      model: getConfigEnvironmentVariable('ANTHROPIC_DEFAULT_OPUS_MODEL'),
+      name: getConfigEnvironmentVariable('ANTHROPIC_DEFAULT_OPUS_MODEL_NAME'),
+    },
+    {
+      model: getConfigEnvironmentVariable('ANTHROPIC_DEFAULT_SONNET_MODEL'),
+      name: getConfigEnvironmentVariable('ANTHROPIC_DEFAULT_SONNET_MODEL_NAME'),
+    },
+    {
+      model: getConfigEnvironmentVariable('ANTHROPIC_DEFAULT_HAIKU_MODEL'),
+      name: getConfigEnvironmentVariable('ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME'),
+    },
+  ]
+
+  for (const candidate of candidates) {
+    const candidateModel = candidate.model?.trim().toLowerCase()
+    if (!candidateModel || candidateModel !== baseModelId) {
+      continue
+    }
+
+    const label = candidate.name?.trim() || candidate.model?.trim()
+    if (!label) {
+      continue
+    }
+    return has1m ? `${label} (1M context)` : label
   }
 
   return undefined

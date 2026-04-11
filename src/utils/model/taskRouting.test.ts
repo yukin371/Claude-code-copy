@@ -590,4 +590,103 @@ describe('taskRouting transport compatibility', () => {
     expect(overridden.model).toBe('gpt-5.4')
     expect(overridden.keyId).toBe('k-openai')
   })
+
+  test('model-selected routes expose an ordered key pool instead of pinning a single keyRef', async () => {
+    process.env.TEST_OPENAI_KEY = 'secret-primary'
+    process.env.TEST_GEMINI_KEY = 'secret-secondary'
+
+    setFlagSettingsInline({
+      providerKeys: [
+        {
+          id: 'gpt-k2',
+          provider: 'openai-compatible',
+          secretEnv: 'TEST_GEMINI_KEY',
+          baseUrl: 'https://api.asxs.top/v1',
+          models: ['gpt-5.2'],
+          priority: 20,
+        },
+        {
+          id: 'gpt-k1',
+          provider: 'openai-compatible',
+          secretEnv: 'TEST_OPENAI_KEY',
+          baseUrl: 'https://api.asxs.top/v1',
+          models: ['gpt-5.2'],
+          priority: 10,
+        },
+      ],
+      taskRoutes: {
+        main: {
+          provider: 'anthropic',
+          apiStyle: 'anthropic',
+        },
+      },
+    })
+    resetSettingsCache()
+
+    const { resolveTaskRouteClientConfigFromQuerySource } = await import(
+      './taskRouting.js'
+    )
+    const resolved = resolveTaskRouteClientConfigFromQuerySource(
+      'repl_main_thread',
+      'gpt-5.2',
+    )
+
+    expect(resolved.provider).toBe('openai-compatible')
+    expect(resolved.apiStyle).toBe('openai-compatible')
+    expect(resolved.model).toBe('gpt-5.2')
+    expect(resolved.keyId).toBeUndefined()
+    expect(resolved.transportMode).toBe('single-upstream')
+    expect(resolved.apiKeyCandidates?.map(candidate => candidate.keyId)).toEqual([
+      'gpt-k1',
+      'gpt-k2',
+    ])
+    expect(
+      resolved.apiKeyCandidates?.map(candidate => candidate.priority),
+    ).toEqual([10, 20])
+  })
+
+  test('debug snapshot masks pooled key secrets by default', async () => {
+    process.env.TEST_OPENAI_KEY = 'secret-primary'
+    process.env.TEST_GEMINI_KEY = 'secret-secondary'
+
+    setFlagSettingsInline({
+      model: 'gpt-5.2',
+      providerKeys: [
+        {
+          id: 'gpt-k1',
+          provider: 'openai-compatible',
+          secretEnv: 'TEST_OPENAI_KEY',
+          baseUrl: 'https://api.asxs.top/v1',
+          models: ['gpt-5.2'],
+          priority: 10,
+        },
+        {
+          id: 'gpt-k2',
+          provider: 'openai-compatible',
+          secretEnv: 'TEST_GEMINI_KEY',
+          baseUrl: 'https://api.asxs.top/v1',
+          models: ['gpt-5.2'],
+          priority: 20,
+        },
+      ],
+      taskRoutes: {
+        main: {
+          provider: 'openai-compatible',
+          apiStyle: 'openai-compatible',
+          model: 'gpt-5.2',
+        },
+      },
+    })
+    resetSettingsCache()
+
+    const { getTaskRouteDebugSnapshot } = await import('./taskRouting.js')
+    const snapshot = getTaskRouteDebugSnapshot('main')
+
+    expect(snapshot.transport.apiKeyCandidates?.map(candidate => candidate.apiKey)).toEqual([
+      '[masked]',
+      '[masked]',
+    ])
+    expect(JSON.stringify(snapshot)).not.toContain('secret-primary')
+    expect(JSON.stringify(snapshot)).not.toContain('secret-secondary')
+  })
 })

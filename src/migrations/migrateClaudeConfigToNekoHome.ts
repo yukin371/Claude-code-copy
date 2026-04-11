@@ -146,13 +146,14 @@ export function migrateClaudeConfigDirectory({
   }
 
   for (const [sourceRelativePath, targetRelativePath] of LEGACY_FILE_MAPPINGS) {
-    if (
-      copyFileIfMissing(
-        fs,
-        join(sourceDir, sourceRelativePath),
-        join(targetDir, targetRelativePath),
-      )
-    ) {
+    const sourcePath = join(sourceDir, sourceRelativePath)
+    const targetPath = join(targetDir, targetRelativePath)
+    const changed =
+      sourceRelativePath === 'settings.json' ||
+      sourceRelativePath === 'cowork_settings.json'
+        ? mergeLegacySettingsFile(fs, sourcePath, targetPath)
+        : copyFileIfMissing(fs, sourcePath, targetPath)
+    if (changed) {
       result.copiedFiles.push(targetRelativePath)
     }
   }
@@ -480,6 +481,345 @@ function mergeLegacyGlobalConfigRecords(
     mergedConfig: changed ? mergedConfig : currentConfig,
     changed,
   }
+}
+
+function mergeLegacySettingsFile(
+  fs: FsOperations,
+  sourcePath: string,
+  targetPath: string,
+): boolean {
+  const legacySettings = readJsonObject(fs, sourcePath)
+  if (!legacySettings) {
+    return false
+  }
+
+  if (!fs.existsSync(targetPath)) {
+    fs.mkdirSync(dirname(targetPath))
+    writeFileSync(targetPath, `${JSON.stringify(legacySettings, null, 2)}\n`, 'utf8')
+    return true
+  }
+
+  const currentSettings = readJsonObject(fs, targetPath)
+  if (!currentSettings) {
+    return false
+  }
+
+  const { mergedValue, changed } = mergeLegacySettingsRecords(
+    currentSettings,
+    legacySettings,
+  )
+  if (!changed) {
+    return false
+  }
+
+  fs.mkdirSync(dirname(targetPath))
+  writeFileSync(targetPath, `${JSON.stringify(mergedValue, null, 2)}\n`, 'utf8')
+  return true
+}
+
+function mergeLegacySettingsRecords(
+  currentSettings: Record<string, unknown>,
+  legacySettings: Record<string, unknown>,
+): { mergedValue: Record<string, unknown>; changed: boolean } {
+  let changed = false
+  const mergedValue: Record<string, unknown> = { ...currentSettings }
+
+  for (const [key, value] of Object.entries(legacySettings)) {
+    if (mergedValue[key] === undefined) {
+      mergedValue[key] = value
+      changed = true
+      continue
+    }
+
+    switch (key) {
+      case 'env':
+      case 'enabledPlugins': {
+        const merged = mergeRecordByMissingKeys(
+          asRecord(mergedValue[key]),
+          asRecord(value),
+        )
+        if (merged.changed) {
+          mergedValue[key] = merged.mergedValue
+          changed = true
+        }
+        break
+      }
+      case 'availableModels': {
+        const merged = mergeUniqueStringArrays(
+          asStringArray(mergedValue[key]),
+          asStringArray(value),
+        )
+        if (merged.changed) {
+          mergedValue[key] = merged.mergedValue
+          changed = true
+        }
+        break
+      }
+      case 'providerKeys': {
+        const merged = mergeProviderKeyEntries(
+          asObjectArray(mergedValue[key]),
+          asObjectArray(value),
+        )
+        if (merged.changed) {
+          mergedValue[key] = merged.mergedValue
+          changed = true
+        }
+        break
+      }
+      case 'taskRoutes': {
+        const merged = mergeTaskRoutes(
+          asRecord(mergedValue[key]),
+          asRecord(value),
+        )
+        if (merged.changed) {
+          mergedValue[key] = merged.mergedValue
+          changed = true
+        }
+        break
+      }
+      case 'taskRouteRules': {
+        const merged = mergeUniqueObjectArrays(
+          asObjectArray(mergedValue[key]),
+          asObjectArray(value),
+        )
+        if (merged.changed) {
+          mergedValue[key] = merged.mergedValue
+          changed = true
+        }
+        break
+      }
+      default:
+        break
+    }
+  }
+
+  return {
+    mergedValue: changed ? mergedValue : currentSettings,
+    changed,
+  }
+}
+
+function mergeRecordByMissingKeys(
+  currentValue: Record<string, unknown> | undefined,
+  legacyValue: Record<string, unknown> | undefined,
+): { mergedValue: Record<string, unknown>; changed: boolean } {
+  if (!legacyValue) {
+    return { mergedValue: currentValue ?? {}, changed: false }
+  }
+
+  if (!currentValue) {
+    return { mergedValue: { ...legacyValue }, changed: true }
+  }
+
+  let changed = false
+  const mergedValue: Record<string, unknown> = { ...currentValue }
+  for (const [key, value] of Object.entries(legacyValue)) {
+    if (mergedValue[key] === undefined) {
+      mergedValue[key] = value
+      changed = true
+    }
+  }
+
+  return {
+    mergedValue: changed ? mergedValue : currentValue,
+    changed,
+  }
+}
+
+function mergeUniqueStringArrays(
+  currentValue: string[] | undefined,
+  legacyValue: string[] | undefined,
+): { mergedValue: string[]; changed: boolean } {
+  if (!legacyValue || legacyValue.length === 0) {
+    return { mergedValue: currentValue ?? [], changed: false }
+  }
+
+  if (!currentValue) {
+    return { mergedValue: [...legacyValue], changed: true }
+  }
+
+  const seen = new Set(currentValue)
+  const mergedValue = [...currentValue]
+  let changed = false
+  for (const value of legacyValue) {
+    if (!seen.has(value)) {
+      seen.add(value)
+      mergedValue.push(value)
+      changed = true
+    }
+  }
+
+  return {
+    mergedValue: changed ? mergedValue : currentValue,
+    changed,
+  }
+}
+
+function mergeProviderKeyEntries(
+  currentValue: Record<string, unknown>[] | undefined,
+  legacyValue: Record<string, unknown>[] | undefined,
+): { mergedValue: Record<string, unknown>[]; changed: boolean } {
+  if (!legacyValue || legacyValue.length === 0) {
+    return { mergedValue: currentValue ?? [], changed: false }
+  }
+
+  if (!currentValue) {
+    return { mergedValue: [...legacyValue], changed: true }
+  }
+
+  const mergedValue = [...currentValue]
+  let changed = false
+
+  for (const legacyEntry of legacyValue) {
+    const legacyId = getProviderKeyId(legacyEntry)
+    if (!legacyId) {
+      if (!containsObjectEntry(mergedValue, legacyEntry)) {
+        mergedValue.push(legacyEntry)
+        changed = true
+      }
+      continue
+    }
+
+    const currentIndex = mergedValue.findIndex(
+      entry => getProviderKeyId(entry) === legacyId,
+    )
+    if (currentIndex === -1) {
+      mergedValue.push(legacyEntry)
+      changed = true
+      continue
+    }
+
+    const currentEntry = mergedValue[currentIndex]
+    const mergedEntry = { ...currentEntry }
+    let entryChanged = false
+    for (const [key, value] of Object.entries(legacyEntry)) {
+      if (mergedEntry[key] === undefined) {
+        mergedEntry[key] = value
+        entryChanged = true
+        continue
+      }
+
+      if (key === 'models') {
+        const mergedModels = mergeUniqueStringArrays(
+          asStringArray(mergedEntry[key]),
+          asStringArray(value),
+        )
+        if (mergedModels.changed) {
+          mergedEntry[key] = mergedModels.mergedValue
+          entryChanged = true
+        }
+      }
+    }
+
+    if (entryChanged) {
+      mergedValue[currentIndex] = mergedEntry
+      changed = true
+    }
+  }
+
+  return {
+    mergedValue: changed ? mergedValue : currentValue,
+    changed,
+  }
+}
+
+function mergeTaskRoutes(
+  currentValue: Record<string, unknown> | undefined,
+  legacyValue: Record<string, unknown> | undefined,
+): { mergedValue: Record<string, unknown>; changed: boolean } {
+  if (!legacyValue) {
+    return { mergedValue: currentValue ?? {}, changed: false }
+  }
+
+  if (!currentValue) {
+    return { mergedValue: { ...legacyValue }, changed: true }
+  }
+
+  const mergedValue: Record<string, unknown> = { ...currentValue }
+  let changed = false
+
+  for (const [routeName, legacyRouteValue] of Object.entries(legacyValue)) {
+    if (mergedValue[routeName] === undefined) {
+      mergedValue[routeName] = legacyRouteValue
+      changed = true
+      continue
+    }
+
+    const mergedRoute = mergeRecordByMissingKeys(
+      asRecord(mergedValue[routeName]),
+      asRecord(legacyRouteValue),
+    )
+    if (mergedRoute.changed) {
+      mergedValue[routeName] = mergedRoute.mergedValue
+      changed = true
+    }
+  }
+
+  return {
+    mergedValue: changed ? mergedValue : currentValue,
+    changed,
+  }
+}
+
+function mergeUniqueObjectArrays(
+  currentValue: Record<string, unknown>[] | undefined,
+  legacyValue: Record<string, unknown>[] | undefined,
+): { mergedValue: Record<string, unknown>[]; changed: boolean } {
+  if (!legacyValue || legacyValue.length === 0) {
+    return { mergedValue: currentValue ?? [], changed: false }
+  }
+
+  if (!currentValue) {
+    return { mergedValue: [...legacyValue], changed: true }
+  }
+
+  const mergedValue = [...currentValue]
+  const seen = new Set(currentValue.map(entry => JSON.stringify(entry)))
+  let changed = false
+  for (const entry of legacyValue) {
+    const key = JSON.stringify(entry)
+    if (seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    mergedValue.push(entry)
+    changed = true
+  }
+
+  return {
+    mergedValue: changed ? mergedValue : currentValue,
+    changed,
+  }
+}
+
+function asObjectArray(value: unknown): Record<string, unknown>[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined
+  }
+
+  const entries = value.filter(asRecord)
+  return entries.length === value.length
+    ? (entries as Record<string, unknown>[])
+    : undefined
+}
+
+function asStringArray(value: unknown): string[] | undefined {
+  return Array.isArray(value) && value.every(entry => typeof entry === 'string')
+    ? (value as string[])
+    : undefined
+}
+
+function getProviderKeyId(entry: Record<string, unknown>): string | undefined {
+  const id = entry.id
+  return typeof id === 'string' && id.trim() ? id : undefined
+}
+
+function containsObjectEntry(
+  entries: Record<string, unknown>[],
+  target: Record<string, unknown>,
+): boolean {
+  const targetKey = JSON.stringify(target)
+  return entries.some(entry => JSON.stringify(entry) === targetKey)
 }
 
 function readLegacyKnownMarketplacesMigration(

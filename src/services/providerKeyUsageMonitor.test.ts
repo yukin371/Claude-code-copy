@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { setFlagSettingsInline } from '../bootstrap/state.js'
+import {
+  getAllowedSettingSources,
+  setAllowedSettingSources,
+  setFlagSettingsInline,
+} from '../bootstrap/state.js'
 import { resetSettingsCache } from '../utils/settings/settingsCache.js'
 import { getCurrentProjectConfig } from '../utils/config.js'
+import { markProviderEndpointSuccess } from '../utils/model/providerBalancer.js'
 import {
   flushProviderKeyUsageToProjectConfig,
   recordProviderKeyUsageFromAPISuccess,
@@ -25,13 +30,16 @@ function restoreEnv(snapshot: EnvSnapshot): void {
 }
 
 describe('providerKeyUsageMonitor', () => {
-  const ENV_KEYS = ['TEST_GEMINI_KEY', 'NODE_ENV'] as const
+  const ENV_KEYS = ['TEST_GEMINI_KEY', 'TEST_OPENAI_KEY', 'NODE_ENV'] as const
   let envSnapshot: EnvSnapshot
+  let allowedSourcesSnapshot: ReturnType<typeof getAllowedSettingSources>
 
   beforeEach(() => {
     envSnapshot = snapshotEnv(ENV_KEYS)
     process.env.NODE_ENV = 'test'
     resetProviderKeyUsageMonitorForTests()
+    allowedSourcesSnapshot = getAllowedSettingSources()
+    setAllowedSettingSources([])
     setFlagSettingsInline(null)
     resetSettingsCache()
   })
@@ -39,6 +47,7 @@ describe('providerKeyUsageMonitor', () => {
   afterEach(() => {
     restoreEnv(envSnapshot)
     resetProviderKeyUsageMonitorForTests()
+    setAllowedSettingSources(allowedSourcesSnapshot)
     setFlagSettingsInline(null)
     resetSettingsCache()
   })
@@ -142,5 +151,71 @@ describe('providerKeyUsageMonitor', () => {
     expect(usage?.estimatedInputTokens).toBe(123)
     expect(usage?.estimatedOutputTokens).toBe(45)
   })
-})
 
+  test('records usage against the actual successful pooled key', async () => {
+    process.env.TEST_GEMINI_KEY = 'fallback-secret'
+    process.env.TEST_OPENAI_KEY = 'primary-secret'
+
+    setFlagSettingsInline({
+      providerKeys: [
+        {
+          id: 'gpt-k1',
+          provider: 'openai-compatible',
+          secretEnv: 'TEST_OPENAI_KEY',
+          baseUrl: 'https://api.asxs.top/v1',
+          models: ['gpt-5.2'],
+          priority: 10,
+        },
+        {
+          id: 'gpt-k2',
+          provider: 'openai-compatible',
+          secretEnv: 'TEST_GEMINI_KEY',
+          baseUrl: 'https://api.asxs.top/v1',
+          models: ['gpt-5.2'],
+          priority: 20,
+        },
+      ],
+      taskRoutes: {
+        main: {
+          provider: 'openai-compatible',
+          apiStyle: 'openai-compatible',
+          model: 'gpt-5.2',
+        },
+      },
+    })
+    resetSettingsCache()
+
+    markProviderEndpointSuccess(
+      {
+        provider: 'openai-compatible',
+        baseUrl: 'https://api.asxs.top/v1',
+        apiKey: 'fallback-secret',
+        keyId: 'gpt-k2',
+        keyPriority: 20,
+        baseUrlIndex: 0,
+        apiKeyIndex: 1,
+        providerWeight: 1,
+        endpointId: 'openai-compatible|https://api.asxs.top/v1|gpt-k2',
+      },
+      'repl_main_thread',
+    )
+
+    recordProviderKeyUsageFromAPISuccess({
+      querySource: 'repl_main_thread',
+      model: 'gpt-5.2',
+      usage: {
+        input_tokens: 8,
+        output_tokens: 4,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        server_tool_use: { web_search_requests: 0, web_fetch_requests: 0 },
+      } as any,
+      costUSD: 0.02,
+    })
+
+    flushProviderKeyUsageToProjectConfig()
+
+    expect(getCurrentProjectConfig().providerKeyUsage?.['gpt-k1']).toBeUndefined()
+    expect(getCurrentProjectConfig().providerKeyUsage?.['gpt-k2']?.requests).toBe(1)
+  })
+})

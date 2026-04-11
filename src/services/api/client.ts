@@ -383,7 +383,10 @@ export async function getTaskRouteAnthropicClient({
   source?: string
   querySource?: string
 }): Promise<Anthropic> {
-  const routeConfig = resolveTaskRouteClientConfigFromQuerySource(querySource)
+  const routeConfig = resolveTaskRouteClientConfigFromQuerySource(
+    querySource,
+    model,
+  )
   return getAnthropicClient({
     apiKey,
     maxRetries,

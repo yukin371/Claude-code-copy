@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 
+import {
+  getAllowedSettingSources,
+  setAllowedSettingSources,
+  setFlagSettingsInline,
+} from 'src/bootstrap/state.js'
 import { resetProviderBalancerForTests } from 'src/utils/model/providerBalancer.js'
+import { resetSettingsCache } from 'src/utils/settings/settingsCache.js'
 
 type EnvSnapshot = Record<string, string | undefined>
 
@@ -113,6 +119,7 @@ function createSseResponse(frames: string[]): Response {
 
   describe('openaiCompatibleClient', () => {
   let envSnapshot: EnvSnapshot
+  let allowedSourcesSnapshot: ReturnType<typeof getAllowedSettingSources>
 
   beforeEach(() => {
     mock.module('@anthropic-ai/sdk/error', () => ({
@@ -148,6 +155,10 @@ function createSseResponse(frames: string[]): Response {
     envSnapshot = snapshotEnv(ENV_KEYS)
     process.env.USER_TYPE = 'test'
     process.env.CLAUDE_CODE_ENTRYPOINT = 'bun-test'
+    allowedSourcesSnapshot = getAllowedSettingSources()
+    setAllowedSettingSources([])
+    setFlagSettingsInline(null)
+    resetSettingsCache()
     ;(globalThis as typeof globalThis & { MACRO?: typeof TEST_MACRO }).MACRO =
       TEST_MACRO
   })
@@ -155,6 +166,9 @@ function createSseResponse(frames: string[]): Response {
   afterEach(() => {
     resetProviderBalancerForTests()
     restoreEnv(envSnapshot)
+    setAllowedSettingSources(allowedSourcesSnapshot)
+    setFlagSettingsInline(null)
+    resetSettingsCache()
   })
 
   test('rejects explicit transport pools before sending a request', async () => {
@@ -370,6 +384,95 @@ function createSseResponse(frames: string[]): Response {
       {
         type: 'text',
         text: 'served by fallback provider',
+      },
+    ] as unknown as typeof message.content)
+  })
+
+  test('fails over across prioritized keys on the same provider', async () => {
+    const { createOpenAICompatibleAnthropicClient } = await import(
+      './openaiCompatibleClient.js'
+    )
+
+    const calls: FetchCall[] = []
+    const client = await createOpenAICompatibleAnthropicClient({
+      transport: {
+        provider: 'openai-compatible',
+        apiStyle: 'openai-compatible',
+        baseUrl: 'https://api.asxs.top/v1',
+        transportMode: 'single-upstream',
+        apiKeyCandidates: [
+          {
+            keyId: 'asxs-k2',
+            apiKey: 'fallback-key',
+            priority: 20,
+            apiKeySource: 'key-ref',
+          },
+          {
+            keyId: 'asxs-k1',
+            apiKey: 'primary-key',
+            priority: 10,
+            apiKeySource: 'key-ref',
+          },
+        ],
+      },
+      maxRetries: 0,
+      source: 'repl_main_thread',
+      fetchOverride: (async (input, init) => {
+        const url = input instanceof Request ? input.url : String(input)
+        const headers = new Headers(init?.headers)
+        calls.push({
+          url,
+          authorization: headers.get('authorization'),
+          googleClient: headers.get('x-goog-api-client'),
+        })
+
+        if (calls.length === 1) {
+          return createJsonResponse(
+            { error: { message: 'primary key unavailable' } },
+            500,
+          )
+        }
+
+        return createJsonResponse({
+          id: 'msg_same_provider_failover',
+          model: 'gpt-5.2',
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: 'assistant',
+                content: 'served by backup key',
+              },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: {
+            prompt_tokens: 4,
+            completion_tokens: 2,
+          },
+        })
+      }) as typeof fetch,
+    })
+
+    const message = await client.beta.messages.create({
+      model: 'gpt-5.2',
+      max_tokens: 64,
+      messages: [{ role: 'user', content: 'ping same provider keys' }],
+      stream: false,
+    } as any)
+
+    expect(calls.map(call => call.url)).toEqual([
+      'https://api.asxs.top/v1/chat/completions',
+      'https://api.asxs.top/v1/chat/completions',
+    ])
+    expect(calls.map(call => call.authorization)).toEqual([
+      'Bearer primary-key',
+      'Bearer fallback-key',
+    ])
+    expect(message.content).toEqual([
+      {
+        type: 'text',
+        text: 'served by backup key',
       },
     ] as unknown as typeof message.content)
   })

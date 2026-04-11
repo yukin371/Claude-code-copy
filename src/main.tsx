@@ -113,8 +113,8 @@ import { safeParseJSON } from './utils/json.js';
 import { logError } from './utils/log.js';
 import { getModelDeprecationWarning } from './utils/model/deprecation.js';
 import { getDefaultMainLoopModel, getUserSpecifiedModelSetting, normalizeModelStringForAPI, parseUserSpecifiedModel } from './utils/model/model.js';
+import { syncMainLoopRoutingForModelSelection } from './utils/model/modelSelectionRouting.js';
 import { PROVIDER_NAMES } from './utils/model/providerMetadata.js';
-import { setMainLoopProviderOverride } from './utils/model/sessionProviderOverride.js';
 import { ensureModelStringsInitialized } from './utils/model/modelStrings.js';
 import { PERMISSION_MODES } from './utils/permissions/PermissionMode.js';
 import { checkAndDisableBypassPermissions, getAutoModeEnabledStateIfCached, initializeToolPermissionContext, initialPermissionModeFromCLI, isDefaultPermissionModeAuto, parseToolListFromCLI, removeDangerousPermissions, stripDangerousPermissionsForAutoMode, verifyAutoModeGateAccess } from './utils/permissions/permissionSetup.js';
@@ -2045,11 +2045,15 @@ async function run(): Promise<CommanderCommand> {
 
     // Compute effective model early so hooks can run in parallel with MCP
     // If user didn't specify a model but agent has one, use the agent's model
-    let effectiveModel = userSpecifiedModel;
+    const configuredMainLoopModel = getUserSpecifiedModelSetting();
+    let effectiveModel = userSpecifiedModel ?? configuredMainLoopModel;
     if (!effectiveModel && mainThreadAgentDefinition?.model && mainThreadAgentDefinition.model !== 'inherit') {
       effectiveModel = parseUserSpecifiedModel(mainThreadAgentDefinition.model);
     }
-    setMainLoopProviderOverride(options.provider);
+    syncMainLoopRoutingForModelSelection({
+      model: effectiveModel,
+      explicitProvider: options.provider
+    });
     setMainLoopModelOverride(effectiveModel);
 
     // Compute resolved model for hooks (use user-specified model at launch)
