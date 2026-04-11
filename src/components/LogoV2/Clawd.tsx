@@ -11,67 +11,70 @@ type Props = {
 };
 
 // Standard-terminal pose fragments. Each row is split into segments so we can
-// vary only the parts that change (eyes, arms) while keeping the body/bg spans
-// stable. All poses end up 9 cols wide.
+// vary the paws and eye direction while keeping the mascot footprint stable.
+// All poses end up 9 cols wide.
 //
-// arms-up: the row-2 arm shapes (▝▜ / ▛▘) move to row 1 as their
-// bottom-heavy mirrors (▗▟ / ▙▖) — same silhouette, one row higher.
-//
-// look-* use top-quadrant eye chars (▙/▟) so both eyes change from the
-// default (▛/▜, bottom pupils) — otherwise only one eye would appear to move.
+// arms-up lifts the front paws into the ear row.
+// look-* only swap the eye glyphs in the face row.
 type Segments = {
   /** row 1 left (no bg): optional raised arm + side */
   r1L: string;
-  /** row 1 eyes (with bg): left-eye, forehead, right-eye */
+  /** row 1 crown (with bg): ear bridge and forehead */
   r1E: string;
   /** row 1 right (no bg): side + optional raised arm */
   r1R: string;
-  /** row 2 left (no bg): arm + body curve */
+  /** row 2 left (no bg): cheek / shoulder */
   r2L: string;
-  /** row 2 right (no bg): body curve + arm */
+  /** row 2 face (with bg): cheeks, eyes, nose */
+  r2E: string;
+  /** row 2 right (no bg): cheek / shoulder */
   r2R: string;
 };
 const POSES: Record<ClawdPose, Segments> = {
   default: {
-    r1L: ' ▐',
-    r1E: '▛███▜',
-    r1R: '▌',
-    r2L: '▝▜',
-    r2R: '▛▘'
+    r1L: '▗▛',
+    r1E: '▀███▀',
+    r1R: '▜▖',
+    r2L: '▐ ',
+    r2E: '█▚▄▞█',
+    r2R: ' ▌'
   },
   'look-left': {
-    r1L: ' ▐',
-    r1E: '▟███▟',
-    r1R: '▌',
-    r2L: '▝▜',
-    r2R: '▛▘'
+    r1L: '▗▛',
+    r1E: '▀███▀',
+    r1R: '▜▖',
+    r2L: '▐ ',
+    r2E: '█▞▄▞█',
+    r2R: ' ▌'
   },
   'look-right': {
-    r1L: ' ▐',
-    r1E: '▙███▙',
-    r1R: '▌',
-    r2L: '▝▜',
-    r2R: '▛▘'
+    r1L: '▗▛',
+    r1E: '▀███▀',
+    r1R: '▜▖',
+    r2L: '▐ ',
+    r2E: '█▚▄▚█',
+    r2R: ' ▌'
   },
   'arms-up': {
     r1L: '▗▟',
-    r1E: '▛███▜',
+    r1E: '▀███▀',
     r1R: '▙▖',
-    r2L: ' ▜',
-    r2R: '▛ '
+    r2L: '▐ ',
+    r2E: '█▚▄▞█',
+    r2R: ' ▌'
   }
 };
 
 // Apple Terminal uses a bg-fill trick (see below), so only eye poses make
 // sense. Arm poses fall back to default.
 const APPLE_EYES: Record<ClawdPose, string> = {
-  default: ' ▗   ▖ ',
-  'look-left': ' ▘   ▘ ',
-  'look-right': ' ▝   ▝ ',
-  'arms-up': ' ▗   ▖ '
+  default: ' ▚ ▄ ▞ ',
+  'look-left': ' ▞ ▄ ▞ ',
+  'look-right': ' ▚ ▄ ▚ ',
+  'arms-up': ' ▚ ▄ ▞ '
 };
 export function Clawd(t0) {
-  const $ = _c(26);
+  const $ = _c(28);
   let t1;
   if ($[0] !== t0) {
     t1 = t0 === undefined ? {} : t0;
@@ -139,44 +142,46 @@ export function Clawd(t0) {
     t7 = $[15];
   }
   let t8;
-  if ($[16] === Symbol.for("react.memo_cache_sentinel")) {
-    t8 = <Text color="clawd_body" backgroundColor="clawd_background">█████</Text>;
-    $[16] = t8;
+  if ($[16] !== p.r2E) {
+    t8 = <Text color="clawd_body" backgroundColor="clawd_background">{p.r2E}</Text>;
+    $[16] = p.r2E;
+    $[17] = t8;
   } else {
-    t8 = $[16];
+    t8 = $[17];
   }
   let t9;
-  if ($[17] !== p.r2R) {
+  if ($[18] !== p.r2R) {
     t9 = <Text color="clawd_body">{p.r2R}</Text>;
-    $[17] = p.r2R;
-    $[18] = t9;
+    $[18] = p.r2R;
+    $[19] = t9;
   } else {
-    t9 = $[18];
+    t9 = $[19];
   }
   let t10;
-  if ($[19] !== t7 || $[20] !== t9) {
+  if ($[20] !== t7 || $[21] !== t8 || $[22] !== t9) {
     t10 = <Text>{t7}{t8}{t9}</Text>;
-    $[19] = t7;
-    $[20] = t9;
-    $[21] = t10;
+    $[20] = t7;
+    $[21] = t8;
+    $[22] = t9;
+    $[23] = t10;
   } else {
-    t10 = $[21];
+    t10 = $[23];
   }
   let t11;
-  if ($[22] === Symbol.for("react.memo_cache_sentinel")) {
-    t11 = <Text color="clawd_body">{"  "}▘▘ ▝▝{"  "}</Text>;
-    $[22] = t11;
+  if ($[24] === Symbol.for("react.memo_cache_sentinel")) {
+    t11 = <Text color="clawd_body">{"  "}▜▘ ▝▛{"  "}</Text>;
+    $[24] = t11;
   } else {
-    t11 = $[22];
+    t11 = $[24];
   }
   let t12;
-  if ($[23] !== t10 || $[24] !== t6) {
+  if ($[25] !== t10 || $[26] !== t6) {
     t12 = <Box flexDirection="column">{t6}{t10}{t11}</Box>;
-    $[23] = t10;
-    $[24] = t6;
-    $[25] = t12;
+    $[25] = t10;
+    $[26] = t6;
+    $[27] = t12;
   } else {
-    t12 = $[25];
+    t12 = $[27];
   }
   return t12;
 }
@@ -220,7 +225,7 @@ function AppleTerminalClawd(t0) {
   let t7;
   if ($[6] === Symbol.for("react.memo_cache_sentinel")) {
     t6 = <Text backgroundColor="clawd_body">{" ".repeat(7)}</Text>;
-    t7 = <Text color="clawd_body">▘▘ ▝▝</Text>;
+    t7 = <Text color="clawd_body">▜▘ ▝▛</Text>;
     $[6] = t6;
     $[7] = t7;
   } else {
