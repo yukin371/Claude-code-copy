@@ -29,6 +29,7 @@ import {
   type SettingsJson,
   SettingsSchema,
 } from '../../utils/settings/types.js'
+import { normalizeSimplifiedModelConfig } from '../../utils/settings/simplifiedModelConfig.js'
 import { sleep } from '../../utils/sleep.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import { getClaudeCodeUserAgent } from '../../utils/userAgent.js'
@@ -319,7 +320,9 @@ async function fetchRemoteManagedSettings(
     }
 
     // Full validation of settings structure
-    const settingsValidation = SettingsSchema().safeParse(parsed.data.settings)
+    const settingsValidation = SettingsSchema().safeParse(
+      normalizeSimplifiedModelConfig(parsed.data.settings),
+    )
     if (!settingsValidation.success) {
       logForDebugging(
         `Remote settings: Settings validation failed - ${settingsValidation.error.message}`,

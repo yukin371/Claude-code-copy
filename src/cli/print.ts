@@ -4432,7 +4432,8 @@ async function handleInitializeRequest(
         }
       }
 
-      // Apply the agent's model if user didn't specify one and agent has a model
+      // Apply only an explicit pinned agent model when the user did not
+      // specify one; internal inherit/default sentinels do not override here.
       if (
         !options.userSpecifiedModel &&
         mainThreadAgent.model &&
@@ -4490,7 +4491,7 @@ async function handleInitializeRequest(
     agents: agents.map(agent => ({
       name: agent.agentType,
       description: agent.whenToUse,
-      // 'inherit' is an internal sentinel; normalize to undefined for the public API
+      // 'inherit' is an internal sentinel; expose only explicit pinned models in the public API
       model: agent.model === 'inherit' ? undefined : agent.model,
     })),
     output_style: outputStyle,

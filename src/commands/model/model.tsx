@@ -167,7 +167,7 @@ function SetModelAndClose({
         return;
       }
 
-      // Skip validation for default model
+      // Skip validation when resetting back to the current default/main model
       if (!model) {
         setModel(null);
         return;

@@ -25,7 +25,7 @@ export function syncMainLoopRoutingForModelSelection(params: {
   const primary = pickPrimarySourceForModel(modelValue)
   if (primary) {
     setMainLoopProviderOverride(primary.provider)
-    setMainLoopKeyRefOverride(undefined)
+    setMainLoopKeyRefOverride(primary.keyRef)
     return
   }
 

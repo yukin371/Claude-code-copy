@@ -45,6 +45,7 @@ import {
   setSessionSettingsCache,
 } from './settingsCache.js'
 import { type SettingsJson, SettingsSchema } from './types.js'
+import { normalizeSimplifiedModelConfig } from './simplifiedModelConfig.js'
 import {
   filterInvalidPermissionRules,
   formatZodError,
@@ -216,7 +217,8 @@ function parseSettingsFileUncached(path: string): {
       return { settings: {}, errors: [] }
     }
 
-    const data = safeParseJSON(content, false)
+    const rawData = safeParseJSON(content, false)
+    const data = normalizeSimplifiedModelConfig(rawData)
 
     // Filter invalid permission rules before schema validation so one bad
     // rule doesn't cause the entire settings file to be rejected.
@@ -349,7 +351,9 @@ function getSettingsForSourceUncached(
   if (source === 'flagSettings') {
     const inlineSettings = getFlagSettingsInline()
     if (inlineSettings) {
-      const parsed = SettingsSchema().safeParse(inlineSettings)
+      const parsed = SettingsSchema().safeParse(
+        normalizeSimplifiedModelConfig(inlineSettings),
+      )
       if (parsed.success) {
         return mergeWith(
           fileSettings || {},
@@ -677,7 +681,9 @@ function loadSettingsFromDisk(): SettingsWithErrors {
         // 1. Remote (highest priority)
         const remoteSettings = getRemoteManagedSettingsSyncFromCache()
         if (remoteSettings && Object.keys(remoteSettings).length > 0) {
-          const result = SettingsSchema().safeParse(remoteSettings)
+          const result = SettingsSchema().safeParse(
+            normalizeSimplifiedModelConfig(remoteSettings),
+          )
           if (result.success) {
             policySettings = result.data
           } else {
@@ -767,7 +773,9 @@ function loadSettingsFromDisk(): SettingsWithErrors {
       if (source === 'flagSettings') {
         const inlineSettings = getFlagSettingsInline()
         if (inlineSettings) {
-          const parsed = SettingsSchema().safeParse(inlineSettings)
+          const parsed = SettingsSchema().safeParse(
+            normalizeSimplifiedModelConfig(inlineSettings),
+          )
           if (parsed.success) {
             mergedSettings = mergeWith(
               mergedSettings,

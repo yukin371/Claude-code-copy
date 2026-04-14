@@ -14,12 +14,13 @@
 
 ## 已完成
 
-- 主路由已能按 `settings.json.taskRoutes.main` 读取 provider / apiStyle / model / baseUrl。
+- 主路由当前采用“`defaults.main` 决定默认模型，`taskRoutes.main` 保留 transport override”的双层结构。
 - `querySource` 已能映射到 route，并进入 route-aware client 创建流程。
 - OpenAI-compatible provider 已支持 route provider 作为默认端点/密钥选择依据。
 - OpenAI-compatible provider 现在会在同 provider 端点耗尽后，继续按兼容 provider 顺序回退。
 - `sideQuery` 与 token estimation 已接入 route-aware client，不再默认绕回旧的主 client。
 - 状态页已可直接查看非 main 任务路由矩阵，便于核对 `subagent` / `frontend` / `review` 等任务实际落点。
+- 状态页 / doctor 现已可查看 route 的 `resolved source`、model source（`defaults.*` vs `taskRoutes.*.model`）与更具体的 config source 标签。
 - route diagnostics / smoke 现已补代表性的 helper `querySource` 样本，包括 `session_search`、`permission_explainer`、`model_validation`、`side_question`、`auto_mode`、`memdir_relevance`、`hook_prompt`、`chrome_mcp`。
 - 带 `querySource` 的 token estimation 调用现已优先跟随 Anthropic 路由任务（例如 `agent:builtin:plan`），避免这些辅助路径继续一律硬绑 `main`；OpenAI-compatible 路由暂仍保守回落到 `main` 计数路径。
 - MCP tool 结果的大输出截断链路现已透传调用侧 `querySource`，例如 `chrome_mcp` 这类 helper 路径在进入 token estimation 时不再丢失来源信息。
@@ -37,6 +38,7 @@
 - 把 provider 默认 baseUrl / apiKey 解析收成共享元数据，避免重复散落。
 - 共享元数据已经落到 `providerMetadata.ts`，后续应优先扩这里而不是再复制常量。
 - 统一主线程、subagent、frontend、review 的路由 model 解析入口。
+- 继续把用户心智从旧 `taskRoutes.*.model` 收拢到 `defaults.*`，只把 `taskRoutes.*` 保留为 transport override。
 - 为多 provider 增加更完整的兼容测试，尤其是更多辅助路径与外部 gateway / 直连 provider 的组合验证。
 - 应用内不再把熔断、权重分配做成长期主能力，后续重点改为外部网关集成与直连模式验证。
 

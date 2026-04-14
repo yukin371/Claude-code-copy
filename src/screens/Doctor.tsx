@@ -76,13 +76,32 @@ function formatRouteDebugFieldSummary(fieldName: string, field: RouteDebugFieldS
   }
   return `${fieldName}=${value} (${source})`;
 }
-function getMainRouteSummary(snapshot: DiagnosticInfo["currentTaskRouteSnapshot"] | null | undefined): string | null {
+export function getMainRouteSummary(snapshot: DiagnosticInfo["currentTaskRouteSnapshot"] | null | undefined): string | null {
   if (!snapshot) {
     return null;
   }
   return [`route=${snapshot.route}`, formatRouteDebugFieldSummary("provider", snapshot.fields.provider), formatRouteDebugFieldSummary("apiStyle", snapshot.fields.apiStyle), formatRouteDebugFieldSummary("model", snapshot.fields.model), formatRouteDebugFieldSummary("baseUrl", snapshot.fields.baseUrl), formatRouteDebugFieldSummary("apiKey", snapshot.fields.apiKey, {
     maskValue: true
   })].join(" | ");
+}
+export function getTaskRouteSummaries(diagnostic: Pick<DiagnosticInfo, "currentTaskRouteSnapshot" | "taskRouteSnapshots"> | null | undefined): string[] {
+  if (!diagnostic) {
+    return [];
+  }
+  const snapshots = diagnostic.taskRouteSnapshots && diagnostic.taskRouteSnapshots.length > 0 ? diagnostic.taskRouteSnapshots : diagnostic.currentTaskRouteSnapshot ? [diagnostic.currentTaskRouteSnapshot] : [];
+  const seen = new Set<string>();
+  const summaries: string[] = [];
+  for (const snapshot of snapshots) {
+    if (seen.has(snapshot.route)) {
+      continue;
+    }
+    seen.add(snapshot.route);
+    const summary = getMainRouteSummary(snapshot);
+    if (summary) {
+      summaries.push(summary);
+    }
+  }
+  return summaries;
 }
 function DistTagsDisplay(t0: { promise: Promise<NpmDistTags> }) {
   const $ = _c(8);
@@ -352,7 +371,7 @@ export function Doctor(t0) {
   } else {
     t18 = $[31];
   }
-  const t18a = getMainRouteSummary(diagnostic.currentTaskRouteSnapshot);
+  const t18a = getTaskRouteSummaries(diagnostic);
   let t19;
   if ($[32] !== diagnostic.recommendation) {
     t19 = diagnostic.recommendation && <><Text /><Text color="warning">Recommendation: {diagnostic.recommendation.split("\n")[0]}</Text><Text dimColor={true}>{diagnostic.recommendation.split("\n")[1]}</Text></>;
@@ -386,52 +405,53 @@ export function Doctor(t0) {
     t22 = $[39];
   }
   let t23;
-  if ($[40] !== t11 || $[41] !== t12 || $[42] !== t13 || $[43] !== t14 || $[44] !== t15 || $[45] !== t18 || $[46] !== t19 || $[47] !== t20 || $[48] !== t21 || $[49] !== t22) {
-    t23 = <Box flexDirection="column">{t10}{t11}{t12}{t13}{t14}{t15}{t18}{t18a && <Text>└ Main route: {t18a}</Text>}{t19}{t20}{t21}{t22}</Box>;
+  if ($[40] !== t11 || $[41] !== t12 || $[42] !== t13 || $[43] !== t14 || $[44] !== t15 || $[45] !== t18 || $[46] !== t18a || $[47] !== t19 || $[48] !== t20 || $[49] !== t21 || $[50] !== t22) {
+    t23 = <Box flexDirection="column">{t10}{t11}{t12}{t13}{t14}{t15}{t18}{t18a.map(line => <Text key={line}>└ Route: {line}</Text>)}{t19}{t20}{t21}{t22}</Box>;
     $[40] = t11;
     $[41] = t12;
     $[42] = t13;
     $[43] = t14;
     $[44] = t15;
     $[45] = t18;
-    $[46] = t19;
-    $[47] = t20;
-    $[48] = t21;
-    $[49] = t22;
-    $[50] = t23;
+    $[46] = t18a;
+    $[47] = t19;
+    $[48] = t20;
+    $[49] = t21;
+    $[50] = t22;
+    $[51] = t23;
   } else {
-    t23 = $[50];
+    t23 = $[51];
   }
   let t24;
-  if ($[51] === Symbol.for("react.memo_cache_sentinel")) {
+  if ($[52] === Symbol.for("react.memo_cache_sentinel")) {
     t24 = <Text bold={true}>Updates</Text>;
-    $[51] = t24;
+    $[52] = t24;
   } else {
-    t24 = $[51];
+    t24 = $[52];
   }
   const t25 = diagnostic.packageManager ? "Managed by package manager" : diagnostic.autoUpdates;
   let t26;
-  if ($[52] !== t25) {
+  if ($[53] !== t25) {
     t26 = <Text>└ Auto-updates:{" "}{t25}</Text>;
-    $[52] = t25;
-    $[53] = t26;
+    $[53] = t25;
+    $[54] = t26;
   } else {
-    t26 = $[53];
+    t26 = $[54];
   }
   let t27;
-  if ($[54] !== diagnostic.hasUpdatePermissions) {
+  if ($[55] !== diagnostic.hasUpdatePermissions) {
     t27 = diagnostic.hasUpdatePermissions !== null && <Text>└ Update permissions:{" "}{diagnostic.hasUpdatePermissions ? "Yes" : "No (requires sudo)"}</Text>;
-    $[54] = diagnostic.hasUpdatePermissions;
-    $[55] = t27;
+    $[55] = diagnostic.hasUpdatePermissions;
+    $[56] = t27;
   } else {
-    t27 = $[55];
+    t27 = $[56];
   }
   let t28;
-  if ($[56] === Symbol.for("react.memo_cache_sentinel")) {
+  if ($[57] === Symbol.for("react.memo_cache_sentinel")) {
     t28 = <Text>└ Auto-update channel: {autoUpdatesChannel}</Text>;
-    $[56] = t28;
+    $[57] = t28;
   } else {
-    t28 = $[56];
+    t28 = $[57];
   }
   let t29;
   if ($[57] === Symbol.for("react.memo_cache_sentinel")) {

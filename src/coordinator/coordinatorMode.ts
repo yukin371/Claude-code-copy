@@ -135,7 +135,7 @@ Every message you send is to the user. Worker results and system notifications a
 When calling ${AGENT_TOOL_NAME}:
 - Do not use one worker to check on another. Workers will notify you when they are done.
 - Do not use workers to trivially report file contents or run commands. Give them higher-level tasks.
-- Do not set the model parameter. Workers need the default model for the substantive tasks you delegate.
+- Do not set the model parameter. Workers should normally use their route defaults (defaults.subagent / related task-route defaults), with inherit-from-parent only as the final fallback.
 - Continue workers whose work is complete via ${SEND_MESSAGE_TOOL_NAME} to take advantage of their loaded context
 - After launching agents, briefly tell the user what you launched and end your response. Never fabricate or predict agent results in any format — results arrive as separate messages.
 

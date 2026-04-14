@@ -30,6 +30,8 @@
   - [2026-04-09-worktree-change-inventory.md](../plans/2026-04-09-worktree-change-inventory.md)
 - 本轮收尾对齐记录：
   - [2026-04-10-release-preflight-signed-workflow-alignment.md](../plans/2026-04-10-release-preflight-signed-workflow-alignment.md)
+- 多 agent 通信与模型分层计划：
+  - [2026-04-12-multi-agent-communication-and-model-tiering-plan.md](../plans/2026-04-12-multi-agent-communication-and-model-tiering-plan.md)
 - 当前默认执行规则：
   - 以后默认按阶段计划推进
   - 只有当前 active phase 的 Exit Conditions 满足后，才切到下一阶段
@@ -143,6 +145,7 @@
 2. 更上层的交互式配置入口
 3. 外部网关接入示例、运维约束与观测文档补强
 4. 多提供商 key 管理、模型能力声明、任务级模型策略与 quota 监控（见下：Track A）
+5. 多 agent 通信降本、工件化 handoff 与模型分层协作（见下：Track B）
 
 ### Track A: 多提供商 Key / 模型策略 / 监控（面向“代理加快开发”）
 
@@ -222,10 +225,80 @@
   - 新增 smoke：`scripts/handoff-summary-smoke.ts`
   - 复用既有 harness：`scripts/session-continue-smoke.ts`、`scripts/session-resume-smoke.ts`
 
+### Track B: 多 Agent 通信 / 工件化 Handoff / 模型分层协作
+
+- 目标：
+  - 把当前多 agent 协作从“长文本消息 + mailbox 轮询”收敛为“结构化事件 + 工件引用 + 明确状态机”的低成本通信链路。
+  - 让便宜模型负责探索与压缩，贵模型负责设计与裁决，中档模型负责实施与复核，减少不必要的高价模型消耗。
+  - 在交互模式、非交互模式、in-process teammate 与普通 subagent 下，统一关键协议消息的消费路径，避免重复读取、重复投递和已读竞争。
+- 边界与约束：
+  - 不在短期内一次性重写整个 swarm / teammate 体系，优先做兼容式渐进迁移。
+  - 不把 provider 路由、组织级流量治理或复杂外部队列系统混入本 track。
+  - 兼容现有 Agent / Task / teammate 基本语义，允许旧 mailbox / task-notification 作为过渡层存在。
+- 计划入口：
+  - 计划文档：`docs/plans/2026-04-12-multi-agent-communication-and-model-tiering-plan.md`
+
+#### M1. 工件协议与 Handoff 契约
+
+- 范围：
+  - 定义 `research_brief`、`design_spec`、`implementation_report`、`review_report` 等工件 schema。
+  - 定义 agent 间的 event envelope，只传 `task_id`、`artifact_ids`、`summary`、`requires_decision` 等小型控制面字段。
+  - 默认 handoff 从“转发长文本消息”改为“落盘工件 + 传引用”。
+- 验收标准：
+  - exploration -> design -> implement -> review 四类交接都能使用统一工件协议表达。
+  - 工件具备版本字段，可支持同任务多轮迭代。
+
+#### M2. Structured Message 消费收敛
+
+- 范围：
+  - 收敛 `useInboxPoller` 与 attachment 双路径消费，建立单一 structured protocol message router。
+  - 补齐非交互模式下 permission / mode set / shutdown / plan approval 等协议消息的可靠消费链路。
+  - 避免“消息已标记为 read，但并未进入正确处理路径”。
+- 验收标准：
+  - 结构化协议消息不再依赖 UI 是否挂载才能完成流转。
+  - 同一消息不会再被 attachment 与 poller 双读双处理。
+
+#### M3. Mailbox / Event Store 降本
+
+- 范围：
+  - 替换整文件 JSON 数组重写式 mailbox。
+  - 为 append、ack、replay 设计更稳定的持久化格式。
+  - 降低 in-process teammate 的固定轮询成本，逐步引入事件唤醒或退避轮询。
+- 验收标准：
+  - 多 teammate 空闲场景下磁盘读取和 JSON parse 压力明显下降。
+  - 通信量增长后不会继续放大每条消息的处理成本。
+
+#### M4. 模型分层调度接入
+
+- 范围：
+  - 为 exploration / design / implementation / review 四类阶段配置默认模型层级。
+  - 让 agent spawn / task dispatch / review pipeline 能按阶段自动选择更合适的模型层。
+  - 支持用户覆盖默认层级策略。
+- 验收标准：
+  - 便宜模型优先承担探索与摘要，贵模型优先承担设计与裁决，中档模型优先承担实施与复核。
+  - 默认策略可诊断、可覆盖、不会把昂贵模型浪费在低价值探索阶段。
+
 ## 最近已验证推进
 
 - 已验证：`bun run typecheck`
+- 已验证：简化 `providers/models/defaults` 配置现已能解析出 `resolved source`，并在 task route diagnostics / status / doctor 中显示最终命中的 source
+- 已验证：设置面板中的主路由入口已开始对齐到 `defaults.main + taskRoutes.main overrides`，默认模型不再继续写回旧的 `taskRoutes.main.model`
+- 已验证：`ConfigTool` 已支持把 `defaults.main` 作为项目级设置项暴露，并按 setting source 正确写入 local settings
+- 已验证：`ConfigTool` 现已扩到 `defaults.subagent/frontend/review/explore/plan/guide/statusline`，整套路由默认模型都可通过项目级设置入口直接编辑
+- 已验证：task route diagnostics 现已区分模型来自 `defaults.*` 还是显式 `taskRoutes.*.model` 覆盖，`status/doctor` 不再把两者混成同一来源
+- 已验证：设置面板已新增 `subagent/frontend/review/explore/plan/guide/statusline` 的默认模型入口，并复用统一 ModelPicker 写回对应 `defaults.*`
+- 已验证：agent 创建/编辑/列表展示现已改为围绕 `subagent route default` 展示未显式设置模型的语义，不再把“未设置”直接等同成“inherit from parent”
+- 已验证：agent/coordinator/ConfigTool 相关提示与设置文案现已开始统一到 `defaults.main` / `subagent route default` 心智，减少“默认=inherit”与“默认=taskRoutes.*.model”的混用表述
+- 已验证：`/model` picker、ConfigTool model section、CLI `--fallback-model` help 与相关 tips 已继续收口到 `main model` / route default 语义，进一步降低“default model”旧表述残留
+- 已验证：状态页 task route matrix / hints 现已同时展示 `model source` 与 `resolved source`，可直接观察默认模型来源和最终命中的上游
+- 已验证：非 `main` 路由的 task route matrix / hints 现已追加紧凑 `config=` 来源摘要，可直接看到 `defaults.*`、`taskRoutes.*`、env / key-ref 等具体配置入口
+- 已验证：状态页现已为非 `main` route 单独输出逐字段 `Task route config matrix`，query-source hints 也会标出是否命中 `taskRouteRules` override
+- 已验证：doctor route snapshot 现已扩到全 route，不再只输出 `main` 的一条路由诊断
+- 已验证：已补 `status.tsx` / `Doctor.tsx` 展示层回归，覆盖 route config matrix、全 route doctor diagnostics、主路由摘要 masking，以及 legacy / exceptional source 场景
+- 已验证：`Doctor` 页面已开始直接消费多 route summary，不再只显示单条 `Main route`
+- 已验证：`status/doctor` 现已把 route config source 翻译为具体配置入口（如 `defaults.main`、`taskRoutes.main.provider`、对应 env 名），不再只暴露抽象 source 枚举
 - 已落地：roadmap 新增 Track A（多提供商 key/模型策略/监控/临界移交总结），并新增对应设计文档入口
+- 已落地：roadmap 新增 Track B（多 agent 通信 / 工件化 handoff / 模型分层协作），并新增对应计划文档入口
 - 已验证：多 provider / route helper 回归已覆盖 `direct-provider` 与 `gateway` 两种模式
 - 已验证：任务路由回归已覆盖 `querySource -> route` 的 review / frontend hint 映射
 - 已验证：新增 `src/services/providerKeyUsageHandoffLogic.test.ts`，覆盖 quota 使用率计算（requests/tokens/cost 取最大、估算 token 合并、窗口 reset 时间输出）。

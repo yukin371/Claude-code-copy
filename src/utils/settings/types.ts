@@ -249,6 +249,135 @@ const ProviderKeySchema = z
   })
   .passthrough()
 
+const SimplifiedProviderKeySchema = z
+  .object({
+    id: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'Optional stable key identifier. When omitted, one is generated from the provider alias.',
+      ),
+    env: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('Environment variable that contains this key secret.'),
+    secret: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('Inline key secret (discouraged). Prefer env to avoid storing secrets on disk.'),
+    priority: z
+      .number()
+      .int()
+      .optional()
+      .describe('Optional priority used when multiple keys serve the same models. Lower runs first.'),
+    baseUrl: z
+      .string()
+      .optional()
+      .describe('Optional base URL override for this key. Falls back to the provider baseUrl.'),
+    expiresAt: z
+      .string()
+      .optional()
+      .describe('Optional expiry timestamp (ISO 8601).'),
+    limits: ProviderKeyLimitsSchema.optional().describe('Optional quota/budget limits for this key.'),
+    context: ProviderKeyContextSchema.optional().describe('Optional local context/compaction preferences for this key.'),
+  })
+  .passthrough()
+
+const SimplifiedProviderSchema = z
+  .object({
+    type: z
+      .enum(['anthropic', 'codex', 'gemini', 'glm', 'minimax', 'openai-compatible'])
+      .describe('Underlying provider type used for routing.'),
+    apiStyle: z
+      .enum(['anthropic', 'openai-compatible'])
+      .optional()
+      .describe('Optional API style override. Defaults to the provider type default.'),
+    baseUrl: z
+      .string()
+      .optional()
+      .describe('Optional base URL shared by models and generated provider keys for this provider.'),
+    keyEnv: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('Environment variable that contains the default key secret for this provider.'),
+    key: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('Inline default key secret for this provider (discouraged).'),
+    keys: z
+      .array(SimplifiedProviderKeySchema)
+      .optional()
+      .describe(
+        'Optional list of keys for this provider. Use this for multi-key priority/fallback.',
+      ),
+  })
+  .passthrough()
+
+const SimplifiedModelSourceSchema = z
+  .object({
+    provider: z
+      .string()
+      .min(1)
+      .describe('Provider alias from the top-level providers map.'),
+    priority: z
+      .number()
+      .int()
+      .optional()
+      .describe('Optional source priority for this model. Lower numbers win.'),
+  })
+  .passthrough()
+
+const SimplifiedModelSchema = z
+  .union([
+    z
+      .string()
+      .min(1)
+      .describe('Provider alias from the top-level providers map.'),
+    z
+      .object({
+        provider: z
+          .string()
+          .min(1)
+          .optional()
+          .describe('Legacy single provider alias from the top-level providers map.'),
+        sources: z
+          .array(SimplifiedModelSourceSchema)
+          .optional()
+          .describe(
+            'Optional list of provider aliases that can serve this model. Use this to decouple model name from a single upstream.',
+          ),
+        defaultSource: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            'Optional preferred provider alias to use for this model when multiple sources are available.',
+          ),
+      })
+      .passthrough(),
+  ])
+  .describe(
+    'Simplified model declaration. Supports either a legacy single provider alias or a multi-source model definition.',
+  )
+
+const SimplifiedDefaultsSchema = z
+  .object({
+    main: z.string().optional().describe('Default model for the main route.'),
+    subagent: z.string().optional().describe('Default model for the subagent route.'),
+    frontend: z.string().optional().describe('Default model for the frontend route.'),
+    review: z.string().optional().describe('Default model for the review route.'),
+    explore: z.string().optional().describe('Default model for the explore route.'),
+    plan: z.string().optional().describe('Default model for the plan route.'),
+    guide: z.string().optional().describe('Default model for the guide route.'),
+    statusline: z.string().optional().describe('Default model for the statusline route.'),
+  })
+  .passthrough()
+
 /**
  * Schema for permissions section
  */
@@ -585,10 +714,25 @@ export const SettingsSchema = lazySchema(() =>
       permissions: PermissionsSchema()
         .optional()
         .describe('Tool usage permissions configuration'),
+      providers: z
+        .record(z.string(), SimplifiedProviderSchema)
+        .optional()
+        .describe(
+          'Simplified provider registry. Each alias can declare type, baseUrl, and one or more keys.',
+        ),
+      models: z
+        .record(z.string(), SimplifiedModelSchema)
+        .optional()
+        .describe(
+          'Simplified model registry mapping user-visible model names to a provider alias.',
+        ),
+      defaults: SimplifiedDefaultsSchema.optional().describe(
+        'Simplified default model selection by task route. Automatically compiles into taskRoutes and the main route model setting.',
+      ),
       model: z
         .string()
         .optional()
-        .describe('Override the default model used by Claude Code'),
+        .describe('Override the main model used by Claude Code'),
       taskRoutes: z
         .record(z.string(), TaskRouteSettingsSchema)
         .optional()

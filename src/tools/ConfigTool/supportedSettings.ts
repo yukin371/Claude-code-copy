@@ -13,7 +13,7 @@ import { THEME_NAMES, THEME_SETTINGS } from '../../utils/theme.js'
 type SyncableAppStateKey = 'verbose' | 'mainLoopModel' | 'thinkingEnabled'
 
 type SettingConfig = {
-  source: 'global' | 'settings'
+  source: 'global' | 'userSettings' | 'localSettings'
   type: 'boolean' | 'string'
   description: string
   path?: string[]
@@ -24,6 +24,35 @@ type SettingConfig = {
   validateOnWrite?: (v: unknown) => Promise<{ valid: boolean; error?: string }>
   /** Format value when reading/getting for display */
   formatOnRead?: (v: unknown) => unknown
+}
+
+const DEFAULT_ROUTE_MODEL_SETTINGS = {
+  'defaults.main': 'Default model for the main route in this project',
+  'defaults.subagent': 'Default model for the subagent route in this project',
+  'defaults.frontend': 'Default model for the frontend route in this project',
+  'defaults.review': 'Default model for the review route in this project',
+  'defaults.explore': 'Default model for the explore route in this project',
+  'defaults.plan': 'Default model for the plan route in this project',
+  'defaults.guide': 'Default model for the guide route in this project',
+  'defaults.statusline': 'Default model for the statusline route in this project',
+} as const
+
+function buildRouteDefaultModelSetting(description: string): SettingConfig {
+  return {
+    source: 'localSettings',
+    type: 'string',
+    description,
+    getOptions: () => {
+      try {
+        return getModelOptions()
+          .filter(o => o.value !== null)
+          .map(o => o.value as string)
+      } catch {
+        return ['sonnet', 'opus', 'haiku']
+      }
+    },
+    validateOnWrite: v => validateModel(String(v)),
+  }
 }
 
 export const SUPPORTED_SETTINGS: Record<string, SettingConfig> = {
@@ -57,12 +86,12 @@ export const SUPPORTED_SETTINGS: Record<string, SettingConfig> = {
     description: 'Auto-compact when context is full',
   },
   autoMemoryEnabled: {
-    source: 'settings',
+    source: 'userSettings',
     type: 'boolean',
     description: 'Enable auto-memory',
   },
   autoDreamEnabled: {
-    source: 'settings',
+    source: 'userSettings',
     type: 'boolean',
     description: 'Enable background memory consolidation',
   },
@@ -88,9 +117,9 @@ export const SUPPORTED_SETTINGS: Record<string, SettingConfig> = {
     description: 'Enable todo/task tracking',
   },
   model: {
-    source: 'settings',
+    source: 'userSettings',
     type: 'string',
-    description: 'Override the default model',
+    description: 'Override the current main model',
     appStateKey: 'mainLoopModel',
     getOptions: () => {
       try {
@@ -104,14 +133,20 @@ export const SUPPORTED_SETTINGS: Record<string, SettingConfig> = {
     validateOnWrite: v => validateModel(String(v)),
     formatOnRead: v => (v === null ? 'default' : v),
   },
+  ...Object.fromEntries(
+    Object.entries(DEFAULT_ROUTE_MODEL_SETTINGS).map(([key, description]) => [
+      key,
+      buildRouteDefaultModelSetting(description),
+    ]),
+  ),
   alwaysThinkingEnabled: {
-    source: 'settings',
+    source: 'userSettings',
     type: 'boolean',
     description: 'Enable extended thinking (false to disable)',
     appStateKey: 'thinkingEnabled',
   },
   'permissions.defaultMode': {
-    source: 'settings',
+    source: 'userSettings',
     type: 'string',
     description: 'Default permission mode for tool usage',
     options: feature('TRANSCRIPT_CLASSIFIER')
@@ -119,7 +154,7 @@ export const SUPPORTED_SETTINGS: Record<string, SettingConfig> = {
       : ['default', 'plan', 'acceptEdits', 'dontAsk'],
   },
   language: {
-    source: 'settings',
+    source: 'userSettings',
     type: 'string',
     description:
       'Preferred language for Claude responses and voice dictation (e.g., "japanese", "spanish")',
@@ -134,7 +169,7 @@ export const SUPPORTED_SETTINGS: Record<string, SettingConfig> = {
   ...(process.env.USER_TYPE === 'ant'
     ? {
         classifierPermissionsEnabled: {
-          source: 'settings' as const,
+          source: 'userSettings' as const,
           type: 'boolean' as const,
           description:
             'Enable AI-based classification for Bash(prompt:...) permission rules',
@@ -144,7 +179,7 @@ export const SUPPORTED_SETTINGS: Record<string, SettingConfig> = {
   ...(feature('VOICE_MODE')
     ? {
         voiceEnabled: {
-          source: 'settings' as const,
+          source: 'userSettings' as const,
           type: 'boolean' as const,
           description: 'Enable voice dictation (hold-to-talk)',
         },

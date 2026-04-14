@@ -329,7 +329,7 @@ export const ConfigTool = buildTool({
         })
       } else {
         const update = buildNestedObject(path, finalValue)
-        const result = updateSettingsForSource('userSettings', update)
+        const result = updateSettingsForSource(config.source, update)
         if (result.error) {
           return {
             data: {
@@ -349,7 +349,9 @@ export const ConfigTool = buildTool({
         const { settingsChangeDetector } = await import(
           '../../utils/settings/changeDetector.js'
         )
-        settingsChangeDetector.notifyChange('userSettings')
+        if (config.source !== 'global') {
+          settingsChangeDetector.notifyChange(config.source)
+        }
       }
 
       // 5b. Sync to AppState if needed for immediate UI effect
@@ -433,7 +435,10 @@ export const ConfigTool = buildTool({
   },
 } satisfies ToolDef<InputSchema, Output>)
 
-function getValue(source: 'global' | 'settings', path: string[]): unknown {
+function getValue(
+  source: 'global' | 'userSettings' | 'localSettings',
+  path: string[],
+): unknown {
   if (source === 'global') {
     const config = getGlobalConfig()
     const key = path[0]

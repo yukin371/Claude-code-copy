@@ -13,6 +13,7 @@ export const DESCRIPTION = 'Get or set Neko Code configuration settings.'
  */
 export function generatePrompt(): string {
   const globalSettings: string[] = []
+  const userSettings: string[] = []
   const projectSettings: string[] = []
 
   for (const [key, config] of Object.entries(SUPPORTED_SETTINGS)) {
@@ -40,8 +41,10 @@ export function generatePrompt(): string {
 
     if (config.source === 'global') {
       globalSettings.push(line)
-    } else {
+    } else if (config.source === 'localSettings') {
       projectSettings.push(line)
+    } else {
+      userSettings.push(line)
     }
   }
 
@@ -62,7 +65,10 @@ The following settings are available for you to change:
 ### Global Settings (stored in ~/.neko-code.json)
 ${globalSettings.join('\n')}
 
-### Project Settings (stored in settings.json)
+### User Settings (stored in ~/.neko-code/settings.json)
+${userSettings.join('\n')}
+
+### Project Settings (stored in .neko-code/settings.local.json)
 ${projectSettings.join('\n')}
 
 ${modelSection}
@@ -84,10 +90,10 @@ function generateModelSection(): string {
       return `  - ${value}: ${o.descriptionForModel ?? o.description}`
     })
     return `## Model
-- model - Override the default model. Available options:
+- model - Override the current main model. Available options:
 ${lines.join('\n')}`
   } catch {
     return `## Model
-- model - Override the default model (sonnet, opus, haiku, best, or full model ID)`
+- model - Override the current main model (sonnet, opus, haiku, best, or full model ID)`
   }
 }

@@ -403,3 +403,12 @@ export type RenderableMessageBlock = MessageContentBlock
 export type MessageWithAttachment = Message & {
   attachment?: MessageAttachment
 }
+
+/**
+ * SystemMessage subtype for agent/artifact handoffs.
+ * Uses the existing [key: string]: unknown index signature — no core Message fields are changed.
+ */
+export type HandoffSystemMessage = SystemMessage & {
+  subtype: 'agent_handoff'
+  handoffEnvelope?: import('./handoffEnvelope.js').HandoffEnvelope
+}

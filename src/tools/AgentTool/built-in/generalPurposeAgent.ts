@@ -29,6 +29,6 @@ export const GENERAL_PURPOSE_AGENT: BuiltInAgentDefinition = {
   tools: ['*'],
   source: 'built-in',
   baseDir: 'built-in',
-  // model is intentionally omitted - uses getDefaultSubagentModel().
+  // model is intentionally omitted so subagent route defaults can apply first.
   getSystemPrompt: getGeneralPurposeSystemPrompt,
 }

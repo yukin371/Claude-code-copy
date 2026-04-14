@@ -3,7 +3,7 @@
  * Used by both the CLI `claude agents` handler and the interactive `/agents` command.
  */
 
-import { getDefaultSubagentModel } from '../../utils/model/agent.js'
+import { getAgentModelDisplay } from '../../utils/model/agent.js'
 import {
   getSourceDisplayName,
   type SettingSource,
@@ -73,14 +73,12 @@ export function resolveAgentOverrides(
 
 /**
  * Resolve the display model string for an agent.
- * Returns the model alias or 'inherit' for display purposes.
+ * Returns the user-facing model label for display purposes.
  */
 export function resolveAgentModelDisplay(
   agent: AgentDefinition,
 ): string | undefined {
-  const model = agent.model || getDefaultSubagentModel()
-  if (!model) return undefined
-  return model === 'inherit' ? 'inherit' : model
+  return getAgentModelDisplay(agent.model)
 }
 
 /**

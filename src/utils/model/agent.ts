@@ -1,4 +1,5 @@
 import type { PermissionMode } from '../permissions/PermissionMode.js'
+import { getInitialSettings } from '../settings/settings.js'
 import { MODEL_ALIASES, type ModelAlias } from './aliases.js'
 import { applyBedrockRegionPrefix, getBedrockRegionPrefix } from './bedrock.js'
 import {
@@ -16,6 +17,7 @@ import {
 } from './taskRouting.js'
 
 export const AGENT_MODEL_OPTIONS = [...MODEL_ALIASES, 'inherit'] as const
+export const SUBAGENT_ROUTE_DEFAULT_OPTION_VALUE = '__subagent_route_default__'
 export type AgentModelAlias = (typeof AGENT_MODEL_OPTIONS)[number]
 
 export type AgentModelOption = {
@@ -25,11 +27,92 @@ export type AgentModelOption = {
 }
 
 /**
- * Get the default subagent model. Returns 'inherit' so subagents inherit
- * the model from the parent thread.
+ * Get the final fallback subagent model.
+ * Route-level defaults and env overrides are resolved before this runs.
  */
 export function getDefaultSubagentModel(): string {
   return 'inherit'
+}
+
+function normalizeConfiguredModel(value: string | undefined): string | undefined {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : undefined
+}
+
+function getConfiguredSubagentRouteModel():
+  | {
+      model: string
+      source: string
+    }
+  | undefined {
+  const routeEnvModel = normalizeConfiguredModel(process.env.NEKO_CODE_SUBAGENT_MODEL)
+  if (routeEnvModel) {
+    return {
+      model: routeEnvModel,
+      source: 'NEKO_CODE_SUBAGENT_MODEL',
+    }
+  }
+
+  const settings = getInitialSettings() as {
+    defaults?: {
+      subagent?: string
+    }
+    taskRoutes?: {
+      subagent?: {
+        model?: string
+      }
+    }
+  }
+
+  const defaultModel = normalizeConfiguredModel(settings.defaults?.subagent)
+  if (defaultModel) {
+    return {
+      model: defaultModel,
+      source: 'defaults.subagent',
+    }
+  }
+
+  const legacyRouteModel = normalizeConfiguredModel(
+    settings.taskRoutes?.subagent?.model,
+  )
+  if (legacyRouteModel) {
+    return {
+      model: legacyRouteModel,
+      source: 'taskRoutes.subagent.model',
+    }
+  }
+
+  const legacyEnvModel = normalizeConfiguredModel(
+    process.env.CLAUDE_CODE_SUBAGENT_MODEL,
+  )
+  if (legacyEnvModel) {
+    return {
+      model: legacyEnvModel,
+      source: 'CLAUDE_CODE_SUBAGENT_MODEL',
+    }
+  }
+
+  return undefined
+}
+
+function getSubagentRouteDefaultInfo(): {
+  description: string
+  display: string
+} {
+  const configured = getConfiguredSubagentRouteModel()
+
+  if (!configured) {
+    return {
+      display: 'Subagent route default (default; inherits from parent)',
+      description:
+        'No subagent route model is configured; falls back to inherit from parent',
+    }
+  }
+
+  return {
+    display: `Subagent route default (default; ${configured.model} via ${configured.source})`,
+    description: `Currently ${configured.model} from ${configured.source}`,
+  }
 }
 
 /**
@@ -137,8 +220,7 @@ function aliasMatchesParentTier(alias: string, parentModel: string): boolean {
 }
 
 export function getAgentModelDisplay(model: string | undefined): string {
-  // When model is omitted, getDefaultSubagentModel() returns 'inherit' at runtime
-  if (!model) return 'Inherit from parent (default)'
+  if (!model) return getSubagentRouteDefaultInfo().display
   if (model === 'inherit') return 'Inherit from parent'
 
   const trimmed = model.trim()
@@ -157,13 +239,21 @@ export function getAgentModelDisplay(model: string | undefined): string {
 export function getAgentModelOptions(): AgentModelOption[] {
   const options: AgentModelOption[] = [
     {
+      value: SUBAGENT_ROUTE_DEFAULT_OPTION_VALUE,
+      label: 'Use subagent route default',
+      description: getSubagentRouteDefaultInfo().description,
+    },
+    {
       value: 'inherit',
       label: 'Inherit from parent',
-      description: 'Use the same model as the main conversation',
+      description: "Always use the parent thread's resolved model",
     },
   ]
 
-  const seen = new Set<string>(['inherit'])
+  const seen = new Set<string>([
+    SUBAGENT_ROUTE_DEFAULT_OPTION_VALUE,
+    'inherit',
+  ])
 
   for (const option of getModelOptions()) {
     if (option.value === null) continue

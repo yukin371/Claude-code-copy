@@ -25,6 +25,7 @@ import { readFileSync } from '../../fileRead.js'
 import { getFsImplementation } from '../../fsOperations.js'
 import { safeParseJSON } from '../../json.js'
 import { profileCheckpoint } from '../../startupProfiler.js'
+import { normalizeSimplifiedModelConfig } from '../simplifiedModelConfig.js'
 import {
   getManagedFilePath,
   getManagedSettingsDropInDir,
@@ -189,8 +190,9 @@ export function parseCommandOutputAsSettings(
     return { settings: {}, errors: [] }
   }
 
-  const ruleWarnings = filterInvalidPermissionRules(data, sourcePath)
-  const parseResult = SettingsSchema().safeParse(data)
+  const normalized = normalizeSimplifiedModelConfig(data)
+  const ruleWarnings = filterInvalidPermissionRules(normalized, sourcePath)
+  const parseResult = SettingsSchema().safeParse(normalized)
   if (!parseResult.success) {
     const errors = formatZodError(parseResult.error, sourcePath)
     return { settings: {}, errors: [...ruleWarnings, ...errors] }

@@ -48,6 +48,7 @@ import { useSearchInput } from '../../hooks/useSearchInput.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
 import { clearFastModeCooldown, FAST_MODE_MODEL_DISPLAY, isFastModeAvailable, isFastModeEnabled, getFastModeModel, isFastModeSupportedByModel } from '../../utils/fastMode.js';
 import { isFullscreenEnvEnabled } from '../../utils/fullscreen.js';
+import { formatMainRouteConfigValue, getMainRouteConfig, getRouteDefaultModel, getRouteDefaultModelLabel, getTaskRouteMainTransportSettings, normalizeTaskRouteMainText, ROUTE_DEFAULT_MODEL_ROUTES, TASK_ROUTE_MAIN_API_STYLE_OPTIONS, TASK_ROUTE_MAIN_PROVIDER_OPTIONS, TASK_ROUTE_MAIN_UNSET, type RouteDefaultModelRoute, type TaskRouteMainApiStyle, type TaskRouteMainProvider, type TaskRouteMainTransportSettings } from './mainRouteConfig.js';
 type Props = {
   onClose: (result?: string, options?: {
     display?: CommandResultDisplay;
@@ -81,38 +82,7 @@ type Setting = (SettingBase & {
   onChange(value: string): void;
   type: 'managedEnum';
 });
-type SubMenu = 'Theme' | 'Model' | 'TeammateModel' | 'ExternalIncludes' | 'OutputStyle' | 'TaskRouteMain' | 'ChannelDowngrade' | 'Language' | 'EnableAutoUpdates';
-const TASK_ROUTE_MAIN_PROVIDER_OPTIONS = ['anthropic', 'codex', 'gemini', 'glm', 'minimax', 'openai-compatible'] as const;
-const TASK_ROUTE_MAIN_API_STYLE_OPTIONS = ['anthropic', 'openai-compatible'] as const;
-const TASK_ROUTE_MAIN_UNSET = '__unset__' as const;
-type TaskRouteMainProvider = (typeof TASK_ROUTE_MAIN_PROVIDER_OPTIONS)[number];
-type TaskRouteMainApiStyle = (typeof TASK_ROUTE_MAIN_API_STYLE_OPTIONS)[number];
-type TaskRouteMainSettings = {
-  provider?: TaskRouteMainProvider;
-  apiStyle?: TaskRouteMainApiStyle;
-  model?: string;
-  baseUrl?: string;
-};
-function normalizeTaskRouteMainText(value: string): string | undefined {
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-}
-function getTaskRouteMainSettings(settings: unknown): TaskRouteMainSettings {
-  const taskRoutes = (settings as {
-    taskRoutes?: Record<string, TaskRouteMainSettings | undefined>;
-  } | undefined)?.taskRoutes;
-  const main = taskRoutes?.main;
-  return main ? {
-    ...main
-  } : {};
-}
-function formatTaskRouteMainSettingsValue(settings: TaskRouteMainSettings): string {
-  const provider = settings.provider ?? '[default]';
-  const apiStyle = settings.apiStyle ?? '[default]';
-  const model = settings.model?.trim() ? settings.model.trim() : '[default]';
-  const baseUrl = settings.baseUrl?.trim() ? settings.baseUrl.trim() : '[default]';
-  return `provider=${provider}, apiStyle=${apiStyle}, model=${model}, baseUrl=${baseUrl}`;
-}
+type SubMenu = 'Theme' | 'Model' | 'TeammateModel' | 'ExternalIncludes' | 'OutputStyle' | 'TaskRouteMain' | 'RouteDefaultModel' | 'ChannelDowngrade' | 'Language' | 'EnableAutoUpdates';
 export function Config({
   onClose,
   context,
@@ -206,8 +176,9 @@ export function Config({
   const isDirty = React.useRef(false);
   const [showThinkingWarning, setShowThinkingWarning] = useState(false);
   const [showSubmenu, setShowSubmenu] = useState<SubMenu | null>(null);
-  const [taskRouteMainModelInput, setTaskRouteMainModelInput] = useState(() => getTaskRouteMainSettings(settingsData).model ?? '');
-  const [taskRouteMainBaseUrlInput, setTaskRouteMainBaseUrlInput] = useState(() => getTaskRouteMainSettings(settingsData).baseUrl ?? '');
+  const [selectedRouteDefaultModel, setSelectedRouteDefaultModel] = useState<RouteDefaultModelRoute | null>(null);
+  const [taskRouteMainModelInput, setTaskRouteMainModelInput] = useState(() => getMainRouteConfig(settingsData).model ?? '');
+  const [taskRouteMainBaseUrlInput, setTaskRouteMainBaseUrlInput] = useState(() => getTaskRouteMainTransportSettings(settingsData).baseUrl ?? '');
   const {
     query: searchQuery,
     setQuery: setSearchQuery,
@@ -292,7 +263,57 @@ export function Config({
       };
     });
   }
-  function onChangeTaskRouteMainConfig(patch: TaskRouteMainSettings, changeKey: string, changeValue: string): void {
+  function onChangeDefaultMainRouteModel(model: string | undefined, changeValue: string): void {
+    const result = updateSettingsForSource('localSettings', {
+      defaults: {
+        main: model
+      },
+      taskRoutes: {
+        main: {
+          model: undefined
+        }
+      }
+    });
+    if (result.error) {
+      logError(result.error);
+      return;
+    }
+    isDirty.current = true;
+    const updatedSettings = getInitialSettings();
+    setSettingsData(updatedSettings);
+    const updatedMainRouteConfig = getMainRouteConfig(updatedSettings);
+    const updatedTaskRouteMain = getTaskRouteMainTransportSettings(updatedSettings);
+    setTaskRouteMainModelInput(updatedMainRouteConfig.model ?? '');
+    setTaskRouteMainBaseUrlInput(updatedTaskRouteMain.baseUrl ?? '');
+    setChanges(prev_3 => ({
+      ...prev_3,
+      'defaults.main': changeValue
+    }));
+  }
+  function onChangeRouteDefaultModel(route: RouteDefaultModelRoute, model: string | undefined, changeValue: string): void {
+    const result = updateSettingsForSource('localSettings', {
+      defaults: {
+        [route]: model
+      },
+      taskRoutes: {
+        [route]: {
+          model: undefined
+        }
+      }
+    });
+    if (result.error) {
+      logError(result.error);
+      return;
+    }
+    isDirty.current = true;
+    const updatedSettings = getInitialSettings();
+    setSettingsData(updatedSettings);
+    setChanges(prev_3 => ({
+      ...prev_3,
+      [`defaults.${route}`]: changeValue
+    }));
+  }
+  function onChangeTaskRouteMainConfig(patch: TaskRouteMainTransportSettings, changeKey: string, changeValue: string): void {
     const result = updateSettingsForSource('localSettings', {
       taskRoutes: {
         main: patch
@@ -305,15 +326,17 @@ export function Config({
     isDirty.current = true;
     const updatedSettings = getInitialSettings();
     setSettingsData(updatedSettings);
-    const updatedTaskRouteMain = getTaskRouteMainSettings(updatedSettings);
-    setTaskRouteMainModelInput(updatedTaskRouteMain.model ?? '');
+    const updatedMainRouteConfig = getMainRouteConfig(updatedSettings);
+    const updatedTaskRouteMain = getTaskRouteMainTransportSettings(updatedSettings);
+    setTaskRouteMainModelInput(updatedMainRouteConfig.model ?? '');
     setTaskRouteMainBaseUrlInput(updatedTaskRouteMain.baseUrl ?? '');
     setChanges(prev_3 => ({
       ...prev_3,
       [changeKey]: changeValue
     }));
   }
-  const taskRouteMainSettings = getTaskRouteMainSettings(settingsData);
+  const taskRouteMainSettings = getTaskRouteMainTransportSettings(settingsData);
+  const mainRouteConfig = getMainRouteConfig(settingsData);
 
   // TODO: Add MCP servers
   const settingsItems: Setting[] = [
@@ -870,11 +893,17 @@ export function Config({
     onChange: onChangeMainModelConfig
   }, {
     id: 'taskRouteMain',
-    label: 'Main task route',
-    value: formatTaskRouteMainSettingsValue(taskRouteMainSettings),
+    label: 'Main model and routing',
+    value: formatMainRouteConfigValue(mainRouteConfig),
     type: 'managedEnum' as const,
     onChange() {}
-  }, ...(isConnectedToIde ? [{
+  }, ...ROUTE_DEFAULT_MODEL_ROUTES.map(route => ({
+    id: `routeDefaultModel:${route}`,
+    label: getRouteDefaultModelLabel(route),
+    value: getRouteDefaultModel(settingsData, route) ?? '[default]',
+    type: 'managedEnum' as const,
+    onChange() {}
+  })), ...(isConnectedToIde ? [{
     id: 'diffTool',
     label: 'Diff tool',
     value: globalConfig.diffTool ?? 'auto',
@@ -1256,6 +1285,7 @@ export function Config({
       prefersReducedMotion: il?.prefersReducedMotion,
       defaultView: il?.defaultView,
       outputStyle: il?.outputStyle,
+      defaults: il?.defaults,
       taskRoutes: il?.taskRoutes
     });
     const iu = initialUserSettings;
@@ -1359,7 +1389,8 @@ export function Config({
       }
       return;
     }
-    if (setting_0.id === 'theme' || setting_0.id === 'model' || setting_0.id === 'teammateDefaultModel' || setting_0.id === 'showExternalIncludesDialog' || setting_0.id === 'outputStyle' || setting_0.id === 'language' || setting_0.id === 'taskRouteMain') {
+    const isRouteDefaultModelSetting = setting_0.id.startsWith('routeDefaultModel:');
+    if (setting_0.id === 'theme' || setting_0.id === 'model' || setting_0.id === 'teammateDefaultModel' || setting_0.id === 'showExternalIncludesDialog' || setting_0.id === 'outputStyle' || setting_0.id === 'language' || setting_0.id === 'taskRouteMain' || isRouteDefaultModelSetting) {
       // managedEnum items open a submenu — isDirty is set by the submenu's
       // completion callback, not here (submenu may be cancelled).
       switch (setting_0.id) {
@@ -1388,11 +1419,18 @@ export function Config({
           setTabsHidden(true);
           return;
         case 'taskRouteMain':
-          setTaskRouteMainModelInput(taskRouteMainSettings.model ?? '');
+          setTaskRouteMainModelInput(mainRouteConfig.model ?? '');
           setTaskRouteMainBaseUrlInput(taskRouteMainSettings.baseUrl ?? '');
           setShowSubmenu('TaskRouteMain');
           setTabsHidden(true);
           return;
+      }
+      if (isRouteDefaultModelSetting) {
+        const route = setting_0.id.slice('routeDefaultModel:'.length) as RouteDefaultModelRoute;
+        setSelectedRouteDefaultModel(route);
+        setShowSubmenu('RouteDefaultModel');
+        setTabsHidden(true);
+        return;
       }
     }
     if (setting_0.id === 'autoUpdatesChannel') {
@@ -1432,7 +1470,7 @@ export function Config({
       setting_0.onChange(setting_0.options[nextIndex]!);
       return;
     }
-  }, [autoUpdaterDisabledReason, filteredSettingsItems, selectedIndex, settingsData?.autoUpdatesChannel, setTabsHidden, taskRouteMainSettings.baseUrl, taskRouteMainSettings.model]);
+  }, [autoUpdaterDisabledReason, filteredSettingsItems, mainRouteConfig.model, selectedIndex, settingsData?.autoUpdatesChannel, setTabsHidden, taskRouteMainSettings.baseUrl]);
   const moveSelection = (delta: -1 | 1): void => {
     setShowThinkingWarning(false);
     const newIndex_1 = Math.max(0, Math.min(filteredSettingsItems.length - 1, selectedIndex + delta));
@@ -1550,31 +1588,48 @@ export function Config({
               <ConfigurableShortcutHint action="confirm:no" context="Confirmation" fallback="Esc" description="cancel" />
             </Byline>
           </Text>
+        </> : showSubmenu === 'RouteDefaultModel' && selectedRouteDefaultModel ? <>
+          <ModelPicker initial={getRouteDefaultModel(settingsData, selectedRouteDefaultModel) ?? null} skipSettingsWrite headerText={`${getRouteDefaultModelLabel(selectedRouteDefaultModel)} for this project.`} onSelect={(model_1, _effort_0) => {
+        onChangeRouteDefaultModel(selectedRouteDefaultModel, model_1 ?? undefined, model_1 ?? '[default]');
+        setShowSubmenu(null);
+        setSelectedRouteDefaultModel(null);
+        setTabsHidden(false);
+      }} onCancel={() => {
+        setShowSubmenu(null);
+        setSelectedRouteDefaultModel(null);
+        setTabsHidden(false);
+      }} />
+          <Text dimColor>
+            <Byline>
+              <KeyboardShortcutHint shortcut="Enter" action="confirm" />
+              <ConfigurableShortcutHint action="confirm:no" context="Confirmation" fallback="Esc" description="cancel" />
+            </Byline>
+          </Text>
         </> : showSubmenu === 'TeammateModel' ? <>
-          <ModelPicker initial={globalConfig.teammateDefaultModel ?? null} skipSettingsWrite headerText="Default model for newly spawned teammates. The leader can override via the tool call's model parameter." onSelect={(model_1, _effort_0) => {
+          <ModelPicker initial={globalConfig.teammateDefaultModel ?? null} skipSettingsWrite headerText="Default model for newly spawned teammates. The leader can override via the tool call's model parameter." onSelect={(model_2, _effort_1) => {
         setShowSubmenu(null);
         setTabsHidden(false);
         // First-open-then-Enter from unset: picker highlights "Default"
         // (initial=null) and confirming would write null, silently
         // switching Opus-fallback → follow-leader. Treat as no-op.
-        if (globalConfig.teammateDefaultModel === undefined && model_1 === null) {
+        if (globalConfig.teammateDefaultModel === undefined && model_2 === null) {
           return;
         }
         isDirty.current = true;
-        saveGlobalConfig(current_23 => current_23.teammateDefaultModel === model_1 ? current_23 : {
+        saveGlobalConfig(current_23 => current_23.teammateDefaultModel === model_2 ? current_23 : {
           ...current_23,
-          teammateDefaultModel: model_1
+          teammateDefaultModel: model_2
         });
         setGlobalConfig({
           ...getGlobalConfig(),
-          teammateDefaultModel: model_1
+          teammateDefaultModel: model_2
         });
         setChanges(prev_25 => ({
           ...prev_25,
-          teammateDefaultModel: teammateModelDisplayString(model_1)
+          teammateDefaultModel: teammateModelDisplayString(model_2)
         }));
         logEvent('tengu_teammate_default_model_changed', {
-          model: model_1 as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
+          model: model_2 as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
         });
       }} onCancel={() => {
         setShowSubmenu(null);
@@ -1648,37 +1703,37 @@ export function Config({
               <ConfigurableShortcutHint action="confirm:no" context="Settings" fallback="Esc" description="cancel" />
             </Byline>
           </Text>
-        </> : showSubmenu === 'TaskRouteMain' ? <Dialog title="Main task route" subtitle="Editing local settings: taskRoutes.main" onCancel={() => {
+        </> : showSubmenu === 'TaskRouteMain' ? <Dialog title="Main model and routing" subtitle="Editing local settings: defaults.main + taskRoutes.main overrides" onCancel={() => {
       setShowSubmenu(null);
       setTabsHidden(false);
     }}>
           <Select options={[{
-        label: 'Provider: [default]',
+        label: 'Provider override: [default]',
         value: `provider:${TASK_ROUTE_MAIN_UNSET}`
       }, ...TASK_ROUTE_MAIN_PROVIDER_OPTIONS.map(provider => ({
-        label: `Provider: ${provider}`,
+        label: `Provider override: ${provider}`,
         value: `provider:${provider}`
       })), {
-        label: 'API style: [default]',
+        label: 'API style override: [default]',
         value: `apiStyle:${TASK_ROUTE_MAIN_UNSET}`
       }, ...TASK_ROUTE_MAIN_API_STYLE_OPTIONS.map(apiStyle => ({
-        label: `API style: ${apiStyle}`,
+        label: `API style override: ${apiStyle}`,
         value: `apiStyle:${apiStyle}`
       })), {
         type: 'input' as const,
-        label: 'Model',
+        label: 'Default model',
         value: 'model',
         initialValue: taskRouteMainModelInput,
-        placeholder: 'Leave empty to use default model',
+        placeholder: 'Leave empty to use defaults.main',
         allowEmptySubmitToCancel: true,
         labelValueSeparator: ': ',
         onChange: setTaskRouteMainModelInput
       }, {
         type: 'input' as const,
-        label: 'Base URL',
+        label: 'Base URL override',
         value: 'baseUrl',
         initialValue: taskRouteMainBaseUrlInput,
-        placeholder: 'Leave empty to use default base URL',
+        placeholder: 'Leave empty to inherit the default base URL',
         allowEmptySubmitToCancel: true,
         labelValueSeparator: ': ',
         onChange: setTaskRouteMainBaseUrlInput
@@ -1710,9 +1765,7 @@ export function Config({
         if (action === 'model') {
           const model = normalizeTaskRouteMainText(taskRouteMainModelInput);
           setTaskRouteMainModelInput(model ?? '');
-          onChangeTaskRouteMainConfig({
-            model
-          }, 'taskRoutes.main.model', model ?? '[default]');
+          onChangeDefaultMainRouteModel(model, model ?? '[default]');
           return;
         }
         if (action === 'baseUrl') {

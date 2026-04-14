@@ -12,6 +12,7 @@ export type ConfiguredModelSource = {
   provider: TaskRouteProviderName
   keyRef: string
   priority: number
+  baseUrl?: string
 }
 
 export function getConfiguredModelSources(): Map<string, ConfiguredModelSource[]> {
@@ -27,6 +28,7 @@ export function getConfiguredModelSources(): Map<string, ConfiguredModelSource[]
     const provider = (entry as { provider?: unknown }).provider
     const models = (entry as { models?: unknown }).models
     const priority = (entry as { priority?: unknown }).priority
+    const baseUrl = (entry as { baseUrl?: unknown }).baseUrl
     if (typeof id !== 'string' || !id.trim()) continue
     if (typeof provider !== 'string' || !provider.trim()) continue
     if (!Array.isArray(models) || models.length === 0) continue
@@ -47,6 +49,7 @@ export function getConfiguredModelSources(): Map<string, ConfiguredModelSource[]
         provider: normalizedProvider,
         keyRef,
         priority: normalizedPriority,
+        baseUrl: typeof baseUrl === 'string' ? baseUrl.trim() || undefined : undefined,
       })
       index.set(trimmed, list)
     }

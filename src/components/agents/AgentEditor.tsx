@@ -26,6 +26,7 @@ type SaveChanges = {
   tools?: string[];
   color?: AgentColorName;
   model?: string;
+  clearModel?: boolean;
 };
 export function AgentEditor({
   agent,
@@ -51,11 +52,14 @@ export function AgentEditor({
     const {
       tools: newTools,
       color: newColor,
-      model: newModel
+      model: newModel,
+      clearModel = false
     } = changes;
     const finalColor = newColor ?? selectedColor;
     const hasToolsChanged = newTools !== undefined;
-    const hasModelChanged = newModel !== undefined;
+    const hasExplicitModelChange = Object.prototype.hasOwnProperty.call(changes, 'model');
+    const nextModel = clearModel ? undefined : hasExplicitModelChange ? newModel : agent.model;
+    const hasModelChanged = nextModel !== agent.model;
     const hasColorChanged = finalColor !== agent.color;
     if (!hasToolsChanged && !hasModelChanged && !hasColorChanged) {
       return false;
@@ -66,7 +70,7 @@ export function AgentEditor({
       if (!isCustomAgent(agent) && !isPluginAgent(agent)) {
         return false;
       }
-      await updateAgentFile(agent, agent.whenToUse, newTools ?? agent.tools, agent.getSystemPrompt(), finalColor, newModel ?? agent.model);
+      await updateAgentFile(agent, agent.whenToUse, newTools ?? agent.tools, agent.getSystemPrompt(), finalColor, nextModel);
       if (hasColorChanged && finalColor) {
         setAgentColor(agent.agentType, finalColor);
       }
@@ -75,7 +79,7 @@ export function AgentEditor({
           ...a,
           tools: newTools ?? a.tools,
           color: finalColor,
-          model: newModel ?? a.model
+          model: nextModel
         } : a);
         return {
           ...state,
@@ -167,10 +171,12 @@ export function AgentEditor({
     case 'edit-model':
       return <ModelSelector initialModel={agent.model} onComplete={async model => {
         setEditMode('menu');
-        await handleSave({
+        await handleSave(model === undefined ? {
+          clearModel: true
+        } : {
           model
         });
-      }} />;
+      }} onCancel={() => setEditMode('menu')} />;
     default:
       return null;
   }

@@ -36,6 +36,7 @@ import { getPlatform } from './platform.js'
 import { getRipgrepStatus } from './ripgrep.js'
 import {
   getTaskRouteDebugSnapshot,
+  TASK_ROUTE_NAMES,
   type TaskRouteDebugSnapshot,
 } from './model/taskRouting.js'
 import { SandboxManager } from './sandbox/sandbox-adapter.js'
@@ -75,6 +76,7 @@ export type DiagnosticInfo = {
     systemPath: string | null
   }
   currentTaskRouteSnapshot: TaskRouteDebugSnapshot
+  taskRouteSnapshots: TaskRouteDebugSnapshot[]
 }
 
 function getNormalizedPaths(): [invokedPath: string, execPath: string] {
@@ -636,6 +638,9 @@ export async function getDoctorDiagnostic(): Promise<DiagnosticInfo> {
     packageManager,
     ripgrepStatus,
     currentTaskRouteSnapshot: getTaskRouteDebugSnapshot('main'),
+    taskRouteSnapshots: TASK_ROUTE_NAMES.map(route =>
+      getTaskRouteDebugSnapshot(route),
+    ),
   }
 
   return diagnostic

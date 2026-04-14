@@ -35,6 +35,7 @@ import {
 import { has1mContext } from '../context.js'
 import { getGlobalConfig } from '../config.js'
 import { getConfigEnvironmentVariable } from '../managedEnv.js'
+import { getConfiguredModelNames } from './modelRegistry.js'
 
 // @[MODEL LAUNCH]: Update all the available and default model option strings below.
 
@@ -46,45 +47,7 @@ export type ModelOption = {
 }
 
 function getOpenAICompatibleModelOptionsFromSettings(): ModelOption[] {
-  const settings = (getSettings_DEPRECATED() || {}) as Record<string, unknown>
-
-  const models = new Set<string>()
-  const add = (value: unknown) => {
-    if (typeof value !== 'string') return
-    const trimmed = value.trim()
-    if (!trimmed) return
-    models.add(trimmed)
-  }
-
-  const providerKeys = settings.providerKeys
-  if (Array.isArray(providerKeys)) {
-    for (const entry of providerKeys) {
-      if (!entry || typeof entry !== 'object') continue
-      const allowlist = (entry as { models?: unknown }).models
-      if (!Array.isArray(allowlist)) continue
-      for (const model of allowlist) add(model)
-    }
-  }
-
-  // Also surface models declared directly in routing settings, since users expect them
-  // to appear in the picker even if they were not listed under providerKeys.
-  const taskRoutes = settings.taskRoutes
-  if (taskRoutes && typeof taskRoutes === 'object') {
-    for (const route of Object.values(taskRoutes as Record<string, unknown>)) {
-      if (!route || typeof route !== 'object') continue
-      add((route as { model?: unknown }).model)
-    }
-  }
-  const taskRouteRules = settings.taskRouteRules
-  if (Array.isArray(taskRouteRules)) {
-    for (const rule of taskRouteRules) {
-      if (!rule || typeof rule !== 'object') continue
-      add((rule as { model?: unknown }).model)
-    }
-  }
-
-  return Array.from(models)
-    .sort((a, b) => a.localeCompare(b))
+  return getConfiguredModelNames()
     .map(model => ({
       value: model,
       label: model,
@@ -100,8 +63,8 @@ export function getDefaultOptionForUser(fastMode = false): ModelOption {
     return {
       value: null,
       label: 'Default (recommended)',
-      description: `Use the default model for Ants (currently ${currentModel})`,
-      descriptionForModel: `Default model (currently ${currentModel})`,
+      description: `Use the current main model for Ants (currently ${currentModel})`,
+      descriptionForModel: `Current main model (currently ${currentModel})`,
     }
   }
 
@@ -119,7 +82,7 @@ export function getDefaultOptionForUser(fastMode = false): ModelOption {
   return {
     value: null,
     label: 'Default (recommended)',
-    description: `Use the default model (currently ${renderDefaultModelSetting(getDefaultMainLoopModelSetting())})${is3P ? '' : ` · ${formatModelPricing(COST_TIER_3_15)}`}`,
+    description: `Use the current main model (currently ${renderDefaultModelSetting(getDefaultMainLoopModelSetting())})${is3P ? '' : ` · ${formatModelPricing(COST_TIER_3_15)}`}`,
   }
 }
 
@@ -142,8 +105,8 @@ function getCustomSonnetOption(): ModelOption | undefined {
       label: customSonnetModelName ?? customSonnetModel,
       description:
         customSonnetDescription ??
-        `Configured default model${is1m ? ' (1M context)' : ''}`,
-      descriptionForModel: `${customSonnetDescription ?? `Configured default model${is1m ? ' with 1M context' : ''}`} (${customSonnetModel})`,
+        `Configured main model${is1m ? ' (1M context)' : ''}`,
+      descriptionForModel: `${customSonnetDescription ?? `Configured main model${is1m ? ' with 1M context' : ''}`} (${customSonnetModel})`,
     }
   }
 }
@@ -180,8 +143,8 @@ function getCustomOpusOption(): ModelOption | undefined {
       label: customOpusModelName ?? customOpusModel,
       description:
         customOpusDescription ??
-        `Configured default model${is1m ? ' (1M context)' : ''}`,
-      descriptionForModel: `${customOpusDescription ?? `Configured default model${is1m ? ' with 1M context' : ''}`} (${customOpusModel})`,
+        `Configured main model${is1m ? ' (1M context)' : ''}`,
+      descriptionForModel: `${customOpusDescription ?? `Configured main model${is1m ? ' with 1M context' : ''}`} (${customOpusModel})`,
     }
   }
 }
@@ -243,8 +206,8 @@ function getCustomHaikuOption(): ModelOption | undefined {
     return {
       value: 'haiku',
       label: customHaikuModelName ?? customHaikuModel,
-      description: customHaikuDescription ?? 'Configured default model',
-      descriptionForModel: `${customHaikuDescription ?? 'Configured default model'} (${customHaikuModel})`,
+      description: customHaikuDescription ?? 'Configured main model',
+      descriptionForModel: `${customHaikuDescription ?? 'Configured main model'} (${customHaikuModel})`,
     }
   }
 }
@@ -540,15 +503,15 @@ export function getModelOptions(fastMode = false): ModelOption[] {
   const options = getModelOptionsBase(fastMode)
 
   // If the main route is openai-compatible, rewrite the Default option description to
-  // reflect the configured taskRoutes.main.model instead of Anthropic subscription defaults.
+  // reflect the configured main-route model instead of Anthropic subscription defaults.
   if (routeTarget.apiStyle === 'openai-compatible' && options.length > 0) {
     const defaultModel = routeTarget.model?.trim()
     options[0] = {
       value: null,
       label: 'Default (recommended)',
       description: defaultModel
-        ? `Use the configured taskRoutes.main.model (currently ${defaultModel})`
-        : 'Use the configured taskRoutes.main.model (not set)',
+        ? `Use the configured main-route model (currently ${defaultModel})`
+        : 'Use the configured main-route model (not set)',
     }
   }
 

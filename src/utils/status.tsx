@@ -24,6 +24,8 @@ import { SandboxManager } from './sandbox/sandbox-adapter.js';
 import { getSettingsWithAllErrors } from './settings/allErrors.js';
 import { getEnabledSettingSources, getSettingSourceDisplayNameCapitalized } from './settings/constants.js';
 import { getManagedFileSettingsPresence, getPolicySettingsOrigin, getSettingsForSource } from './settings/settings.js';
+import { formatQuerySourceTaskRouteSummaryLine, formatTaskRouteSummaryLine } from './statusTaskRouteSummary.js';
+import { buildTaskRouteConfigSourceLines, buildTaskRouteNamedConfigSourceLines } from './taskRouteSourceLabels.js';
 import type { ThemeName } from './theme.js';
 export type Property = {
   label?: string;
@@ -181,11 +183,12 @@ export async function buildInstallationDiagnostics(): Promise<Diagnostic[]> {
   const installWarnings = await checkInstall();
   return installWarnings.map(warning => warning.message);
 }
-function formatDoctorRouteSnapshotDiagnostic(diagnostic: Awaited<ReturnType<typeof getDoctorDiagnostic>>): string {
-  const snapshot = diagnostic.currentTaskRouteSnapshot;
+export function formatDoctorRouteSnapshotDiagnostic(snapshot: Awaited<ReturnType<typeof getDoctorDiagnostic>>["currentTaskRouteSnapshot"]): string {
   const apiKeyDisplay = snapshot.transport.apiKey ? '[masked]' : 'unset';
   const baseUrlDisplay = snapshot.transport.baseUrl ?? '[default]';
-  return `Doctor route snapshot (${snapshot.route}): provider=${snapshot.executionTarget.provider} (${snapshot.fields.provider.source}), apiStyle=${snapshot.executionTarget.apiStyle} (${snapshot.fields.apiStyle.source}), model=${snapshot.executionTarget.model} (${snapshot.fields.model.source}), baseUrl=${baseUrlDisplay} (${snapshot.fields.baseUrl.source}), apiKey=${apiKeyDisplay} (${snapshot.fields.apiKey.source})`;
+  const resolvedSourceDisplay = snapshot.transport.resolvedSourceId ?? '[unresolved]';
+  const configSourceSummary = buildTaskRouteConfigSourceLines(snapshot).join(', ');
+  return `Doctor route snapshot (${snapshot.route}): provider=${snapshot.executionTarget.provider} (${snapshot.fields.provider.source}), apiStyle=${snapshot.executionTarget.apiStyle} (${snapshot.fields.apiStyle.source}), model=${snapshot.executionTarget.model} (${snapshot.fields.model.source}), resolvedSource=${resolvedSourceDisplay}, baseUrl=${baseUrlDisplay} (${snapshot.fields.baseUrl.source}), apiKey=${apiKeyDisplay} (${snapshot.fields.apiKey.source}), configSources=${configSourceSummary}`;
 }
 function buildMainTaskRouteProperties(): Property[] {
   const snapshot = getTaskRouteDebugSnapshot('main');
@@ -213,11 +216,17 @@ function buildMainTaskRouteProperties(): Property[] {
     label: 'Task route model',
     value: `${snapshot.executionTarget.model ?? '[default]'} (${snapshot.fields.model.source})`
   }, {
+    label: 'Task route source',
+    value: snapshot.transport.resolvedSourceId ?? '[unresolved]'
+  }, {
     label: 'Task route base URL',
     value: `${snapshot.transport.baseUrl ?? '[default]'} (${snapshot.fields.baseUrl.source})`
   }, {
     label: 'Task route API key',
     value: `${snapshot.transport.apiKey ?? 'unset'} (${snapshot.fields.apiKey.source})`
+  }, {
+    label: 'Task route config sources',
+    value: buildTaskRouteConfigSourceLines(snapshot)
   }, ...(configuredKeyPool.length > 0 ? [{
     label: 'Task route key pool',
     value: configuredKeyPool
@@ -228,29 +237,30 @@ function buildMainTaskRouteProperties(): Property[] {
 }
 function formatSecondaryTaskRouteLine(route: TaskRouteName): string {
   const snapshot = getTaskRouteDebugSnapshot(route);
-  const parts = [snapshot.executionTarget.provider, snapshot.executionTarget.apiStyle, snapshot.executionTarget.model ?? '[default]'];
-  if (snapshot.transport.baseUrl) {
-    parts.push(snapshot.transport.baseUrl);
-  }
-  return `${route}: ${parts.join(' / ')}`;
+  return formatTaskRouteSummaryLine(route, snapshot);
 }
 function formatQuerySourceRouteLine(querySource: string): string {
   const snapshot = getTaskRouteDebugSnapshotFromQuerySource(querySource);
-  const parts = [snapshot.routeSnapshot.executionTarget.provider, snapshot.routeSnapshot.executionTarget.apiStyle, snapshot.routeSnapshot.executionTarget.model ?? '[default]'];
-  if (snapshot.routeSnapshot.transport.baseUrl) {
-    parts.push(snapshot.routeSnapshot.transport.baseUrl);
-  }
-  return `${querySource} -> ${snapshot.routeSnapshot.route}: ${parts.join(' / ')}`;
+  return formatQuerySourceTaskRouteSummaryLine(snapshot);
+}
+export function buildAdditionalTaskRoutePropertiesFromSnapshots(routeSnapshots: Awaited<ReturnType<typeof getTaskRouteDebugSnapshot>>[], querySourceSnapshots: Awaited<ReturnType<typeof getTaskRouteDebugSnapshotFromQuerySource>>[]): Property[] {
+  return [{
+    label: 'Task route matrix',
+    value: routeSnapshots.map(snapshot => formatTaskRouteSummaryLine(snapshot.route, snapshot))
+  }, {
+    label: 'Task route config matrix',
+    value: routeSnapshots.flatMap(snapshot => buildTaskRouteNamedConfigSourceLines(snapshot))
+  }, {
+    label: 'Task route hints',
+    value: querySourceSnapshots.map(snapshot => formatQuerySourceTaskRouteSummaryLine(snapshot))
+  }];
 }
 function buildAdditionalTaskRouteProperties(): Property[] {
   const routes = TASK_ROUTE_NAMES.filter(route => route !== 'main');
-  return [{
-    label: 'Task route matrix',
-    value: routes.map(route => formatSecondaryTaskRouteLine(route))
-  }, {
-    label: 'Task route hints',
-    value: TASK_ROUTE_STATUS_QUERY_SOURCE_EXAMPLES.map(querySource => formatQuerySourceRouteLine(querySource))
-  }];
+  return buildAdditionalTaskRoutePropertiesFromSnapshots(routes.map(route => getTaskRouteDebugSnapshot(route)), TASK_ROUTE_STATUS_QUERY_SOURCE_EXAMPLES.map(querySource => getTaskRouteDebugSnapshotFromQuerySource(querySource)));
+}
+export function buildDoctorRouteSnapshotDiagnostics(snapshots: Awaited<ReturnType<typeof getDoctorDiagnostic>>["taskRouteSnapshots"]): string[] {
+  return snapshots.map(snapshot => formatDoctorRouteSnapshotDiagnostic(snapshot));
 }
 export async function buildInstallationHealthDiagnostics(): Promise<Diagnostic[]> {
   const diagnostic = await getDoctorDiagnostic();
@@ -271,7 +281,7 @@ export async function buildInstallationHealthDiagnostics(): Promise<Diagnostic[]
   if (diagnostic.hasUpdatePermissions === false) {
     items.push('No write permissions for auto-updates (requires sudo)');
   }
-  items.push(formatDoctorRouteSnapshotDiagnostic(diagnostic));
+  items.push(...buildDoctorRouteSnapshotDiagnostics(diagnostic.taskRouteSnapshots));
   return items;
 }
 export function buildAccountProperties(): Property[] {

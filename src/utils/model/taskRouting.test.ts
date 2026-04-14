@@ -10,6 +10,7 @@ import {
 } from './sessionProviderOverride.js'
 import { resetMainLoopKeyRefOverrideForTests } from './sessionKeyRefOverride.js'
 import { resetSettingsCache } from '../settings/settingsCache.js'
+import { syncMainLoopRoutingForModelSelection } from './modelSelectionRouting.js'
 
 type EnvSnapshot = Record<string, string | undefined>
 
@@ -643,6 +644,273 @@ describe('taskRouting transport compatibility', () => {
     expect(
       resolved.apiKeyCandidates?.map(candidate => candidate.priority),
     ).toEqual([10, 20])
+  })
+
+  test('simplified providers/models/defaults config is compiled into model routing', async () => {
+    process.env.TEST_OPENAI_KEY = 'secret-primary'
+    process.env.TEST_GEMINI_KEY = 'secret-secondary'
+
+    setFlagSettingsInline({
+      providers: {
+        asxs: {
+          type: 'openai-compatible',
+          baseUrl: 'https://api.asxs.top/v1',
+          keys: [
+            { id: 'asxs-k2', env: 'TEST_GEMINI_KEY', priority: 20 },
+            { id: 'asxs-k1', env: 'TEST_OPENAI_KEY', priority: 10 },
+          ],
+        },
+      },
+      models: {
+        'gpt-5.2': 'asxs',
+      },
+      defaults: {
+        main: 'gpt-5.2',
+      },
+    })
+    resetSettingsCache()
+
+    const { resolveTaskRouteClientConfigFromQuerySource } = await import(
+      './taskRouting.js'
+    )
+    const resolved = resolveTaskRouteClientConfigFromQuerySource(
+      'repl_main_thread',
+      'gpt-5.2',
+    )
+
+    expect(resolved.provider).toBe('openai-compatible')
+    expect(resolved.apiStyle).toBe('openai-compatible')
+    expect(resolved.model).toBe('gpt-5.2')
+    expect(resolved.baseUrl).toBe('https://api.asxs.top/v1')
+    expect(resolved.keyId).toBeUndefined()
+    expect(resolved.apiKeyCandidates?.map(candidate => candidate.keyId)).toEqual([
+      'asxs-k1',
+      'asxs-k2',
+    ])
+    expect(
+      resolved.apiKeyCandidates?.map(candidate => candidate.priority),
+    ).toEqual([10, 20])
+  })
+
+  test('multi-source simplified models honor defaultSource when resolving transport', async () => {
+    process.env.TEST_OPENAI_KEY = 'secret-primary'
+    process.env.TEST_GEMINI_KEY = 'secret-secondary'
+
+    setFlagSettingsInline({
+      providers: {
+        minimaxProxy: {
+          type: 'openai-compatible',
+          baseUrl: 'https://proxy.example.com/v1',
+          keys: [
+            { id: 'mm-k2', env: 'TEST_GEMINI_KEY', priority: 20 },
+            { id: 'mm-k1', env: 'TEST_OPENAI_KEY', priority: 10 },
+          ],
+        },
+        glmDirect: {
+          type: 'glm',
+          baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+          keyEnv: 'TEST_GEMINI_KEY',
+        },
+      },
+      models: {
+        'glm-4.5': {
+          sources: [
+            { provider: 'minimaxProxy', priority: 10 },
+            { provider: 'glmDirect', priority: 20 },
+          ],
+          defaultSource: 'minimaxProxy',
+        },
+      },
+      defaults: {
+        main: 'glm-4.5',
+      },
+    })
+    resetSettingsCache()
+
+    const { resolveTaskRouteClientConfigFromQuerySource } = await import(
+      './taskRouting.js'
+    )
+    const resolved = resolveTaskRouteClientConfigFromQuerySource(
+      'repl_main_thread',
+      'glm-4.5',
+    )
+
+    expect(resolved.provider).toBe('openai-compatible')
+    expect(resolved.apiStyle).toBe('openai-compatible')
+    expect(resolved.model).toBe('glm-4.5')
+    expect(resolved.baseUrl).toBe('https://proxy.example.com/v1')
+    expect(resolved.resolvedSourceId).toBe('minimaxProxy')
+    expect(resolved.apiKeyCandidates?.map(candidate => candidate.keyId)).toEqual([
+      'mm-k1-glm-4-5',
+      'mm-k2-glm-4-5',
+    ])
+    expect(
+      resolved.apiKeyCandidates?.map(candidate => candidate.priority),
+    ).toEqual([10010, 10020])
+  })
+
+  test('explicit model resolution prefers the default same-family source pool', async () => {
+    process.env.TEST_OPENAI_KEY = 'secret-primary'
+    process.env.TEST_GEMINI_KEY = 'secret-secondary'
+
+    setFlagSettingsInline({
+      providers: {
+        asxsPrimary: {
+          type: 'openai-compatible',
+          baseUrl: 'https://primary.example.com/v1',
+          keyEnv: 'TEST_OPENAI_KEY',
+        },
+        asxsBackup: {
+          type: 'openai-compatible',
+          baseUrl: 'https://backup.example.com/v1',
+          keyEnv: 'TEST_GEMINI_KEY',
+        },
+      },
+      models: {
+        'gpt-5.4': {
+          sources: [
+            { provider: 'asxsPrimary', priority: 10 },
+            { provider: 'asxsBackup', priority: 20 },
+          ],
+          defaultSource: 'asxsPrimary',
+        },
+      },
+      defaults: {
+        main: 'gpt-5.4',
+      },
+    })
+    resetSettingsCache()
+
+    const { resolveTaskRouteClientConfigFromQuerySource } = await import(
+      './taskRouting.js'
+    )
+    const resolved = resolveTaskRouteClientConfigFromQuerySource(
+      'repl_main_thread',
+      'gpt-5.4',
+    )
+
+    expect(resolved.provider).toBe('openai-compatible')
+    expect(resolved.baseUrl).toBe('https://primary.example.com/v1')
+    expect(resolved.apiKeyCandidates?.map(candidate => candidate.baseUrl)).toEqual([
+      'https://primary.example.com/v1',
+    ])
+    expect(resolved.apiKeyCandidates?.map(candidate => candidate.keyId)).toEqual([
+      'asxsPrimary-k1-gpt-5-4',
+    ])
+  })
+
+  test('session model selection prefers the default source pool instead of mixing same-family sources', async () => {
+    process.env.TEST_OPENAI_KEY = 'secret-primary'
+    process.env.TEST_GEMINI_KEY = 'secret-secondary'
+
+    setFlagSettingsInline({
+      providers: {
+        asxsPrimary: {
+          type: 'openai-compatible',
+          baseUrl: 'https://primary.example.com/v1',
+          keyEnv: 'TEST_OPENAI_KEY',
+        },
+        asxsBackup: {
+          type: 'openai-compatible',
+          baseUrl: 'https://backup.example.com/v1',
+          keyEnv: 'TEST_GEMINI_KEY',
+        },
+      },
+      models: {
+        'gpt-5.4': {
+          sources: [
+            { provider: 'asxsPrimary', priority: 10 },
+            { provider: 'asxsBackup', priority: 20 },
+          ],
+          defaultSource: 'asxsPrimary',
+        },
+      },
+      defaults: {
+        main: 'gpt-5.4',
+      },
+    })
+    resetSettingsCache()
+
+    syncMainLoopRoutingForModelSelection({
+      model: 'gpt-5.4',
+    })
+
+    const { resolveTaskRouteClientConfigFromQuerySource } = await import(
+      './taskRouting.js'
+    )
+    const resolved = resolveTaskRouteClientConfigFromQuerySource(
+      'repl_main_thread',
+    )
+
+    expect(resolved.provider).toBe('openai-compatible')
+    expect(resolved.baseUrl).toBe('https://primary.example.com/v1')
+    expect(resolved.resolvedSourceId).toBe('asxsPrimary')
+    expect(resolved.apiKeyCandidates?.map(candidate => candidate.baseUrl)).toEqual([
+      'https://primary.example.com/v1',
+    ])
+    expect(resolved.apiKeyCandidates?.map(candidate => candidate.keyId)).toEqual([
+      'asxsPrimary-k1-gpt-5-4',
+    ])
+  })
+
+  test('debug snapshot exposes resolved source for simplified model routing', async () => {
+    process.env.TEST_OPENAI_KEY = 'secret-primary'
+    process.env.TEST_GEMINI_KEY = 'secret-secondary'
+
+    setFlagSettingsInline({
+      providers: {
+        minimaxProxy: {
+          type: 'openai-compatible',
+          baseUrl: 'https://proxy.example.com/v1',
+          keyEnv: 'TEST_OPENAI_KEY',
+        },
+        glmDirect: {
+          type: 'glm',
+          baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+          keyEnv: 'TEST_GEMINI_KEY',
+        },
+      },
+      models: {
+        'glm-4.5': {
+          sources: [
+            { provider: 'minimaxProxy', priority: 10 },
+            { provider: 'glmDirect', priority: 20 },
+          ],
+          defaultSource: 'minimaxProxy',
+        },
+      },
+      defaults: {
+        main: 'glm-4.5',
+      },
+    })
+    resetSettingsCache()
+
+    const { getTaskRouteDebugSnapshot } = await import('./taskRouting.js')
+    const snapshot = getTaskRouteDebugSnapshot('main')
+
+    expect(snapshot.transport.resolvedSourceId).toBe('minimaxProxy')
+    expect(snapshot.fields.model.source).toBe('defaults')
+  })
+
+  test('debug snapshot keeps explicit taskRoutes model as route-settings over defaults', async () => {
+    setFlagSettingsInline({
+      defaults: {
+        main: 'gpt-5.4',
+      },
+      taskRoutes: {
+        main: {
+          provider: 'openai-compatible',
+          model: 'gpt-5.2',
+        },
+      },
+    })
+    resetSettingsCache()
+
+    const { getTaskRouteDebugSnapshot } = await import('./taskRouting.js')
+    const snapshot = getTaskRouteDebugSnapshot('main')
+
+    expect(snapshot.executionTarget.model).toBe('gpt-5.2')
+    expect(snapshot.fields.model.source).toBe('route-settings')
   })
 
   test('debug snapshot masks pooled key secrets by default', async () => {
