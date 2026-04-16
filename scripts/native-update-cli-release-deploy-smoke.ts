@@ -308,6 +308,7 @@ async function main(): Promise<void> {
   if (!installResult.wasUpdated || installResult.latestVersion !== deployMetadata.version) {
     throw new Error(`Unexpected install result: ${JSON.stringify(installResult)}`)
   }
+  requestLog.splice(0)
 
   const installedBinary = join(binDir, deployMetadata.publishedBinary.split('/').pop() ?? 'neko.exe')
   if (!existsSync(installedBinary)) {
