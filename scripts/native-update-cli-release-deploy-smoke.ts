@@ -70,6 +70,34 @@ function normalize(text: string): string {
   return text.replace(/\r/g, '').trim()
 }
 
+async function waitForVersion(
+  binaryPath: string,
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  expectedVersion: string,
+): Promise<CommandResult> {
+  let lastResult = await runCommand([binaryPath, '--version'], cwd, env)
+  if (
+    lastResult.exitCode === 0
+    && lastResult.stdout.includes(`${expectedVersion} (Neko Code)`)
+  ) {
+    return lastResult
+  }
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await Bun.sleep(500)
+    lastResult = await runCommand([binaryPath, '--version'], cwd, env)
+    if (
+      lastResult.exitCode === 0
+      && lastResult.stdout.includes(`${expectedVersion} (Neko Code)`)
+    ) {
+      return lastResult
+    }
+  }
+
+  return lastResult
+}
+
 function getContentType(path: string): string {
   const extension = extname(path).toLowerCase()
   if (extension === '.json') return 'application/json; charset=utf-8'
@@ -332,13 +360,18 @@ async function main(): Promise<void> {
     throw new Error(`installed update failed: ${normalize(updateResult.stderr || updateResult.stdout)}`)
   }
 
-  const afterVersionResult = await runCommand([installedBinary, '--version'], tempRoot, childEnv)
+  const afterVersionResult = await waitForVersion(
+    installedBinary,
+    tempRoot,
+    childEnv,
+    nextVersion,
+  )
   if (
     afterVersionResult.exitCode !== 0
     || !afterVersionResult.stdout.includes(`${nextVersion} (Neko Code)`)
   ) {
     throw new Error(
-      `installed --version after update failed: ${normalize(afterVersionResult.stderr || afterVersionResult.stdout)}`,
+      `installed --version after update failed: ${normalize(afterVersionResult.stderr || afterVersionResult.stdout)} | updateOutput=${normalize(updateResult.stdout || updateResult.stderr)}`,
     )
   }
 
