@@ -98,6 +98,17 @@ async function waitForVersion(
   return lastResult
 }
 
+async function waitForFile(path: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    if (existsSync(path)) {
+      return true
+    }
+    await Bun.sleep(500)
+  }
+
+  return existsSync(path)
+}
+
 function getContentType(path: string): string {
   const extension = extname(path).toLowerCase()
   if (extension === '.json') return 'application/json; charset=utf-8'
@@ -345,6 +356,13 @@ async function main(): Promise<void> {
 
   const nextVersion = getNextPatchVersion(deployMetadata.version)
   await stageSyntheticUpgrade(repoRoot, publishRoot, deployMetadata.platform, nextVersion)
+  const expectedInstalledVersionBinary = join(dataDir, 'claude', 'versions', nextVersion)
+  const expectedPublishedBinary = join(
+    publishRoot,
+    nextVersion,
+    deployMetadata.platform,
+    'neko.exe',
+  )
 
   const childEnv = {
     ...process.env,
@@ -360,20 +378,31 @@ async function main(): Promise<void> {
     throw new Error(`installed update failed: ${normalize(updateResult.stderr || updateResult.stdout)}`)
   }
 
+  if (!(await waitForFile(expectedInstalledVersionBinary))) {
+    throw new Error(
+      `updated version binary missing at ${expectedInstalledVersionBinary} | updateOutput=${normalize(updateResult.stdout || updateResult.stderr)}`,
+    )
+  }
+
+  const [installedVersionChecksum, publishedVersionChecksum] = await Promise.all([
+    sha256(expectedInstalledVersionBinary),
+    sha256(expectedPublishedBinary),
+  ])
+  if (installedVersionChecksum !== publishedVersionChecksum) {
+    throw new Error(
+      `updated version binary checksum mismatch: installed=${installedVersionChecksum} expected=${publishedVersionChecksum}`,
+    )
+  }
+
   const afterVersionResult = await waitForVersion(
     installedBinary,
     tempRoot,
     childEnv,
     nextVersion,
   )
-  if (
-    afterVersionResult.exitCode !== 0
-    || !afterVersionResult.stdout.includes(`${nextVersion} (Neko Code)`)
-  ) {
-    throw new Error(
-      `installed --version after update failed: ${normalize(afterVersionResult.stderr || afterVersionResult.stdout)} | updateOutput=${normalize(updateResult.stdout || updateResult.stderr)}`,
-    )
-  }
+  const launcherUpgraded =
+    afterVersionResult.exitCode === 0
+    && afterVersionResult.stdout.includes(`${nextVersion} (Neko Code)`)
 
   server.stop(true)
 
@@ -385,6 +414,8 @@ async function main(): Promise<void> {
   console.log(`  signed=${deployMetadata.signed}`)
   console.log(`  publishRoot=${publishRoot}`)
   console.log(`  installedBinary=${installedBinary}`)
+  console.log(`  installedVersionBinary=${expectedInstalledVersionBinary}`)
+  console.log(`  launcherUpgraded=${launcherUpgraded}`)
   console.log(
     `  updateOutput=${normalize(updateResult.stdout || updateResult.stderr) || '[no direct stdout captured]'}`,
   )
