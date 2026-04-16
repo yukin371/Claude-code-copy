@@ -70,6 +70,18 @@ function normalize(text: string): string {
   return text.replace(/\r/g, '').trim()
 }
 
+function assertRequestsInclude(
+  requests: string[],
+  expectedSubstring: string,
+  description: string,
+): void {
+  if (!requests.some(request => request.includes(expectedSubstring))) {
+    throw new Error(
+      `${description} missing request ${JSON.stringify(expectedSubstring)} in ${JSON.stringify(requests)}`,
+    )
+  }
+}
+
 function getContentType(path: string): string {
   const extension = extname(path).toLowerCase()
   if (extension === '.json') return 'application/json; charset=utf-8'
@@ -225,6 +237,7 @@ async function main(): Promise<void> {
     await readFile(join(deployRoot, 'release-deploy.json'), 'utf8'),
   ) as DeployMetadata
   const publishRoot = await mkdtemp(join(tmpdir(), 'neko-native-update-release-deploy-publish-'))
+  const requestLog: string[] = []
   const publishResult = await runCommand(
     [
       'bun',
@@ -248,6 +261,7 @@ async function main(): Promise<void> {
     port: 0,
     fetch(request) {
       const url = new URL(request.url)
+      requestLog.push(url.pathname + url.search)
       const relativePath = decodeURIComponent(url.pathname.replace(/^\/+/, ''))
       const filePath = resolve(servedRoot, relativePath)
 
@@ -332,14 +346,17 @@ async function main(): Promise<void> {
     throw new Error(`installed update failed: ${normalize(updateResult.stderr || updateResult.stdout)}`)
   }
 
-  const output = `${updateResult.stdout}\n${updateResult.stderr}`
-  if (
-    !output.includes('Checking for updates to latest version')
-    || !output.includes(
-      `Successfully updated from ${deployMetadata.version} to version ${nextVersion}`,
+  const updateRequestsPath = [
+    '/latest',
+    `/${nextVersion}/manifest.json`,
+    `/${nextVersion}/${deployMetadata.platform}/neko.exe`,
+  ]
+  for (const requestPath of updateRequestsPath) {
+    assertRequestsInclude(
+      requestLog,
+      requestPath,
+      'native update release-deploy smoke',
     )
-  ) {
-    throw new Error(`unexpected update output: ${normalize(output)}`)
   }
 
   const afterVersionResult = await runCommand([installedBinary, '--version'], tempRoot, childEnv)
@@ -362,7 +379,9 @@ async function main(): Promise<void> {
   console.log(`  signed=${deployMetadata.signed}`)
   console.log(`  publishRoot=${publishRoot}`)
   console.log(`  installedBinary=${installedBinary}`)
-  console.log(`  updateOutput=${normalize(updateResult.stdout)}`)
+  console.log(
+    `  updateOutput=${normalize(updateResult.stdout || updateResult.stderr) || '[no direct stdout captured]'}`,
+  )
 
   if (!options.keepTemp) {
     await rm(tempRoot, { recursive: true, force: true })
