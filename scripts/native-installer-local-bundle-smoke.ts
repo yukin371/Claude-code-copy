@@ -143,9 +143,9 @@ async function main(): Promise<void> {
   process.env.XDG_CACHE_HOME = cacheDir
   process.env.XDG_STATE_HOME = stateDir
   process.env.NEKO_CODE_NATIVE_INSTALLER_BASE_URL = baseUrl
-  delete process.env.NEKO_CODE_NATIVE_INSTALLER_GITHUB_REPO
-  delete process.env.NEKO_CODE_NATIVE_INSTALLER_GITHUB_API_BASE_URL
-  delete process.env.NEKO_CODE_NATIVE_INSTALLER_GITHUB_TOKEN
+  process.env.NEKO_CODE_NATIVE_INSTALLER_GITHUB_REPO = ''
+  process.env.NEKO_CODE_NATIVE_INSTALLER_GITHUB_API_BASE_URL = ''
+  process.env.NEKO_CODE_NATIVE_INSTALLER_GITHUB_TOKEN = ''
   process.env.PATH = `${binDir};${process.env.PATH ?? ''}`
 
   const { enableConfigs } = await import('../src/utils/config.js')
@@ -154,6 +154,10 @@ async function main(): Promise<void> {
   )
 
   enableConfigs()
+  process.env.NEKO_CODE_NATIVE_INSTALLER_BASE_URL = baseUrl
+  process.env.NEKO_CODE_NATIVE_INSTALLER_GITHUB_REPO = ''
+  process.env.NEKO_CODE_NATIVE_INSTALLER_GITHUB_API_BASE_URL = ''
+  process.env.NEKO_CODE_NATIVE_INSTALLER_GITHUB_TOKEN = ''
 
   console.log('[RUN] installLatest')
   const installResult = await installLatest('latest', true)
