@@ -259,6 +259,7 @@ async function main(): Promise<void> {
 
     const pathEnv = process.env.PATH ?? process.env.Path ?? ''
     const pathWithInstall = `${installDir}${delimiter}${pathEnv}`
+    const installedBinary = join(installDir, 'neko.exe')
     const nativeConfigDir = join(tempRoot, 'native-config')
     const nativePluginCacheDir = join(tempRoot, 'native-plugin-cache')
     const sourceConfigDir = join(tempRoot, 'source-config')
@@ -294,17 +295,21 @@ async function main(): Promise<void> {
     )
 
     console.log('[RUN] installed --version')
-    const versionResult = await runCommand(['neko', '--version'], tempRoot, nativeEnv)
+    const versionResult = await runCommand(
+      [installedBinary, '--version'],
+      tempRoot,
+      nativeEnv,
+    )
     assertZeroExit(versionResult, '--version')
 
     console.log('[RUN] installed --help')
-    const helpResult = await runCommand(['neko', '--help'], tempRoot, nativeEnv)
+    const helpResult = await runCommand([installedBinary, '--help'], tempRoot, nativeEnv)
     assertZeroExit(helpResult, '--help')
     assertOutputContains(helpResult, '--help', 'Usage: neko')
 
     console.log('[RUN] installed doctor --help')
     const doctorHelpResult = await runCommand(
-      ['neko', 'doctor', '--help'],
+      [installedBinary, 'doctor', '--help'],
       tempRoot,
       nativeEnv,
     )
@@ -313,7 +318,7 @@ async function main(): Promise<void> {
 
     console.log('[RUN] installed install --help')
     const installHelpResult = await runCommand(
-      ['neko', 'install', '--help'],
+      [installedBinary, 'install', '--help'],
       tempRoot,
       nativeEnv,
     )
@@ -322,7 +327,7 @@ async function main(): Promise<void> {
 
     console.log('[RUN] installed update --help')
     const updateHelpResult = await runCommand(
-      ['neko', 'update', '--help'],
+      [installedBinary, 'update', '--help'],
       tempRoot,
       nativeEnv,
     )
@@ -330,7 +335,14 @@ async function main(): Promise<void> {
     assertOutputContains(updateHelpResult, 'update --help', 'update')
 
     const smokePrompt = 'Reply with exactly OK'
-    const nativeSmokeArgs = ['neko', '--bare', '-p', '--max-turns', '1', smokePrompt]
+    const nativeSmokeArgs = [
+      installedBinary,
+      '--bare',
+      '-p',
+      '--max-turns',
+      '1',
+      smokePrompt,
+    ]
     const sourceSmokeArgs = [
       bunPath,
       join(repoRoot, 'src/entrypoints/cli.tsx'),
