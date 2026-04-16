@@ -1,6 +1,9 @@
 #!/usr/bin/env bun
 
 import { spawn } from 'bun'
+import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 
 const rawDisabledServers = process.env.NEKO_CODE_DISABLED_MCP_SERVERS?.trim()
 const disabledServers = rawDisabledServers
@@ -22,7 +25,13 @@ const childEnv = {
 const commands = [
   {
     label: 'claude-config',
-    args: ['bun', 'run', 'smoke:claude-config:no-serena'],
+    args: [
+      'bun',
+      'run',
+      'scripts/claude-config-smoke.ts',
+      '--disable-serena',
+      ...(process.env.CI ? ['--allow-missing-source'] : []),
+    ],
   },
   {
     label: 'mcp-state',
@@ -43,6 +52,14 @@ const commands = [
 ] as const
 
 async function run(): Promise<void> {
+  const defaultClaudeConfigDir = join(homedir(), '.claude')
+  if (process.env.CI && !existsSync(defaultClaudeConfigDir)) {
+    console.log(
+      `[SKIP] migrated-config-system-smoke requires a legacy Claude config sample; missing ${defaultClaudeConfigDir}`,
+    )
+    return
+  }
+
   const results: Array<{ label: string; exitCode: number }> = []
 
   for (const command of commands) {

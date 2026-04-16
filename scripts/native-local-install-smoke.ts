@@ -20,6 +20,8 @@ type SmokeOptions = {
   disableMcpServers?: string
 }
 
+const COMMAND_TIMEOUT_MS = 180_000
+
 function parseArgs(argv: string[]): SmokeOptions {
   let keepTemp = false
   let disableMcpServers: string | undefined
@@ -75,11 +77,24 @@ async function runCommand(
     stderr: 'pipe',
   })
 
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
+  const stdoutPromise = new Response(child.stdout).text()
+  const stderrPromise = new Response(child.stderr).text()
+  const exitPromise = child.exited
+
+  const timeoutHandle = setTimeout(() => {
+    try {
+      child.kill()
+    } catch {}
+  }, COMMAND_TIMEOUT_MS)
+
+  let exitCode: number
+  try {
+    exitCode = await exitPromise
+  } finally {
+    clearTimeout(timeoutHandle)
+  }
+
+  const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise])
 
   return {
     args,
@@ -168,13 +183,16 @@ async function main(): Promise<void> {
       mockServer.baseUrl,
     )
 
+    console.log('[RUN] installed --version')
     const versionResult = await runCommand(['neko', '--version'], tempRoot, childEnv)
     assertZeroExit(versionResult, '--version')
 
+    console.log('[RUN] installed --help')
     const helpResult = await runCommand(['neko', '--help'], tempRoot, childEnv)
     assertZeroExit(helpResult, '--help')
     assertOutputContains(helpResult, '--help', 'Usage: neko')
 
+    console.log('[RUN] installed doctor --help')
     const doctorHelpResult = await runCommand(
       ['neko', 'doctor', '--help'],
       tempRoot,
@@ -183,6 +201,7 @@ async function main(): Promise<void> {
     assertZeroExit(doctorHelpResult, 'doctor --help')
     assertOutputContains(doctorHelpResult, 'doctor --help', 'doctor')
 
+    console.log('[RUN] installed install --help')
     const installHelpResult = await runCommand(
       ['neko', 'install', '--help'],
       tempRoot,
@@ -191,6 +210,7 @@ async function main(): Promise<void> {
     assertZeroExit(installHelpResult, 'install --help')
     assertOutputContains(installHelpResult, 'install --help', 'install')
 
+    console.log('[RUN] installed update --help')
     const updateHelpResult = await runCommand(
       ['neko', 'update', '--help'],
       tempRoot,
@@ -210,7 +230,9 @@ async function main(): Promise<void> {
       smokePrompt,
     ]
 
+    console.log('[RUN] installed -p smoke')
     const nativeSmoke = await runCommand(nativeSmokeArgs, tempRoot, childEnv)
+    console.log('[RUN] source -p smoke')
     const sourceSmoke = await runCommand(sourceSmokeArgs, repoRoot, childEnv)
 
     const nativeOutput = normalize(nativeSmoke.stdout)

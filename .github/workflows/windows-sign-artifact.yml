@@ -1,0 +1,145 @@
+name: Windows Sign Artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version to sign
+        required: true
+        type: string
+      release_candidate_run_id:
+        description: Workflow run ID that produced the unsigned release candidate artifact
+        required: true
+        type: string
+      release_candidate_artifact_name:
+        description: Optional unsigned candidate artifact name override
+        required: false
+        default: ''
+        type: string
+      timestamp_url:
+        description: RFC3161 timestamp URL used by signtool
+        required: true
+        default: http://timestamp.digicert.com
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  sign-windows-artifact:
+    runs-on: windows-latest
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_CANDIDATE_RUN_ID: ${{ inputs.release_candidate_run_id }}
+      RELEASE_CANDIDATE_ARTIFACT_NAME: ${{ inputs.release_candidate_artifact_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate signing secrets
+        shell: pwsh
+        env:
+          WINDOWS_SIGN_CERT_B64: ${{ secrets.WINDOWS_SIGN_CERT_B64 }}
+          WINDOWS_SIGN_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGN_CERT_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGN_CERT_B64)) {
+            throw 'Missing repository secret WINDOWS_SIGN_CERT_B64'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGN_CERT_PASSWORD)) {
+            throw 'Missing repository secret WINDOWS_SIGN_CERT_PASSWORD'
+          }
+
+      - name: Download unsigned release candidate
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Download-ArtifactZip {
+            param(
+              [string]$RunId,
+              [string]$ArtifactName,
+              [string]$ZipPath
+            )
+
+            $headers = @{
+              Authorization = "Bearer $env:GITHUB_TOKEN"
+              Accept = 'application/vnd.github+json'
+              'X-GitHub-Api-Version' = '2022-11-28'
+            }
+
+            $artifactsUrl = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/runs/$RunId/artifacts?per_page=100"
+            $response = Invoke-RestMethod -Headers $headers -Uri $artifactsUrl
+            $artifact = $response.artifacts | Where-Object { $_.name -eq $ArtifactName } | Select-Object -First 1
+
+            if (-not $artifact) {
+              throw "Artifact '$ArtifactName' not found in workflow run $RunId"
+            }
+
+            $downloadHeaders = @{
+              Authorization = "Bearer $env:GITHUB_TOKEN"
+              Accept = 'application/octet-stream'
+              'X-GitHub-Api-Version' = '2022-11-28'
+            }
+
+            Invoke-WebRequest -Headers $downloadHeaders -Uri $artifact.archive_download_url -OutFile $ZipPath
+          }
+
+          $artifactRoot = Join-Path $PWD '.github-artifacts'
+          $extractPath = Join-Path $artifactRoot 'candidate'
+          New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
+
+          $artifactName = if ([string]::IsNullOrWhiteSpace($env:RELEASE_CANDIDATE_ARTIFACT_NAME)) {
+            "neko-code-release-candidate-$env:RELEASE_VERSION-unsigned-win32-x64"
+          } else {
+            $env:RELEASE_CANDIDATE_ARTIFACT_NAME
+          }
+
+          $zipPath = Join-Path $artifactRoot 'candidate.zip'
+          Download-ArtifactZip -RunId $env:RELEASE_CANDIDATE_RUN_ID -ArtifactName $artifactName -ZipPath $zipPath
+          Expand-Archive -LiteralPath $zipPath -DestinationPath $extractPath -Force
+
+          $candidateTarget = Join-Path $PWD "dist/release-candidate/$env:RELEASE_VERSION"
+          Remove-Item -LiteralPath $candidateTarget -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $candidateTarget | Out-Null
+          Copy-Item -Path (Join-Path $extractPath '*') -Destination $candidateTarget -Recurse -Force
+
+      - name: Sign release candidate binary
+        id: sign
+        shell: pwsh
+        env:
+          WINDOWS_SIGN_CERT_B64: ${{ secrets.WINDOWS_SIGN_CERT_B64 }}
+          WINDOWS_SIGN_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGN_CERT_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & "$PWD/scripts/sign-release-candidate.ps1" `
+            -CandidateRoot "dist/release-candidate/$env:RELEASE_VERSION" `
+            -PfxBase64 $env:WINDOWS_SIGN_CERT_B64 `
+            -PfxPassword $env:WINDOWS_SIGN_CERT_PASSWORD `
+            -TimestampUrl "${{ inputs.timestamp_url }}" `
+            -FileDescription 'Neko Code'
+
+      - name: Upload signed exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: neko-code-signed-${{ inputs.version }}-win32-x64
+          path: ${{ steps.sign.outputs.signed_binary }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Write signing summary
+        shell: pwsh
+        run: |
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Windows Signing"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ""
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Version: $env:RELEASE_VERSION"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Signed binary: ${{ steps.sign.outputs.signed_binary }}"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- SHA256: ${{ steps.sign.outputs.signed_sha256 }}"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- signtool: ${{ steps.sign.outputs.signtool_path }}"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Next workflow: release-signed-publication.yml"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Pass signed_artifact_run_id=${{ github.run_id }}"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Pass signed_artifact_name=neko-code-signed-${{ inputs.version }}-win32-x64"

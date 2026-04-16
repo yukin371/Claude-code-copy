@@ -104,6 +104,7 @@ bun src/entrypoints/cli.tsx plugin --help
 bun src/entrypoints/cli.tsx mcp --help
 bun src/entrypoints/cli.tsx doctor --help
 bun src/entrypoints/cli.tsx install --help
+bun src/entrypoints/cli.tsx rollback --help
 bun src/entrypoints/cli.tsx update --help
 bun run install:local-beta
 bun src/entrypoints/cli.tsx -p --max-turns 1 "Reply with exactly OK"
@@ -117,11 +118,13 @@ bun run release:deploy-publish -- --target-root C:\path\to\publish-root
 bun run stage:github-release
 bun run scripts/publish-github-release.ts --version 0.1.0 --dry-run
 bun run release:apply-signed-artifact -- --signed-binary C:\path\to\signed.exe
+bun run smoke:sign-release-candidate
 bun run smoke:signed-release-publication-workflow
 bun run smoke:stage-github-release
 bun run smoke:publish-github-release
 bun run smoke:promote-github-release
 bun run smoke:native-update-cli-github-release
+bun run smoke:native-rollback-cli-github-release
 bun run smoke:release-deploy-publish
 bun run smoke:native-update-cli-release-deploy
 bun run smoke:readonly-routing
@@ -142,7 +145,7 @@ bun run smoke:claude-config
 - CLI 顶层参数解析
 - provider/model 入口参数
 - agents / plugin / mcp / doctor 等顶层命令注册
-- install / update 等分发相关命令帮助入口
+- install / rollback / update 等分发相关命令帮助入口
 - 真实 `--print` / headless 单轮执行
 - 配置迁移后的真实网关回放
 - 基础任务路由诊断与回归
@@ -274,8 +277,21 @@ bun run smoke:release-preflight
 - `bun run build:native`
 - `bun run smoke:distribution-readiness`
 - `bun run scripts/native-installer-local-bundle-smoke.ts --skip-build`
+- `bun run scripts/stage-release-candidate.ts --skip-build`
+- `bun run scripts/stage-release-publication.ts --skip-stage-candidate`
+- `bun run scripts/native-installer-release-publication-smoke.ts --skip-stage-publication`
 - `bun run scripts/stage-native-installer.ts --skip-stage-publication`
 - `bun run scripts/stage-native-installer-smoke.ts --skip-stage-native-installer`
+- `bun run scripts/apply-signed-release-artifact-smoke.ts`
+- `bun run scripts/signed-release-publication-workflow-smoke.ts --skip-build --skip-stage-candidate`
+- `bun run scripts/stage-release-deploy-smoke.ts`
+- `bun run scripts/release-deploy-publish-smoke.ts --skip-stage-deploy`
+- `bun run scripts/native-update-cli-release-deploy-smoke.ts --skip-stage-deploy`
+- `bun run scripts/stage-github-release-smoke.ts --skip-signed-workflow`
+- `bun run scripts/publish-github-release-smoke.ts --skip-stage-github-release`
+- `bun run scripts/promote-github-release-smoke.ts`
+- `bun run scripts/native-update-cli-github-release-smoke.ts --skip-stage-github-release`
+- `bun run scripts/native-rollback-cli-github-release-smoke.ts --skip-build --skip-stage-github-release`
 - 校验 `dist/neko-code.exe` 已生成且非空
 - 校验 `scripts/install-local-launcher.ps1` 仍以 `neko.exe` 作为主安装命令
 - 校验 README 与关键 release-facing 提示未回退到旧 `claude` 主入口
@@ -400,11 +416,24 @@ bun run release:deploy-publish -- --target-root C:\path\to\publish-root
 CI 骨架：
 
 - [release-candidate.yml](.github/workflows/release-candidate.yml)
+- [github-release-publish-unsigned.yml](.github/workflows/github-release-publish-unsigned.yml)
+- [windows-sign-artifact.yml](.github/workflows/windows-sign-artifact.yml)
 - [release-signed-publication.yml](.github/workflows/release-signed-publication.yml)
 - [github-release-publish.yml](.github/workflows/github-release-publish.yml)
 - [github-release-promote.yml](.github/workflows/github-release-promote.yml)
 - 当前会在 `windows-latest` 上执行 `typecheck`、`smoke:release-preflight`、`stage-release-candidate`、`stage-release-publication`、`stage:native-installer`、`stage-release-deploy`
 - 最终上传 unsigned release candidate artifact、`publish-ready` metadata artifact、`release-publication` artifact、`native-installer` artifact，以及 `release-deploy` artifact
+- 如果当前只想发布 GitHub draft/prerelease、不接 Windows 证书，可直接运行 `github-release-publish-unsigned.yml`
+  - 输入 `version` 与 unsigned release candidate 的 `run id`
+  - workflow 会下载 unsigned candidate，执行 unsigned publication/deploy/native-installer staging，再以 `--allow-unsigned` 方式执行 `stage:github-release` 并发布 GitHub draft/prerelease
+  - 该路径适合内部试用 / beta / 技术预览；Windows 下载运行时仍会出现 unsigned / SmartScreen 提示
+- `stage:github-release --allow-unsigned` 会把 unsigned publication/deploy/native-installer 产物整理成 `dist/github-release/<version>/`，主二进制资产名会显式带 `-unsigned.exe`
+- 如果后续要接 Windows 证书，可先运行 `windows-sign-artifact.yml`
+  - 输入 `version` 与 unsigned release candidate 的 `run id`
+  - workflow 会下载 unsigned candidate，读取 `signing-manifest.json` 后在 Windows runner 上执行真实签名，并上传 `neko-code-signed-<version>-win32-x64`
+- 本地也可先跑 `bun run smoke:sign-release-candidate`
+  - 该 smoke 会生成临时代码签名证书、导出 PFX、调用 `scripts/sign-release-candidate.ps1`，并校验 `signed/` 产物的 Authenticode 签名有效
+  - 它只用于验证脚本 / manifest / 输出链路；正式 workflow 仍以真实证书和 `signtool` 为准
 - `release-signed-publication.yml` 可手动输入 version、unsigned RC 所在 run id、signed exe 所在 run id 与 artifact 名称，自动下载两侧 artifact，执行 `apply-signed-release-artifact -> stage:native-installer -> stage-release-deploy`，再跑 signed publication / installer / deploy / native update smoke，并重新上传 signed 版 `release-candidate`、`release-publication`、`native-installer`、`release-deploy`
 - 本地也可先跑 `bun run smoke:signed-release-publication-workflow`，模拟 GitHub 下载 unsigned artifact 与 signed exe 后的整条 signed publication/deploy 流程
 - `stage:github-release` 会把 signed candidate/publication/deploy/native-installer 产物整理成 `dist/github-release/<version>/`，其中包含 `portable-installer.zip`，输出 GitHub Release 可上传资产、checksums 和 release notes
@@ -413,7 +442,13 @@ CI 骨架：
 - `github-release-promote.yml` 可在已有 `v<version>` release 上单独调整 `draft` / `prerelease` / `latest`，把 prerelease 升级为正式 stable，或把草稿 release 发布出去
 - `scripts/promote-github-release.ts` 现在通过 `gh api` 显式 PATCH `draft` / `prerelease` / `make_latest`，避免 promotion 继续依赖 `gh release edit` 的隐式 flag 行为
 - `smoke:native-update-cli-github-release` 会用本地假 GitHub Releases API 校验：已安装的 `neko update` 能直接消费 GitHub Release 资产
+- `smoke:native-rollback-cli-github-release` 会用本地假 GitHub Releases API 校验：已安装的 `neko rollback --list` 与默认回滚能直接消费 GitHub Release 发布历史
 - `smoke:promote-github-release` 会校验 GitHub Release promotion 命令行计划，避免 promote workflow 参数漂移
+
+发布流程补充文档：
+
+- unsigned GitHub 发布：[`docs/plans/2026-04-15-unsigned-github-release.md`](docs/plans/2026-04-15-unsigned-github-release.md)
+- Windows 签名接入：[`docs/plans/2026-04-15-windows-signing-workflow.md`](docs/plans/2026-04-15-windows-signing-workflow.md)
 
 GitHub Release 作为 native update 源：
 
@@ -458,19 +493,26 @@ bun run smoke:claude-config
 
 ## 当前推进重点
 
-当前开发重点不是再补一层入口，而是继续收口这两类问题：
+当前主线不是继续扩展新功能，而是尽快结束 Phase 4 发布链路。
 
-1. provider/router 主链路与真实回归继续收口
-2. 高级交互链路与类型债继续收口
+当前只保留 3 个 blocker：
 
-现阶段最值得继续推进的方向：
+1. 真实 signed artifact 接入 CI，并至少成功产出一次可复用的 signed exe
+2. 真实 GitHub Release / 正式发布源上传闭环跑通一次，而不是只停留在 mock / staged source
+3. 基于真实发布源完成一次升级验证和一次回滚验证，确认 `neko update` / `neko rollback` 在正式发布环境成立
 
-- 复制真实历史配置做回归烟测，识别剩余运行时缺口
-- 继续恢复高级交互链路和真实会话路径
-- 逐步把 SDK 占位类型替换成真实结构
-- 沿 `bridgeMessaging -> inboundMessages -> initReplBridge -> structuredIO` 主链路收口类型问题
-- 系统梳理剩余 `MACRO.*` 构建注入点，提升源码模式直跑覆盖面
-- 补齐任务级模型/API 路由与外部网关模式的回归验证
+在这 3 项完成前，下面这些都不再作为当前阶段主线：
+
+- 额外 smoke 扩展
+- 更细的 release-facing 文案打磨
+- 更完整的品牌残留清理
+- Track C / D / E / F / G 的实现推进
+
+Phase 4 的退出标准：
+
+1. `windows-sign-artifact.yml` 在真实 secrets / runner 下成功产出 signed exe
+2. signed 或明确允许 unsigned 的正式 GitHub Release 成功发布一次，且发布源可被客户端真实消费
+3. 在真实发布源上完成一次升级和一次回滚验证，并同步 roadmap / staged plan / README
 
 ## 相关文档
 

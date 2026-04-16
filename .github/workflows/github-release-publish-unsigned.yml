@@ -1,0 +1,154 @@
+name: GitHub Release Publish Unsigned
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version to publish as unsigned GitHub draft/prerelease
+        required: true
+        type: string
+      release_candidate_run_id:
+        description: Workflow run ID that produced the unsigned release candidate artifact
+        required: true
+        type: string
+      release_candidate_artifact_name:
+        description: Optional unsigned candidate artifact name override
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish-unsigned-github-release:
+    runs-on: windows-latest
+    env:
+      NEKO_CODE_DISABLED_MCP_SERVERS: serena
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_CANDIDATE_RUN_ID: ${{ inputs.release_candidate_run_id }}
+      RELEASE_CANDIDATE_ARTIFACT_NAME: ${{ inputs.release_candidate_artifact_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.10
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Release workflow parser tests
+        run: bun run test:release-workflows
+
+      - name: Text hygiene
+        run: bun run check:text-hygiene
+
+      - name: Download unsigned release candidate
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Download-ArtifactZip {
+            param(
+              [string]$RunId,
+              [string]$ArtifactName,
+              [string]$ZipPath
+            )
+
+            $headers = @{
+              Authorization = "Bearer $env:GITHUB_TOKEN"
+              Accept = 'application/vnd.github+json'
+              'X-GitHub-Api-Version' = '2022-11-28'
+            }
+
+            $artifactsUrl = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/runs/$RunId/artifacts?per_page=100"
+            $response = Invoke-RestMethod -Headers $headers -Uri $artifactsUrl
+            $artifact = $response.artifacts | Where-Object { $_.name -eq $ArtifactName } | Select-Object -First 1
+
+            if (-not $artifact) {
+              throw "Artifact '$ArtifactName' not found in workflow run $RunId"
+            }
+
+            $downloadHeaders = @{
+              Authorization = "Bearer $env:GITHUB_TOKEN"
+              Accept = 'application/octet-stream'
+              'X-GitHub-Api-Version' = '2022-11-28'
+            }
+
+            Invoke-WebRequest -Headers $downloadHeaders -Uri $artifact.archive_download_url -OutFile $ZipPath
+          }
+
+          $artifactRoot = Join-Path $PWD '.github-artifacts'
+          $extractPath = Join-Path $artifactRoot 'candidate'
+          New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
+
+          $artifactName = if ([string]::IsNullOrWhiteSpace($env:RELEASE_CANDIDATE_ARTIFACT_NAME)) {
+            "neko-code-release-candidate-$env:RELEASE_VERSION-unsigned-win32-x64"
+          } else {
+            $env:RELEASE_CANDIDATE_ARTIFACT_NAME
+          }
+
+          $zipPath = Join-Path $artifactRoot 'candidate.zip'
+          Download-ArtifactZip -RunId $env:RELEASE_CANDIDATE_RUN_ID -ArtifactName $artifactName -ZipPath $zipPath
+          Expand-Archive -LiteralPath $zipPath -DestinationPath $extractPath -Force
+
+          $candidateTarget = Join-Path $PWD "dist/release-candidate/$env:RELEASE_VERSION"
+          Remove-Item -LiteralPath $candidateTarget -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $candidateTarget | Out-Null
+          Copy-Item -Path (Join-Path $extractPath '*') -Destination $candidateTarget -Recurse -Force
+
+      - name: Stage unsigned publication and deploy
+        shell: pwsh
+        run: |
+          bun run scripts/stage-release-publication.ts --skip-stage-candidate
+          bun run scripts/stage-release-deploy.ts --skip-stage-publication
+          bun run scripts/stage-native-installer.ts --skip-stage-publication
+
+      - name: Stage unsigned GitHub release assets
+        shell: pwsh
+        run: |
+          bun run scripts/stage-github-release.ts --skip-stage-deploy --skip-stage-native-installer --allow-unsigned
+
+      - name: Smoke unsigned GitHub release package
+        shell: pwsh
+        run: |
+          bun run scripts/stage-github-release-smoke.ts --allow-unsigned --skip-stage-github-release
+
+      - name: Publish unsigned draft prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bun run scripts/publish-github-release-smoke.ts --skip-stage-github-release
+          bun run scripts/publish-github-release.ts --version "$env:RELEASE_VERSION"
+
+      - name: Write publish summary
+        shell: pwsh
+        run: |
+          $root = Join-Path $PWD "dist/github-release/$env:RELEASE_VERSION"
+          $metadata = Get-Content (Join-Path $root 'release-github.json') | ConvertFrom-Json
+
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Unsigned GitHub Release"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ""
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Tag: $($metadata.tagName)"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Draft: $($metadata.publishPolicy.publishDefaults.draft)"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Prerelease: $($metadata.publishPolicy.publishDefaults.prerelease)"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Signed: $($metadata.signed)"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Primary asset: $($metadata.primaryAsset)"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Installer asset: $($metadata.installerAsset)"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Warning: Windows binaries remain unsigned and will trigger trust / SmartScreen warnings."
+
+      - name: Upload staged unsigned GitHub release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: neko-code-github-release-${{ inputs.version }}-unsigned-win32-x64
+          path: dist/github-release/${{ inputs.version }}
+          if-no-files-found: error
+          retention-days: 14

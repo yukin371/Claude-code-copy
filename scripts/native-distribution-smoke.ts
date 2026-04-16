@@ -21,6 +21,8 @@ type SmokeOptions = {
   disableMcpServers?: string
 }
 
+const COMMAND_TIMEOUT_MS = 180_000
+
 function parseArgs(argv: string[]): SmokeOptions {
   let keepTemp = false
   let disableMcpServers: string | undefined
@@ -74,12 +76,24 @@ async function runCommand(
     stdout: 'pipe',
     stderr: 'pipe',
   })
+  const stdoutPromise = new Response(child.stdout).text()
+  const stderrPromise = new Response(child.stderr).text()
+  const exitPromise = child.exited
 
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
+  const timeoutHandle = setTimeout(() => {
+    try {
+      child.kill()
+    } catch {}
+  }, COMMAND_TIMEOUT_MS)
+
+  let exitCode: number
+  try {
+    exitCode = await exitPromise
+  } finally {
+    clearTimeout(timeoutHandle)
+  }
+
+  const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise])
 
   return {
     args,
@@ -132,11 +146,13 @@ async function main(): Promise<void> {
   try {
     const childEnv = createOpenAICompatibleSmokeEnv({ ...baseEnv }, mockServer.baseUrl)
 
+    console.log('[RUN] staged --version')
     const versionResult = await runCommand([stagedBinary, '--version'], tempDir, childEnv)
     if (versionResult.exitCode !== 0) {
       throw new Error(`--version failed: ${normalize(versionResult.stderr || versionResult.stdout)}`)
     }
 
+    console.log('[RUN] staged --help')
     const helpResult = await runCommand([stagedBinary, '--help'], tempDir, childEnv)
     if (helpResult.exitCode !== 0) {
       throw new Error(`--help failed: ${normalize(helpResult.stderr || helpResult.stdout)}`)
@@ -153,7 +169,9 @@ async function main(): Promise<void> {
       smokePrompt,
     ]
 
+    console.log('[RUN] staged -p smoke')
     const nativeSmoke = await runCommand(nativeSmokeArgs, tempDir, childEnv)
+    console.log('[RUN] source -p smoke')
     const sourceSmoke = await runCommand(sourceSmokeArgs, repoRoot, childEnv)
 
     assertZeroExit(nativeSmoke, 'native (-p)')

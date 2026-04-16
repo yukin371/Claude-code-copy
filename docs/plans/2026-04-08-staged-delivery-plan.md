@@ -342,16 +342,25 @@
 - 已新增 `scripts/publish-github-release.ts` 与 `scripts/publish-github-release-smoke.ts`；GitHub Release 的 create/edit/upload 命令拼装已从 workflow 抽到脚本，避免 workflow 与 staged metadata 漂移
 - 已把 `scripts/promote-github-release.ts` 改为通过 `gh api PATCH` 显式更新 `draft` / `prerelease` / `make_latest`，不再依赖 `gh release edit` 的隐式 flag 行为；对应 smoke 现已覆盖 `draft` / `prerelease` / `stable` 与手工布尔参数组合
 - 已把 `smoke:promote-github-release` 并入 `smoke:release-preflight`，让 GitHub Release promotion 也进入本地候选发布物固定 gate
+- 已新增 `scripts/native-rollback-cli-github-release-smoke.ts`，基于当前 `dist/neko-code.exe` 组装本地 GitHub Release 资产，真实覆盖 `neko rollback --list` 与默认回滚，不再只验证升级路径
 - 当前 Phase 4 的本地候选发布物链已经覆盖：`release-deploy-publish`、`publish-github-release`、deploy source native update、GitHub Release native update；剩余主缺口已收敛到 signed artifact、签名流程和真实外部发布凭据/环境
 - 已验证：本轮 `dist/neko-code.exe -p --max-turns 1 "echo native smoke"` 会在命中 `max-turns` 限制时退出，并且源码入口 `bun src/entrypoints/cli.tsx -p --max-turns 1 "echo source smoke"` 则抛出完全相同的 `Error: Reached max turns (1)` 结果，说明当前失败属于通用行为而非编译产物里程碑差异
 
+### Quick Close Rule
+
+- Phase 4 不再继续泛化扩展发布链路，只按下面 3 个 blocker 收尾：
+  1. 真实 signed artifact
+  2. 真实 GitHub Release / 正式发布源
+  3. 真实升级 / 回滚验证
+- 额外 smoke、文案细化和长期产品/架构任务默认不再进入本阶段主线。
+
 ### Exit Conditions
 
-- 当前机器上已可像普通 CLI 一样安装和启动
-- 不再需要仓库内 launcher 作为主入口
-- 本地候选发布物至少已有 `smoke:release-preflight` 这类固定 gate，而不是只靠手工 spot check
-- native installer 至少已可消费本地 release bundle，不再完全依赖远端发布源才可验证
-- unsigned release candidate 已有固定 staging 输出与 CI 上传入口，剩余主要缺口集中到签名与正式发布
+- `windows-sign-artifact.yml` 在真实 secrets / runner 下成功产出 signed exe
+- signed 或明确允许 unsigned 的正式 GitHub Release 成功发布一次，且发布源可被客户端真实消费
+- 在真实发布源上完成一次升级和一次回滚验证
+- `smoke:distribution-readiness` 与 `smoke:release-preflight` 持续为绿色固定 gate
+- Phase 4 相关 README / roadmap / plan 文档已同步
 
 ## Phase 5. 可迁移候选版本
 

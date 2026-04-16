@@ -60,6 +60,7 @@ type SmokeOptions = {
   maxPreviewLines: number
   sourceDir: string
   disableMcpServers?: string
+  allowMissingSource: boolean
 }
 
 const repoRoot = process.cwd()
@@ -72,6 +73,7 @@ function parseArgs(argv: string[]): SmokeOptions {
   let maxPreviewLines = 4
   let sourceDir = join(homedir(), '.claude')
   let disableMcpServers: string | undefined
+  let allowMissingSource = false
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
@@ -121,6 +123,11 @@ function parseArgs(argv: string[]): SmokeOptions {
       continue
     }
 
+    if (arg === '--allow-missing-source') {
+      allowMissingSource = true
+      continue
+    }
+
     throw new Error(`Unsupported argument: ${arg}`)
   }
 
@@ -130,6 +137,7 @@ function parseArgs(argv: string[]): SmokeOptions {
     maxPreviewLines,
     sourceDir,
     disableMcpServers,
+    allowMissingSource,
   }
 }
 
@@ -703,6 +711,10 @@ const options = (() => {
 
 const sourceDir = resolve(options.sourceDir)
 if (!existsSync(sourceDir)) {
+  if (options.allowMissingSource) {
+    console.log(`[SKIP] Claude config source dir not found: ${sourceDir}`)
+    process.exit(0)
+  }
   console.error(`Claude config source dir not found: ${sourceDir}`)
   process.exit(1)
 }

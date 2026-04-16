@@ -32,6 +32,24 @@
   - [2026-04-10-release-preflight-signed-workflow-alignment.md](../plans/2026-04-10-release-preflight-signed-workflow-alignment.md)
 - 多 agent 通信与模型分层计划：
   - [2026-04-12-multi-agent-communication-and-model-tiering-plan.md](../plans/2026-04-12-multi-agent-communication-and-model-tiering-plan.md)
+- 模型与提供商配置进一步简化：
+  - [2026-04-15-model-provider-simplification-plan.md](../plans/2026-04-15-model-provider-simplification-plan.md)
+- 模型与 provider 路由审计：
+  - [2026-04-15-model-provider-routing-audit.md](../plans/2026-04-15-model-provider-routing-audit.md)
+- 上下文稳定与会话聚焦修复：
+  - [2026-04-15-context-stability-and-session-focus-plan.md](../plans/2026-04-15-context-stability-and-session-focus-plan.md)
+- 记忆系统与默认多代理编排：
+  - [2026-04-15-memory-system-and-default-multi-agent-orchestration-plan.md](../plans/2026-04-15-memory-system-and-default-multi-agent-orchestration-plan.md)
+- 桌面版开发计划：
+  - [2026-04-15-desktop-app-development-plan.md](../plans/2026-04-15-desktop-app-development-plan.md)
+- 长期 token 压缩计划：
+  - [2026-04-15-token-compression-program.md](../plans/2026-04-15-token-compression-program.md)
+- Phase 4 后续任务拆分：
+  - [2026-04-15-post-phase4-task-breakdown.md](../plans/2026-04-15-post-phase4-task-breakdown.md)
+- Windows 签名接入流程：
+  - [2026-04-15-windows-signing-workflow.md](../plans/2026-04-15-windows-signing-workflow.md)
+- unsigned GitHub 发布流程：
+  - [2026-04-15-unsigned-github-release.md](../plans/2026-04-15-unsigned-github-release.md)
 - 当前默认执行规则：
   - 以后默认按阶段计划推进
   - 只有当前 active phase 的 Exit Conditions 满足后，才切到下一阶段
@@ -129,6 +147,28 @@
 - 剩余收口：
   - 继续把签名、发布源和 installer 相关检查并入固定流程
 
+## Phase 4 快速收尾口径
+
+- 判断：
+  - Phase 4 拖得过久，当前不再缺少“本地可运行 / 本地可安装 / 本地可发布候选”的基础能力。
+  - 继续泛化扩展发布链路的价值已经很低；现在需要的是把剩余 blocking items 压成可关闭 checklist。
+- 只保留 3 个 blocker：
+  1. 真实签名产物接入 CI，并至少完成一次可复用的 signed artifact 产出。
+  2. 真实 GitHub Release / 正式发布源上传闭环跑通一次，而不是只停留在 mock / staged source。
+  3. 真实发布后完成一次升级验证和一次回滚验证，确认 `neko update` / `neko rollback` 不只在本地演练里成立。
+- Exit criteria：
+  1. `windows-sign-artifact.yml` 在真实 secrets / runner 下成功产出 signed exe。
+  2. signed 或明确允许 unsigned 的正式 GitHub Release 成功发布一次，且发布源可被客户端真实消费。
+  3. 在真实发布源上完成一次升级和一次回滚验证，并把结果同步到 roadmap / staged plan / README。
+- 非 blocker：
+  - 额外 smoke 扩展
+  - 更细的 release-facing 文案打磨
+  - 更完整的品牌残留清理
+  - 未影响正式发布闭环的体验性优化
+- 执行规则：
+  - 在上述 3 个 blocker 清空前，不再把 Track C / D / E / F / G 的实现工作插入为主线。
+  - 新增工作如果不能直接推动这 3 项退出条件，默认不进入当前阶段主线。
+
 ## 待完成
 
 ### P0
@@ -146,6 +186,14 @@
 3. 外部网关接入示例、运维约束与观测文档补强
 4. 多提供商 key 管理、模型能力声明、任务级模型策略与 quota 监控（见下：Track A）
 5. 多 agent 通信降本、工件化 handoff 与模型分层协作（见下：Track B）
+
+### P2（Phase 4 收口后的产品/架构主线）
+
+1. 配置模型与提供商进一步简化，默认把“选模型”和“选 source/provider”拆开，继续压低设置心智负担（见下：Track C）
+2. 修复“上下文乱跳 / 会话焦点漂移”，把上下文装配从“尽量多带历史”改成“围绕当前任务焦点做受控注入”（见下：Track D）
+3. 记忆系统与多代理协作一起重构，形成“主代理长期记忆 + 默认派发子代理 + 工件化交接”的默认工作流（见下：Track E）
+4. 基于 session server / bridge / 多 session 基线规划桌面版，重点解决文件交给 AI、多 AI session 并行与任务总览（见下：Track F）
+5. 把 token 压缩作为跨阶段长期计划，覆盖 prompt 裁剪、工件化 handoff、记忆提取、模型分层与缓存策略（见下：Track G）
 
 ### Track A: 多提供商 Key / 模型策略 / 监控（面向“代理加快开发”）
 
@@ -278,6 +326,71 @@
   - 便宜模型优先承担探索与摘要，贵模型优先承担设计与裁决，中档模型优先承担实施与复核。
   - 默认策略可诊断、可覆盖、不会把昂贵模型浪费在低价值探索阶段。
 
+### Track C: 模型 / Provider 配置进一步简化
+
+- 目标：
+  - 在已经落地的 `defaults.*`、model registry 与 route diagnostics 基础上，继续把用户侧配置收敛到“先选模型，再决定 source/provider 是否需要显式覆盖”。
+  - 把当前仍残留的 `taskRoutes.*.model`、`providerKeys`、session override、Config UI 多入口心智差异继续压平。
+  - 保持高级 transport override 能力，但把它从默认路径降到高级路径。
+- 边界与约束：
+  - 不回退已落地的 registry / source resolution 设计。
+  - 不把外部网关职责重新拉回应用内。
+  - 默认写路径继续优先写 `defaults.*` / model registry，而不是再扩散旧 `taskRoutes.*`。
+- 设计入口：
+  - 设计文档：`docs/plans/2026-04-15-model-provider-simplification-plan.md`
+
+### Track D: 上下文稳定与会话聚焦
+
+- 目标：
+  - 解决旧版 Claude 也存在的“上下文乱跳 / 焦点漂移 / 不该带的上下文被带进来”问题。
+  - 把当前 prompt 组装逻辑从“保守多带历史”逐步收敛到“围绕当前任务焦点、活动分支和必要记忆做有限注入”。
+  - 让 compact / resume / continue / subagent handoff / away summary 共享同一套 task focus 语义。
+- 边界与约束：
+  - 不破坏已经收口的 Phase 3 resume / continue / compact 回归。
+  - 不新增一套与 `session_memory` 平行、互相打架的伪记忆系统。
+  - 先做 prompt assembly 与状态模型收口，再考虑更激进的自动自治。
+- 设计入口：
+  - 设计文档：`docs/plans/2026-04-15-context-stability-and-session-focus-plan.md`
+
+### Track E: 记忆系统与默认多代理编排
+
+- 目标：
+  - 形成默认多代理工作流：主代理负责长期记忆、任务拆解、对人沟通与最终收口；子代理只拿最小规则和任务相关工件，完成后先自检，再由主代理粗检。
+  - 把长期记忆、任务记忆、工件存储与多代理 handoff 合并成一套统一协议，避免“记忆”和“协作”各走一套上下文体系。
+  - 让主代理默认成为 task orchestrator，而不是把所有上下文无差别复制给每个子代理。
+- 边界与约束：
+  - 保持与现有 Agent / teammate / task 基本语义兼容，允许渐进迁移。
+  - 只有主代理默认拥有长期记忆写权限；子代理只可读取必要记忆并提交 memory candidate。
+  - 与 Track D 协同推进，避免“焦点状态”和“记忆摘要”各自维护独立事实。
+- 设计入口：
+  - 设计文档：`docs/plans/2026-04-15-memory-system-and-default-multi-agent-orchestration-plan.md`
+
+### Track F: 桌面版开发计划
+
+- 目标：
+  - 基于现有 session server / bridge / multi-session 能力，规划面向桌面的工作台，而不是再造一套完全独立的 agent core。
+  - 优先解决三个桌面版核心问题：文件交给 AI、多个 AI session 并行、主代理/子代理协作结果可视化。
+  - 让桌面版成为主代理 orchestration、记忆浏览与多 session 管理的更强交互层。
+- 边界与约束：
+  - 桌面版不应先于 Track D / E 独立定义一套 session/memory 语义。
+  - 优先复用 CLI core、session server、bridge 协议与 artifact store。
+  - 首版以单机本地桌面工作流为主，不先做云同步/团队协作。
+- 设计入口：
+  - 设计文档：`docs/plans/2026-04-15-desktop-app-development-plan.md`
+
+### Track G: 长期 Token 压缩计划
+
+- 目标：
+  - 把 token 成本下降从“某一个 compact 功能”提升为跨阶段工程目标。
+  - 从 prompt assembly、记忆提取、工件化 handoff、模型分层、缓存与桌面 session 可视化几个层面系统性降本。
+  - 让系统默认优先传递结构化 artifact / focus state / targeted memory，而不是重复回放大段 transcript。
+- 边界与约束：
+  - 这不是一次性 feature，而是长期 program。
+  - 不以牺牲 resume / continue 正确性为代价换取压缩率。
+  - 不让“压缩”反过来制造新的上下文漂移。
+- 设计入口：
+  - 设计文档：`docs/plans/2026-04-15-token-compression-program.md`
+
 ## 最近已验证推进
 
 - 已验证：`bun run typecheck`
@@ -381,6 +494,8 @@
 - 已收口：`scripts/promote-github-release.ts` 已从 `gh release edit` 切到显式 `gh api PATCH`，直接更新 `draft` / `prerelease` / `make_latest`，避免 promote 继续依赖 CLI flag 的隐式行为
 - 已验证：`scripts/promote-github-release-smoke.ts` 现已覆盖 `draft` / `prerelease` / `stable` 三种 promote target 与手工布尔参数组合；`smoke:release-preflight` 也已纳入 promote smoke
 - 已验证：`scripts/signed-release-publication-workflow-smoke.ts` 现已支持跳过重复 build/candidate staging，并已纳入 `smoke:release-preflight`，可在本地候选发布物 gate 中模拟“外部 unsigned artifact + 外部 signed exe 回灌”的 signed publication/deploy 交接链
+- 已验证：新增 `scripts/sign-release-candidate-smoke.ps1` 与 `bun run smoke:sign-release-candidate`，可在本地生成临时代码签名证书与 PFX，调用 `scripts/sign-release-candidate.ps1` 并验证 `signed/` 产物的 Authenticode 签名有效，用于预验证签名脚本 / manifest / 输出链路
+- 已验证：新增 `scripts/native-rollback-cli-github-release-smoke.ts`，会用当前 `dist/neko-code.exe` 组装本地 GitHub Release 资产，真实执行 `neko rollback --list` 与默认回滚，并断言安装版从当前版本切回上一发布版本
 - 已落地：补齐 `scripts/analyze-text-hygiene.ts`、`scripts/check-text-hygiene.ts` 与共享规则库，避免 `package.json` 中的文本卫生入口继续悬空
 - 已收口：bridge / auth 路径里的旧 `claude` 命令提示，并把 Remote Control / auth status 的旧入口指导纳入文本卫生规则，避免 bridge 尾路径回退到错误命令
 - 已收口：`Doctor` dismiss 提示、通知标题、permission/hooks/trust dialog/memory/worktree/plugin/session-start UI 路径提示、`/insights` 命令描述、REPL 默认标题/挂起提示、keybindings schema 与 SDK settings source 描述等用户可见文案已改为 `Neko Code` / `.neko-code` 路径，不再继续直露 `Claude Code` / `.claude`
@@ -412,14 +527,16 @@
 
 ### 当前阶段下一步
 
-1. 继续把 `smoke:distribution-readiness` 与 `smoke:release-preflight` 维持为绿色固定 gate
-2. 推进 signed artifact、签名流程、GitHub Release promote 与正式发布源的真实闭环
-3. 补正式发布后的升级 / 回滚验证，避免当前验证只停留在本地 mock / staged source
-4. 清理 stale error / 旧路径兼容 / release-facing 文案尾项，减少本地 beta 使用中的误报和混乱
-5. 继续把源码模式、分发产物与本地 PATH 安装作为固定对照验证项
+1. 先完成真实签名产物接入，并确认 `windows-sign-artifact.yml` 在真实环境可复用
+2. 再完成一次真实 GitHub Release / 正式发布源上传闭环，不再只依赖 mock / staged source
+3. 基于真实发布源补一次升级验证和一次回滚验证，作为 Phase 4 关闭前必过项
+4. 维持 `smoke:distribution-readiness` 与 `smoke:release-preflight` 为绿色，但不再把新增 smoke 当成主线产出
+5. 仅同步与上述 3 项 blocker 直接相关的 README / roadmap / staged plan 文档
 
 ### 下一阶段入口
 
 1. 当前已进入 Phase 4，下一步聚焦签名、正式发布源与 update workflow
-2. Phase 4 收口后，再考虑把更高层的交互式配置入口和运维文档补强提到主线
-3. 后续新增完成项时，直接迁入归档而不是继续膨胀主 roadmap
+2. Phase 4 收口后，优先切入 Track C + Track D：先压平模型/provider 配置心智，再修上下文焦点漂移
+3. Track E 与 Track F 作为下一组主线：先把“主代理长期记忆 + 默认多代理”定型，再把桌面版作为可视化工作台承接
+4. Track G 持续并行，但默认依附于 Track D / E / F 的实现演进逐步落地
+5. 后续新增完成项时，直接迁入归档而不是继续膨胀主 roadmap

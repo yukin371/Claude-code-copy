@@ -52,6 +52,7 @@
     "smoke:lsp-refresh": "bun run scripts/lsp-refresh-smoke.ts",
     "smoke:mcp-strict-config": "bun run scripts/mcp-strict-config-smoke.ts",
     "smoke:context-compact": "bun run scripts/context-compact-smoke.ts",
+    "smoke:context-drift-replay": "bun run scripts/context-drift-replay-smoke.ts",
     "smoke:context-compact:no-serena": "bun run scripts/context-compact-smoke.ts --disable-serena",
     "smoke:native-distribution": "bun run scripts/native-distribution-smoke.ts",
     "smoke:native-distribution:no-serena": "bun run scripts/native-distribution-smoke.ts --disable-serena",
@@ -61,6 +62,7 @@
     "smoke:native-installer-release-publication": "bun run scripts/native-installer-release-publication-smoke.ts",
     "smoke:stage-native-installer": "bun run scripts/stage-native-installer-smoke.ts",
     "smoke:apply-signed-release-artifact": "bun run scripts/apply-signed-release-artifact-smoke.ts",
+    "smoke:sign-release-candidate": "powershell -ExecutionPolicy Bypass -File scripts/sign-release-candidate-smoke.ps1",
     "smoke:stage-github-release": "bun run scripts/stage-github-release-smoke.ts",
     "smoke:publish-github-release": "bun run scripts/publish-github-release-smoke.ts",
     "smoke:signed-release-publication-workflow": "bun run scripts/signed-release-publication-workflow-smoke.ts",
@@ -69,6 +71,7 @@
     "smoke:release-deploy-publish": "bun run scripts/release-deploy-publish-smoke.ts",
     "smoke:native-update-cli-release-deploy": "bun run scripts/native-update-cli-release-deploy-smoke.ts",
     "smoke:native-update-cli-github-release": "bun run scripts/native-update-cli-github-release-smoke.ts",
+    "smoke:native-rollback-cli-github-release": "bun run scripts/native-rollback-cli-github-release-smoke.ts",
     "smoke:release-facing-diagnostics": "bun run scripts/release-facing-diagnostics-smoke.ts",
     "smoke:distribution-readiness": "bun run scripts/distribution-readiness-smoke.ts",
     "smoke:release-preflight": "bun run scripts/release-preflight.ts",
@@ -76,7 +79,7 @@
     "smoke:migrated-config-system": "bun run scripts/migrated-config-system-smoke.ts",
     "smoke:phase3-system-regression": "bun run scripts/phase3-system-regression-smoke.ts",
     "test:routing": "bun test src/services/api/openaiCompatibleClient.test.ts src/utils/promptCategory.test.ts src/utils/model/taskRouting.test.ts src/services/providerKeyUsageMonitor.test.ts src/services/providerKeyUsageHandoffLogic.test.ts src/utils/model/providerKeyRegistry.test.ts src/utils/model/configuredModelRegistry.test.ts src/migrations/migrateClaudeConfigToNekoHome.test.ts src/utils/model/model.test.ts",
-    "test:release-workflows": "bun test scripts/signed-release-publication-workflow-smoke.test.ts",
+    "test:release-workflows": "bun test scripts/signed-release-publication-workflow-smoke.test.ts scripts/release-workflow-files.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
