@@ -22,7 +22,7 @@ import { sleep } from '../sleep.js'
 import { jsonStringify, writeFileSync_DEPRECATED } from '../slowOperations.js'
 import { getBinaryName, getPlatform } from './installer.js'
 
-// Legacy binary repo URL. Prefer GitHub Releases via NEKO_CODE_NATIVE_INSTALLER_GITHUB_REPO.
+// Legacy binary repo URL. Explicit NEKO_CODE_NATIVE_INSTALLER_BASE_URL overrides all other sources.
 const GCS_BUCKET_URL =
   'https://storage.googleapis.com/neko-code-dist-placeholder/neko-code-releases'
 export const ARTIFACTORY_REGISTRY_URL =
@@ -51,8 +51,34 @@ function getBinaryRepoBaseUrl(): string {
 }
 
 function getGitHubReleaseRepo(): string | null {
-  const repo = process.env.NEKO_CODE_NATIVE_INSTALLER_GITHUB_REPO?.trim()
-  return repo ? repo.replace(/^\/+|\/+$/g, '') : 'neko-code/neko-code'
+  const repo = process.env.NEKO_CODE_NATIVE_INSTALLER_GITHUB_REPO
+  if (repo !== undefined) {
+    const trimmed = repo.trim()
+    return trimmed ? trimmed.replace(/^\/+|\/+$/g, '') : null
+  }
+
+  return 'neko-code/neko-code'
+}
+
+export function getConfiguredNativeInstallerReleaseSource():
+  | 'binary-repo'
+  | 'github-release'
+  | 'artifactory'
+  | 'gcs' {
+  const overriddenBinaryRepo = process.env.NEKO_CODE_NATIVE_INSTALLER_BASE_URL?.trim()
+  if (overriddenBinaryRepo) {
+    return 'binary-repo'
+  }
+
+  if (getGitHubReleaseRepo()) {
+    return 'github-release'
+  }
+
+  if (process.env.USER_TYPE === 'ant') {
+    return 'artifactory'
+  }
+
+  return 'gcs'
 }
 
 function getGitHubApiBaseUrl(): string {
@@ -258,25 +284,61 @@ export async function getLatestVersion(
     )
   }
 
+  switch (getConfiguredNativeInstallerReleaseSource()) {
+    case 'binary-repo':
+      return getLatestVersionFromBinaryRepo(channel, getBinaryRepoBaseUrl())
+    case 'github-release':
+      return getLatestVersionFromGitHubRelease(channel)
+    case 'artifactory': {
+      const npmTag = channel === 'stable' ? 'stable' : 'latest'
+      return getLatestVersionFromArtifactory(npmTag)
+    }
+    case 'gcs':
+      return getLatestVersionFromBinaryRepo(channel, getBinaryRepoBaseUrl())
+  }
+}
+
+export async function getRecentVersions(limit: number): Promise<string[]> {
+  if (limit < 1) {
+    return []
+  }
+
   const overriddenBinaryRepo = process.env.NEKO_CODE_NATIVE_INSTALLER_BASE_URL?.trim()
-  const githubReleaseRepo = getGitHubReleaseRepo()
-  if (githubReleaseRepo) {
-    return getLatestVersionFromGitHubRelease(channel)
-  }
-
   if (overriddenBinaryRepo) {
-    return getLatestVersionFromBinaryRepo(channel, getBinaryRepoBaseUrl())
+    return []
   }
 
-  // Route to appropriate source
-  if (process.env.USER_TYPE === 'ant') {
-    // Use Artifactory for ant users
-    const npmTag = channel === 'stable' ? 'stable' : 'latest'
-    return getLatestVersionFromArtifactory(npmTag)
+  const repo = getGitHubReleaseRepo()
+  if (!repo) {
+    return []
   }
 
-  // Use GCS for external users
-  return getLatestVersionFromBinaryRepo(channel, getBinaryRepoBaseUrl())
+  const response = await axios.get<GitHubRelease[]>(
+    `${getGitHubApiBaseUrl()}/repos/${repo}/releases?per_page=${Math.max(limit * 2, 20)}`,
+    {
+      timeout: 30000,
+      responseType: 'json',
+      ...getGitHubRequestConfig(),
+    },
+  )
+
+  const versions: string[] = []
+  for (const release of response.data) {
+    if (release.draft) {
+      continue
+    }
+
+    const version = normalizeGitHubTagToVersion(release.tag_name)
+    if (!versions.includes(version)) {
+      versions.push(version)
+    }
+
+    if (versions.length >= limit) {
+      break
+    }
+  }
+
+  return versions
 }
 
 export async function downloadVersionFromArtifactory(
@@ -685,35 +747,28 @@ export async function downloadVersion(
     return 'binary'
   }
 
-  const githubReleaseRepo = getGitHubReleaseRepo()
-  if (githubReleaseRepo) {
-    await downloadVersionFromGitHubRelease(version, stagingPath)
-    return 'binary'
+  switch (getConfiguredNativeInstallerReleaseSource()) {
+    case 'binary-repo':
+      await downloadVersionFromBinaryRepo(
+        version,
+        stagingPath,
+        getBinaryRepoBaseUrl(),
+      )
+      return 'binary'
+    case 'github-release':
+      await downloadVersionFromGitHubRelease(version, stagingPath)
+      return 'binary'
+    case 'artifactory':
+      await downloadVersionFromArtifactory(version, stagingPath)
+      return 'npm'
+    case 'gcs':
+      await downloadVersionFromBinaryRepo(
+        version,
+        stagingPath,
+        getBinaryRepoBaseUrl(),
+      )
+      return 'binary'
   }
-
-  const overriddenBinaryRepo = process.env.NEKO_CODE_NATIVE_INSTALLER_BASE_URL?.trim()
-  if (overriddenBinaryRepo) {
-    await downloadVersionFromBinaryRepo(
-      version,
-      stagingPath,
-      getBinaryRepoBaseUrl(),
-    )
-    return 'binary'
-  }
-
-  if (process.env.USER_TYPE === 'ant') {
-    // Use Artifactory for ant users
-    await downloadVersionFromArtifactory(version, stagingPath)
-    return 'npm'
-  }
-
-  // Use GCS for external users
-  await downloadVersionFromBinaryRepo(
-    version,
-    stagingPath,
-    getBinaryRepoBaseUrl(),
-  )
-  return 'binary'
 }
 
 // Exported for testing
