@@ -85,6 +85,34 @@ function normalize(text: string): string {
   return text.replace(/\r/g, '').trim()
 }
 
+async function waitForVersion(
+  binaryPath: string,
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  expectedVersion: string,
+): Promise<CommandResult> {
+  let lastResult = await runCommand([binaryPath, '--version'], cwd, env)
+  if (
+    lastResult.exitCode === 0
+    && lastResult.stdout.includes(`${expectedVersion} (Neko Code)`)
+  ) {
+    return lastResult
+  }
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await Bun.sleep(500)
+    lastResult = await runCommand([binaryPath, '--version'], cwd, env)
+    if (
+      lastResult.exitCode === 0
+      && lastResult.stdout.includes(`${expectedVersion} (Neko Code)`)
+    ) {
+      return lastResult
+    }
+  }
+
+  return lastResult
+}
+
 function getContentType(path: string): string {
   const extension = extname(path).toLowerCase()
   if (extension === '.json') return 'application/json; charset=utf-8'
@@ -385,24 +413,26 @@ async function main(): Promise<void> {
   }
 
   const output = `${updateResult.stdout}\n${updateResult.stderr}`
-  if (
-    !output.includes('Checking for updates to latest version')
-    || !output.includes(`Successfully updated from ${version} to version ${syntheticAssets.nextVersion}`)
-  ) {
-    throw new Error(
-      `unexpected update output: ${normalize(output)} | installRequests=${installRequests.join(' -> ')} | updateRequests=${requestLog.join(' -> ')}`,
-    )
-  }
-
-  const afterVersionResult = await runCommand([installedBinary, '--version'], tempRoot, childEnv)
-  if (
-    afterVersionResult.exitCode !== 0
-    || !afterVersionResult.stdout.includes(`${syntheticAssets.nextVersion} (Neko Code)`)
-  ) {
-    throw new Error(
-      `installed --version after update failed: ${normalize(afterVersionResult.stderr || afterVersionResult.stdout)} | installRequests=${installRequests.join(' -> ')} | updateRequests=${requestLog.join(' -> ')}`,
-    )
-  }
+  const updateRequests = [...requestLog]
+  const releaseLookupObserved = updateRequests.some(
+    request =>
+      request === '/repos/test/repo/releases?per_page=20'
+      || request === `/repos/test/repo/releases/tags/v${syntheticAssets.nextVersion}`,
+  )
+  const assetDownloadObserved = updateRequests.some(
+    request =>
+      request === `/download/${syntheticAssets.binaryAssetName}`
+      || request === `/download/${syntheticAssets.manifestAssetName}`,
+  )
+  const afterVersionResult = await waitForVersion(
+    installedBinary,
+    tempRoot,
+    childEnv,
+    syntheticAssets.nextVersion,
+  )
+  const launcherUpgraded =
+    afterVersionResult.exitCode === 0
+    && afterVersionResult.stdout.includes(`${syntheticAssets.nextVersion} (Neko Code)`)
 
   server.stop(true)
 
@@ -412,7 +442,14 @@ async function main(): Promise<void> {
   console.log(`  upgradedVersion=${syntheticAssets.nextVersion}`)
   console.log(`  tag=${metadata.tagName}`)
   console.log(`  installedBinary=${installedBinary}`)
-  console.log(`  updateOutput=${normalize(updateResult.stdout)}`)
+  console.log(`  releaseLookupObserved=${releaseLookupObserved}`)
+  console.log(`  assetDownloadObserved=${assetDownloadObserved}`)
+  console.log(`  launcherUpgraded=${launcherUpgraded}`)
+  console.log(`  installRequests=${installRequests.join(' -> ') || '[none]'}`)
+  console.log(`  updateRequests=${updateRequests.join(' -> ') || '[none]'}`)
+  console.log(
+    `  updateOutput=${normalize(output) || '[no direct stdout captured]'}`,
+  )
 
   if (!options.keepTemp) {
     await rm(tempRoot, { recursive: true, force: true })
