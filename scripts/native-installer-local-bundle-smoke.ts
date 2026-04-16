@@ -143,6 +143,9 @@ async function main(): Promise<void> {
   process.env.XDG_CACHE_HOME = cacheDir
   process.env.XDG_STATE_HOME = stateDir
   process.env.NEKO_CODE_NATIVE_INSTALLER_BASE_URL = baseUrl
+  delete process.env.NEKO_CODE_NATIVE_INSTALLER_GITHUB_REPO
+  delete process.env.NEKO_CODE_NATIVE_INSTALLER_GITHUB_API_BASE_URL
+  delete process.env.NEKO_CODE_NATIVE_INSTALLER_GITHUB_TOKEN
   process.env.PATH = `${binDir};${process.env.PATH ?? ''}`
 
   const { enableConfigs } = await import('../src/utils/config.js')
@@ -152,6 +155,7 @@ async function main(): Promise<void> {
 
   enableConfigs()
 
+  console.log('[RUN] installLatest')
   const installResult = await installLatest('latest', true)
   if (!installResult.wasUpdated || installResult.latestVersion !== metadata.version) {
     throw new Error(
@@ -159,6 +163,7 @@ async function main(): Promise<void> {
     )
   }
 
+  console.log('[RUN] checkInstall')
   const setupMessages = await checkInstall(true)
   const setupErrors = setupMessages.filter(message => message.type === 'error')
   if (setupErrors.length > 0) {
@@ -179,18 +184,23 @@ async function main(): Promise<void> {
       : 'serena',
   }
 
+  console.log('[RUN] installed --version')
   const versionResult = await runCommand([installedBinary, '--version'], tempRoot, childEnv)
+  console.log('[RUN] installed --help')
   const helpResult = await runCommand([installedBinary, '--help'], tempRoot, childEnv)
+  console.log('[RUN] installed doctor --help')
   const doctorHelpResult = await runCommand(
     [installedBinary, 'doctor', '--help'],
     tempRoot,
     childEnv,
   )
+  console.log('[RUN] installed install --help')
   const installHelpResult = await runCommand(
     [installedBinary, 'install', '--help'],
     tempRoot,
     childEnv,
   )
+  console.log('[RUN] installed update --help')
   const updateHelpResult = await runCommand(
     [installedBinary, 'update', '--help'],
     tempRoot,
