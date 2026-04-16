@@ -55,4 +55,24 @@ describe('release workflow files', () => {
     expect(stepNames).toContain('Apply signed artifact')
     expect(stepNames).toContain('Stage release deploy')
   })
+
+  test('github release publish workflow supports signed and unsigned sources', () => {
+    const workflow = readWorkflow('.github/workflows/github-release-publish.yml')
+
+    expect(workflow?.name).toBe('GitHub Release Publish')
+    expect(workflow?.on?.workflow_dispatch?.inputs?.signed_publication_run_id?.required).toBe(
+      false,
+    )
+    expect(workflow?.on?.workflow_dispatch?.inputs?.release_candidate_run_id?.required).toBe(
+      false,
+    )
+    expect(workflow?.on?.workflow_dispatch?.inputs?.allow_unsigned?.type).toBe(
+      'boolean',
+    )
+
+    const stepNames = getStepNames(workflow, 'publish-github-release')
+    expect(stepNames).toContain('Materialize release artifacts')
+    expect(stepNames).toContain('Stage publication and deploy from unsigned candidate')
+    expect(stepNames).toContain('Stage GitHub release assets')
+  })
 })

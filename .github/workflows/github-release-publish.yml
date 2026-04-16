@@ -8,9 +8,25 @@ on:
         required: true
         type: string
       signed_publication_run_id:
-        description: Workflow run ID from signed publication
-        required: true
+        description: Workflow run ID from signed publication (required unless allow_unsigned=true)
+        required: false
+        default: ''
         type: string
+      release_candidate_run_id:
+        description: Unsigned release candidate workflow run ID (required when allow_unsigned=true)
+        required: false
+        default: ''
+        type: string
+      release_candidate_artifact_name:
+        description: Optional unsigned candidate artifact name override
+        required: false
+        default: ''
+        type: string
+      allow_unsigned:
+        description: Publish directly from the unsigned release candidate artifact
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   actions: read
@@ -23,6 +39,9 @@ jobs:
       NEKO_CODE_DISABLED_MCP_SERVERS: serena
       RELEASE_VERSION: ${{ inputs.version }}
       SIGNED_PUBLICATION_RUN_ID: ${{ inputs.signed_publication_run_id }}
+      RELEASE_CANDIDATE_RUN_ID: ${{ inputs.release_candidate_run_id }}
+      RELEASE_CANDIDATE_ARTIFACT_NAME: ${{ inputs.release_candidate_artifact_name }}
+      ALLOW_UNSIGNED: ${{ inputs.allow_unsigned }}
 
     steps:
       - name: Checkout
@@ -42,7 +61,7 @@ jobs:
       - name: Text hygiene
         run: bun run check:text-hygiene
 
-      - name: Download signed release artifacts
+      - name: Materialize release artifacts
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -82,16 +101,36 @@ jobs:
           $artifactRoot = Join-Path $PWD '.github-artifacts'
           New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
 
-          $artifactSpecs = @(
-            @{ Name = "neko-code-release-candidate-$env:RELEASE_VERSION-signed-win32-x64"; Target = "dist/release-candidate/$env:RELEASE_VERSION"; Zip = "candidate.zip" },
-            @{ Name = "neko-code-release-publication-$env:RELEASE_VERSION-signed-win32-x64"; Target = "dist/release-publication/$env:RELEASE_VERSION"; Zip = "publication.zip" },
-            @{ Name = "neko-code-release-deploy-$env:RELEASE_VERSION-signed-win32-x64"; Target = "dist/release-deploy/$env:RELEASE_VERSION"; Zip = "deploy.zip" }
-          )
+          if ($env:ALLOW_UNSIGNED -eq 'true') {
+            if ([string]::IsNullOrWhiteSpace($env:RELEASE_CANDIDATE_RUN_ID)) {
+              throw 'release_candidate_run_id is required when allow_unsigned=true'
+            }
+
+            $candidateArtifactName = if ([string]::IsNullOrWhiteSpace($env:RELEASE_CANDIDATE_ARTIFACT_NAME)) {
+              "neko-code-release-candidate-$env:RELEASE_VERSION-unsigned-win32-x64"
+            } else {
+              $env:RELEASE_CANDIDATE_ARTIFACT_NAME
+            }
+
+            $artifactSpecs = @(
+              @{ Name = $candidateArtifactName; Target = "dist/release-candidate/$env:RELEASE_VERSION"; Zip = "candidate.zip"; RunId = $env:RELEASE_CANDIDATE_RUN_ID }
+            )
+          } else {
+            if ([string]::IsNullOrWhiteSpace($env:SIGNED_PUBLICATION_RUN_ID)) {
+              throw 'signed_publication_run_id is required when allow_unsigned=false'
+            }
+
+            $artifactSpecs = @(
+              @{ Name = "neko-code-release-candidate-$env:RELEASE_VERSION-signed-win32-x64"; Target = "dist/release-candidate/$env:RELEASE_VERSION"; Zip = "candidate.zip"; RunId = $env:SIGNED_PUBLICATION_RUN_ID },
+              @{ Name = "neko-code-release-publication-$env:RELEASE_VERSION-signed-win32-x64"; Target = "dist/release-publication/$env:RELEASE_VERSION"; Zip = "publication.zip"; RunId = $env:SIGNED_PUBLICATION_RUN_ID },
+              @{ Name = "neko-code-release-deploy-$env:RELEASE_VERSION-signed-win32-x64"; Target = "dist/release-deploy/$env:RELEASE_VERSION"; Zip = "deploy.zip"; RunId = $env:SIGNED_PUBLICATION_RUN_ID }
+            )
+          }
 
           foreach ($spec in $artifactSpecs) {
             $zipPath = Join-Path $artifactRoot $spec.Zip
             $extractPath = Join-Path $artifactRoot ([IO.Path]::GetFileNameWithoutExtension($spec.Zip))
-            Download-ArtifactZip -RunId $env:SIGNED_PUBLICATION_RUN_ID -ArtifactName $spec.Name -ZipPath $zipPath
+            Download-ArtifactZip -RunId $spec.RunId -ArtifactName $spec.Name -ZipPath $zipPath
             Expand-Archive -LiteralPath $zipPath -DestinationPath $extractPath -Force
 
             $targetPath = Join-Path $PWD $spec.Target
@@ -100,15 +139,31 @@ jobs:
             Copy-Item -Path (Join-Path $extractPath '*') -Destination $targetPath -Recurse -Force
           }
 
+      - name: Stage publication and deploy from unsigned candidate
+        if: ${{ inputs.allow_unsigned }}
+        shell: pwsh
+        run: |
+          bun run scripts/stage-release-publication.ts --skip-stage-candidate
+          bun run scripts/stage-release-deploy.ts --skip-stage-publication
+          bun run scripts/stage-native-installer.ts --skip-stage-publication
+
       - name: Stage GitHub release assets
         shell: pwsh
         run: |
-          bun run scripts/stage-github-release.ts --skip-stage-deploy
+          if ("${{ inputs.allow_unsigned }}" -eq "true") {
+            bun run scripts/stage-github-release.ts --skip-stage-deploy --skip-stage-native-installer --allow-unsigned
+          } else {
+            bun run scripts/stage-github-release.ts --skip-stage-deploy
+          }
 
       - name: Smoke GitHub release package
         shell: pwsh
         run: |
-          bun run scripts/stage-github-release-smoke.ts --skip-signed-workflow --skip-stage-github-release
+          if ("${{ inputs.allow_unsigned }}" -eq "true") {
+            bun run scripts/stage-github-release-smoke.ts --allow-unsigned --skip-stage-github-release
+          } else {
+            bun run scripts/stage-github-release-smoke.ts --skip-signed-workflow --skip-stage-github-release
+          }
 
       - name: Publish draft prerelease
         shell: pwsh
@@ -134,6 +189,7 @@ jobs:
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Direct binary: $($metadata.primaryAsset)"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Draft default: $isDraft"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Prerelease default: $isPrerelease"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Unsigned mode: $env:ALLOW_UNSIGNED"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Asset count: $($metadata.assets.Count)"
 
       - name: Upload staged GitHub release package
