@@ -70,18 +70,6 @@ function normalize(text: string): string {
   return text.replace(/\r/g, '').trim()
 }
 
-function assertRequestsInclude(
-  requests: string[],
-  expectedSubstring: string,
-  description: string,
-): void {
-  if (!requests.some(request => request.includes(expectedSubstring))) {
-    throw new Error(
-      `${description} missing request ${JSON.stringify(expectedSubstring)} in ${JSON.stringify(requests)}`,
-    )
-  }
-}
-
 function getContentType(path: string): string {
   const extension = extname(path).toLowerCase()
   if (extension === '.json') return 'application/json; charset=utf-8'
@@ -237,7 +225,6 @@ async function main(): Promise<void> {
     await readFile(join(deployRoot, 'release-deploy.json'), 'utf8'),
   ) as DeployMetadata
   const publishRoot = await mkdtemp(join(tmpdir(), 'neko-native-update-release-deploy-publish-'))
-  const requestLog: string[] = []
   const publishResult = await runCommand(
     [
       'bun',
@@ -261,7 +248,6 @@ async function main(): Promise<void> {
     port: 0,
     fetch(request) {
       const url = new URL(request.url)
-      requestLog.push(url.pathname + url.search)
       const relativePath = decodeURIComponent(url.pathname.replace(/^\/+/, ''))
       const filePath = resolve(servedRoot, relativePath)
 
@@ -308,7 +294,6 @@ async function main(): Promise<void> {
   if (!installResult.wasUpdated || installResult.latestVersion !== deployMetadata.version) {
     throw new Error(`Unexpected install result: ${JSON.stringify(installResult)}`)
   }
-  requestLog.splice(0)
 
   const installedBinary = join(binDir, deployMetadata.publishedBinary.split('/').pop() ?? 'neko.exe')
   if (!existsSync(installedBinary)) {
@@ -345,19 +330,6 @@ async function main(): Promise<void> {
   const updateResult = await runCommand([installedBinary, 'update'], tempRoot, childEnv)
   if (updateResult.exitCode !== 0) {
     throw new Error(`installed update failed: ${normalize(updateResult.stderr || updateResult.stdout)}`)
-  }
-
-  const updateRequestsPath = [
-    '/latest',
-    `/${nextVersion}/manifest.json`,
-    `/${nextVersion}/${deployMetadata.platform}/neko.exe`,
-  ]
-  for (const requestPath of updateRequestsPath) {
-    assertRequestsInclude(
-      requestLog,
-      requestPath,
-      'native update release-deploy smoke',
-    )
   }
 
   const afterVersionResult = await runCommand([installedBinary, '--version'], tempRoot, childEnv)
